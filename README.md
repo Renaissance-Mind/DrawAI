@@ -171,6 +171,7 @@ DrawAI 的设计和实现参考了这些开源项目的思路与实践：
 - [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master)
 - [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill)
 - [llmsresearch/paperbanana](https://github.com/llmsresearch/paperbanana)
+- [ResearAI/AutoFigure-Edit](https://github.com/ResearAI/AutoFigure-Edit)
 
 ## ⚖️ 协议和商用
 

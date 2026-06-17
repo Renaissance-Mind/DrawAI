@@ -171,6 +171,7 @@ DrawAI's design and implementation were informed by ideas and practices from the
 - [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master)
 - [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill)
 - [llmsresearch/paperbanana](https://github.com/llmsresearch/paperbanana)
+- [ResearAI/AutoFigure-Edit](https://github.com/ResearAI/AutoFigure-Edit)
 
 ## ⚖️ License And Commercial Use
 
