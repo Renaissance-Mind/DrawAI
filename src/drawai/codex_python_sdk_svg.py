@@ -94,9 +94,15 @@ def host_codex_model_provider_overrides(config_path: str | Path) -> tuple[str, .
 
     path = Path(config_path).expanduser().resolve(strict=False)
     try:
-        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+        config_text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ()
+    except UnicodeDecodeError as exc:
+        raise CodexPythonSdkSvgError(f"Host Codex config is not UTF-8: {path}") from exc
+    try:
+        payload = tomllib.loads(config_text)
+    except tomllib.TOMLDecodeError as exc:
+        raise CodexPythonSdkSvgError(f"Host Codex config is invalid TOML: {path}: {exc}") from exc
     if not isinstance(payload, Mapping):
         return ()
 

@@ -73,6 +73,41 @@ base_url = "http://127.0.0.1:15721/v1"
     assert 'model_providers.custom.base_url="http://127.0.0.1:15721/v1"' in overrides
 
 
+def test_controlled_codex_config_overrides_quotes_provider_key(monkeypatch, tmp_path):
+    host_codex_home = tmp_path / "host_codex"
+    host_codex_home.mkdir()
+    (host_codex_home / "config.toml").write_text(
+        """
+model_provider = "custom.proxy"
+model = "gpt-5.5"
+
+[model_providers."custom.proxy"]
+name = "custom.proxy"
+wire_api = "responses"
+base_url = "http://127.0.0.1:15721/v1"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DRAWAI_HOST_CODEX_HOME", str(host_codex_home))
+    monkeypatch.setenv("DRAWAI_CODEX_INHERIT_HOST_CONFIG", "1")
+
+    overrides = controlled_codex_config_overrides()
+
+    assert 'model_provider="custom.proxy"' in overrides
+    assert 'model_providers."custom.proxy".base_url="http://127.0.0.1:15721/v1"' in overrides
+
+
+def test_controlled_codex_config_overrides_rejects_invalid_host_config(monkeypatch, tmp_path):
+    host_codex_home = tmp_path / "host_codex"
+    host_codex_home.mkdir()
+    (host_codex_home / "config.toml").write_text('model_provider = "custom', encoding="utf-8")
+    monkeypatch.setenv("DRAWAI_HOST_CODEX_HOME", str(host_codex_home))
+    monkeypatch.setenv("DRAWAI_CODEX_INHERIT_HOST_CONFIG", "1")
+
+    with pytest.raises(CodexPythonSdkSvgError, match="invalid TOML"):
+        controlled_codex_config_overrides()
+
+
 def test_controlled_codex_config_overrides_allows_model_env_override(monkeypatch, tmp_path):
     host_codex_home = tmp_path / "host_codex"
     host_codex_home.mkdir()
