@@ -31,7 +31,7 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.sam3.base_url == "http://127.0.0.1:18080"
     assert cfg.sam3.timeout_seconds == 60
     assert cfg.sam3.return_overlay is True
-    assert cfg.sam3.return_masks is True
+    assert cfg.sam3.return_masks is False
     assert cfg.sam3.service_merge_threshold == 0.0
     assert cfg.sam3.prompts == DEFAULT_SAM3_PROMPTS
     assert cfg.ocr.provider == "remote_paddleocr"
@@ -67,6 +67,7 @@ def test_template_config_preserves_current_baseline_defaults():
 
     assert cfg.input.normalization.target_long_edge == 2048
     assert cfg.input.normalization.upscale_only is False
+    assert cfg.sam3.return_masks is False
     assert cfg.svg.generation_backend == "codex_python_sdk_controlled"
     assert cfg.svg_to_ppt.enabled is True
     assert cfg.svg_to_ppt.export_pptx is True

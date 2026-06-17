@@ -82,6 +82,7 @@ sam3:
         "/v1/segment/proposals",
     ]
     assert all(len(payload["prompts"]) == 1 for _path, payload, _timeout in transport.payloads)
+    assert all(payload["return_masks"] is False for _path, payload, _timeout in transport.payloads)
 
     raw_regions_payload = json.loads(paths.raw_regions_json.read_text(encoding="utf-8"))
     assert [region["source_prompt"] for region in raw_regions_payload["raw_regions"]] == [
@@ -134,6 +135,7 @@ input:
   image: {image.name}
   output_dir: out
 sam3:
+  return_masks: true
   prompts:
     - id: icon
       text: icon
