@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from PIL import Image
 
+from .asset_geometry import geometry_crop, normalize_asset_geometry
 from .asset_selection_loop import normalize_and_validate_asset_decisions
 from .rmbg_client import RmbgResult
 
@@ -71,6 +72,7 @@ def materialize_assets(
 
     with Image.open(figure_image_path) as image:
         source = image.copy()
+    geometry_base_dir = _case_root_from_figure_image(figure_image_path)
 
     for decision in normalized_decisions["decisions"]:
         if not isinstance(decision, Mapping) or decision.get("decision") != "crop_asset":
@@ -86,7 +88,8 @@ def materialize_assets(
         if bbox is None:
             raise ValueError(f"Cannot materialize asset {asset_id!r}: box_id {box_id!r} has invalid bbox")
 
-        crop = source.crop(bbox)
+        geometry = normalize_asset_geometry(boxes_by_id[box_id].get("geometry"), fallback_bbox=bbox, image_size=source.size)
+        crop = geometry_crop(source, bbox, geometry, base_dir=geometry_base_dir)
         crop_path = crops_dir / f"{asset_id}.png"
         crop.save(crop_path)
         crop_href = _relative_href(crop_path, svg_root)
@@ -102,6 +105,8 @@ def materialize_assets(
             "height": crop.height,
             "active_variant": "with_background",
         }
+        if geometry is not None:
+            asset_record["geometry"] = geometry
         asset_policy = policy_by_asset_id.get(asset_id)
         if asset_policy is not None:
             _attach_asset_policy(asset_record, asset_policy)
@@ -177,6 +182,7 @@ def materialize_run0_refined_assets(
 
     rmbg_settings = _rmbg_settings(rmbg_config)
     analysis_root = _element_analysis_root(element_analysis)
+    geometry_base_dir = analysis_root or _case_root_from_figure_image(figure_image_path)
     manifest: dict[str, Any] = {
         "schema": ASSET_MANIFEST_SCHEMA,
         "source": "codex_run0_refined_assets",
@@ -194,7 +200,8 @@ def materialize_run0_refined_assets(
         if bbox is None:
             raise ValueError(f"Run0 element has invalid bbox: {element.get('box_id') or element.get('id') or index!r}")
         asset_id = _unique_run0_asset_id(element, index, seen_asset_ids)
-        crop = source.crop(bbox)
+        geometry = normalize_asset_geometry(element.get("geometry"), fallback_bbox=bbox, image_size=source.size)
+        crop = geometry_crop(source, bbox, geometry, base_dir=geometry_base_dir)
         processed_asset = _load_processed_asset(element, analysis_root, category)
         if category == "crop" and processed_asset is not None:
             crop = processed_asset
@@ -220,6 +227,8 @@ def materialize_run0_refined_assets(
             "run0_confidence": element.get("confidence"),
             "run0_reason": element.get("reason"),
         }
+        if geometry is not None:
+            record["geometry"] = geometry
         source_candidate_ids = element.get("source_candidate_ids")
         if isinstance(source_candidate_ids, list):
             record["source_candidate_ids"] = list(source_candidate_ids)
@@ -282,6 +291,13 @@ def _element_analysis_root(element_analysis: Mapping[str, Any]) -> Path | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
     return Path(raw).expanduser().resolve(strict=False)
+
+
+def _case_root_from_figure_image(figure_image_path: str | Path) -> Path:
+    path = Path(figure_image_path).expanduser().resolve(strict=False)
+    if path.parent.name == "inputs":
+        return path.parent.parent
+    return path.parent
 
 
 def _load_processed_asset(element: Mapping[str, Any], analysis_root: Path | None, category: str) -> Image.Image | None:

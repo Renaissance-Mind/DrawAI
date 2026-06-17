@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from drawai.artifacts import prepare_artifact_paths, write_json
+from drawai.asset_geometry import geometry_crop, normalize_asset_geometry
 from drawai.asset_materialization import _cleanup_cutout_border_background, materialize_run0_refined_assets
 from PIL import Image
 
@@ -139,7 +140,8 @@ def process_asset_plan_elements(
         if strategy not in WORKBENCH_PROCESSABLE_STRATEGIES:
             raise ValueError(f"{element['box_id']} cannot be processed with strategy {strategy!r}")
         bbox = _clamped_int_bbox(element["bbox"], source.size, element["box_id"])
-        crop = source.crop(bbox)
+        geometry = normalize_asset_geometry(element.get("geometry"), fallback_bbox=bbox, image_size=source.size)
+        crop = geometry_crop(source, bbox, geometry, base_dir=root)
         safe_id = _safe_asset_filename(element["box_id"])
         suffix = "nobg" if strategy == "crop_nobg" else "crop"
         output_path = output_dir / f"{safe_id}_{suffix}.png"
@@ -233,6 +235,9 @@ def validate_asset_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
             "current_pipeline_method": str(raw.get("current_pipeline_method") or raw.get("source_strategy") or ""),
             "recommended_asset_source": _recommended_asset_source(source_strategy),
         }
+        geometry = normalize_asset_geometry(raw.get("geometry"), fallback_bbox=bbox)
+        if geometry is not None:
+            element["geometry"] = geometry
         _copy_processing_fields(raw, element)
         elements.append(element)
     return {
@@ -273,11 +278,12 @@ def _draft_element(raw: Any, index: int) -> dict[str, Any]:
         raise ValueError(f"run0 element {index} must be an object")
     source_strategy = _source_strategy(raw)
     element_id = _element_id(raw, index)
-    return {
+    bbox = _valid_bbox(raw.get("bbox"), element_id)
+    element = {
         "box_id": element_id,
         "source_candidate_ids": list(raw.get("source_candidate_ids") or ([element_id] if element_id else [])),
         "refinement_action": str(raw.get("refinement_action") or "unchanged"),
-        "bbox": _valid_bbox(raw.get("bbox"), element_id),
+        "bbox": bbox,
         "source_strategy": source_strategy,
         "visual_role": str(raw.get("visual_role") or raw.get("type") or ""),
         "type": str(raw.get("type") or raw.get("visual_role") or "unknown"),
@@ -287,6 +293,10 @@ def _draft_element(raw: Any, index: int) -> dict[str, Any]:
         "current_pipeline_method": str(raw.get("current_pipeline_method") or ""),
         "recommended_asset_source": _recommended_asset_source(source_strategy),
     }
+    geometry = normalize_asset_geometry(raw.get("geometry"), fallback_bbox=bbox)
+    if geometry is not None:
+        element["geometry"] = geometry
+    return element
 
 
 def _source_strategy(raw: Mapping[str, Any]) -> SourceStrategy:

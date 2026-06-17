@@ -37,7 +37,7 @@ class Sam3Config:
     base_url: str = "http://127.0.0.1:18080"
     timeout_seconds: float = 60
     return_overlay: bool = True
-    return_masks: bool = False
+    return_masks: bool = True
     service_merge_threshold: float = 0.0
     prompts: tuple[Sam3Prompt, ...] = DEFAULT_SAM3_PROMPTS
 

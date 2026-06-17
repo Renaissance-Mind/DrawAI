@@ -14,6 +14,7 @@ class DrawAiArtifactPaths:
     figure_image: Path
     source_metadata: Path
     sam3_dir: Path
+    sam_masks_dir: Path
     prompt_runs_dir: Path
     sam_prompt_overlays_dir: Path
     raw_regions_json: Path
@@ -70,6 +71,7 @@ def prepare_artifact_paths(root: str | Path) -> DrawAiArtifactPaths:
     root_path = Path(root).expanduser().resolve()
     inputs_dir = root_path / "inputs"
     sam3_dir = root_path / "sam3"
+    sam_masks_dir = sam3_dir / "masks"
     prompt_runs_dir = sam3_dir / "prompt_runs"
     sam_prompt_overlays_dir = sam3_dir / "prompt_overlays"
     box_ir_dir = root_path / "box_ir"
@@ -87,6 +89,7 @@ def prepare_artifact_paths(root: str | Path) -> DrawAiArtifactPaths:
         root_path,
         inputs_dir,
         sam3_dir,
+        sam_masks_dir,
         prompt_runs_dir,
         sam_prompt_overlays_dir,
         box_ir_dir,
@@ -108,6 +111,7 @@ def prepare_artifact_paths(root: str | Path) -> DrawAiArtifactPaths:
         figure_image=inputs_dir / "figure.png",
         source_metadata=inputs_dir / "source_metadata.json",
         sam3_dir=sam3_dir,
+        sam_masks_dir=sam_masks_dir,
         prompt_runs_dir=prompt_runs_dir,
         sam_prompt_overlays_dir=sam_prompt_overlays_dir,
         raw_regions_json=sam3_dir / "raw_regions.json",

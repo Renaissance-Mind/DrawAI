@@ -5,12 +5,13 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 from .artifacts import DrawAiArtifactPaths, write_json
 from .config import Sam3Config
@@ -180,9 +181,15 @@ def run_sam3_prompt_plan(
                 sam3_config.timeout_seconds,
             )
             regions = _require_regions(response_payload, prompt.id)
-            response_raw_regions = _normalize_raw_regions(response_payload.get("raw_regions"), prompt.id)
-            raw_regions = _with_prompt_provenance(response_raw_regions, prompt)
             artifacts = _normalize_artifacts(response_payload.get("artifacts"))
+            response_raw_regions = _normalize_raw_regions(response_payload.get("raw_regions"), prompt.id)
+            response_raw_regions = _localize_raw_region_masks(
+                response_raw_regions,
+                artifacts,
+                prompt.id,
+                artifact_paths,
+            )
+            raw_regions = _with_prompt_provenance(response_raw_regions, prompt)
         except Sam3ResponseError as exc:
             raise Sam3ResponseError(_with_run_error_context(str(exc), sam3_config, prompt.id)) from exc
         except Exception as exc:
@@ -308,6 +315,93 @@ def _normalize_artifacts(artifacts: Any) -> dict[str, Any]:
     if not isinstance(artifacts, dict):
         raise Sam3ResponseError("SAM3 response field 'artifacts' must be a mapping")
     return dict(artifacts)
+
+
+def _localize_raw_region_masks(
+    raw_regions: list[Any],
+    artifacts: Mapping[str, Any],
+    prompt_id: str,
+    artifact_paths: DrawAiArtifactPaths,
+) -> list[Any]:
+    localized_regions: list[Any] = []
+    for index, raw_region in enumerate(raw_regions, start=1):
+        if not isinstance(raw_region, dict):
+            localized_regions.append(raw_region)
+            continue
+        region = dict(raw_region)
+        mask_path = _region_mask_path(region)
+        if not mask_path:
+            localized_regions.append(region)
+            continue
+        source = _resolve_response_mask_path(mask_path, artifacts, artifact_paths)
+        if source is None:
+            raise Sam3ResponseError(
+                f"SAM3 response mask_path could not be resolved for prompt {prompt_id!r}: {mask_path!r}"
+            )
+        artifact_paths.sam_masks_dir.mkdir(parents=True, exist_ok=True)
+        mask_name = _localized_mask_name(prompt_id, index, source.name)
+        destination = artifact_paths.sam_masks_dir / mask_name
+        if source.resolve(strict=False) != destination.resolve(strict=False):
+            shutil.copy2(source, destination)
+        relative_mask_path = destination.relative_to(artifact_paths.root).as_posix()
+        _set_region_mask_path(region, relative_mask_path)
+        localized_regions.append(region)
+    return localized_regions
+
+
+def _region_mask_path(region: Mapping[str, Any]) -> str:
+    value = region.get("mask_path")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    geometry = region.get("geometry")
+    if isinstance(geometry, Mapping):
+        value = geometry.get("mask_path")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _set_region_mask_path(region: dict[str, Any], mask_path: str) -> None:
+    region["mask_path"] = mask_path
+    geometry = dict(region.get("geometry")) if isinstance(region.get("geometry"), Mapping) else {}
+    geometry["kind"] = "mask"
+    geometry["mask_path"] = mask_path
+    if "bbox" in region:
+        geometry["bbox"] = region["bbox"]
+    geometry["coordinate_system"] = "figure_image_pixels"
+    region["geometry"] = geometry
+
+
+def _resolve_response_mask_path(
+    mask_path: str,
+    artifacts: Mapping[str, Any],
+    artifact_paths: DrawAiArtifactPaths,
+) -> Path | None:
+    raw = Path(mask_path).expanduser()
+    candidates: list[Path] = []
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        for key in ("mask_dir", "masks_dir"):
+            value = artifacts.get(key)
+            if isinstance(value, str) and value.strip():
+                mask_dir = Path(value).expanduser()
+                candidates.append(mask_dir / raw.name)
+                candidates.append(mask_dir.parent / raw)
+        regions_json = artifacts.get("regions_json")
+        if isinstance(regions_json, str) and regions_json.strip():
+            candidates.append(Path(regions_json).expanduser().parent / raw)
+        candidates.append(artifact_paths.root / raw)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _localized_mask_name(prompt_id: str, index: int, source_name: str) -> str:
+    source_suffix = Path(source_name).suffix.lower() or ".png"
+    source_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(source_name).stem).strip("._-") or "mask"
+    return f"{_safe_prompt_id(prompt_id)}_{index:03d}_{source_stem}{source_suffix}"
 
 
 def _safe_prompt_id(prompt_id: str) -> str:

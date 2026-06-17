@@ -205,23 +205,32 @@ class LocalSam3Transport:
                     continue
                 region_id = f"{spec['id']}_{len(raw_regions) + 1:03d}"
                 mask_path = None
+                geometry = None
                 if return_masks and masks is not None:
                     mask_name = f"{region_id}.png"
                     _save_mask_png(masks[local_index], mask_dir / mask_name)
                     mask_path = f"masks/{mask_name}"
-                raw_regions.append(
-                    {
-                        "id": region_id,
-                        "label": f"<SAM>{len(raw_regions) + 1:03d}",
-                        "prompt_id": spec["id"],
-                        "prompt": spec["text"],
-                        "level": spec["level"],
-                        "score": float(score),
-                        "bbox": [x1, y1, x2, y2],
-                        "area_ratio": ((x2 - x1) * (y2 - y1)) / float(width * height),
+                    geometry = {
+                        "kind": "mask",
                         "mask_path": mask_path,
+                        "bbox": [x1, y1, x2, y2],
+                        "coordinate_system": "figure_image_pixels",
                     }
-                )
+                region = {
+                    "id": region_id,
+                    "label": f"<SAM>{len(raw_regions) + 1:03d}",
+                    "prompt_id": spec["id"],
+                    "prompt": spec["text"],
+                    "level": spec["level"],
+                    "score": float(score),
+                    "bbox": [x1, y1, x2, y2],
+                    "area_ratio": ((x2 - x1) * (y2 - y1)) / float(width * height),
+                }
+                if mask_path:
+                    region["mask_path"] = mask_path
+                if geometry:
+                    region["geometry"] = geometry
+                raw_regions.append(region)
 
         box_regions = [
             {
@@ -251,6 +260,8 @@ class LocalSam3Transport:
         ]
 
         artifacts: dict[str, Any] = {"regions_json": str(output_dir / "regions.json")}
+        if return_masks:
+            artifacts["mask_dir"] = str(mask_dir)
         if bool(payload.get("return_overlay", True)):
             overlay_path = output_dir / "overlay.png"
             _draw_sam_overlay(image, regions, overlay_path)

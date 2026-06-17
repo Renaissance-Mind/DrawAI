@@ -182,6 +182,7 @@ def _merge_cluster(
     if canonical_prompts:
         merged["source_prompt"] = _singular_source_prompt(merged["type"], canonical_prompts)
         merged["source_prompts"] = canonical_prompts
+    _copy_geometry_when_safe(merged, selected, boxes, bbox)
     return merged
 
 
@@ -249,7 +250,46 @@ def _preserved_visual_asset_child(
         prompt = _canonical_source_prompt(selected["source_prompt"])
         preserved["source_prompt"] = prompt
         preserved["source_prompts"] = [prompt]
+    if isinstance(selected.get("geometry"), Mapping):
+        preserved["geometry"] = deepcopy(selected["geometry"])
+    if isinstance(selected.get("mask_path"), str) and selected["mask_path"]:
+        preserved["mask_path"] = selected["mask_path"]
     return preserved
+
+
+def _copy_geometry_when_safe(
+    merged: dict[str, Any],
+    selected: Mapping[str, Any],
+    boxes: list[Mapping[str, Any]],
+    merged_bbox: list[float],
+) -> None:
+    geometry = selected.get("geometry")
+    if not isinstance(geometry, Mapping):
+        return
+    if len(boxes) == 1 or _same_bbox(selected.get("bbox"), merged_bbox):
+        merged["geometry"] = deepcopy(geometry)
+        if isinstance(selected.get("mask_path"), str) and selected["mask_path"]:
+            merged["mask_path"] = selected["mask_path"]
+        return
+    source_geometries = []
+    for box in boxes:
+        if isinstance(box.get("geometry"), Mapping):
+            source_geometries.append(
+                {
+                    "source_box_id": box.get("id", ""),
+                    "geometry": deepcopy(box["geometry"]),
+                }
+            )
+    if source_geometries:
+        merged["source_geometries"] = source_geometries
+
+
+def _same_bbox(first: Any, second: Any, *, tolerance: float = 1e-6) -> bool:
+    if not isinstance(first, (list, tuple)) or not isinstance(second, (list, tuple)):
+        return False
+    if len(first) != 4 or len(second) != 4:
+        return False
+    return all(abs(float(left) - float(right)) <= tolerance for left, right in zip(first, second, strict=True))
 
 
 def _cluster_has_external_child(indexes: list[int], all_source_boxes: list[dict[str, Any]]) -> bool:

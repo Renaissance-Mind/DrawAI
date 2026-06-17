@@ -120,6 +120,65 @@ sam3:
     assert prompt_payload["elapsed_ms"] == 12.3
 
 
+def test_run_sam3_prompt_plan_localizes_mask_artifacts(tmp_path: Path):
+    image = tmp_path / "input.png"
+    Image.new("RGB", (32, 16), "white").save(image)
+    runtime_dir = tmp_path / "runtime" / "sam3_job"
+    mask_dir = runtime_dir / "masks"
+    mask_dir.mkdir(parents=True)
+    Image.new("L", (32, 16), 255).save(mask_dir / "icon.png")
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"""
+input:
+  image: {image.name}
+  output_dir: out
+sam3:
+  prompts:
+    - id: icon
+      text: icon
+      confidence_threshold: 0.3
+""",
+        encoding="utf-8",
+    )
+
+    class MaskTransport:
+        def post_json(self, path, payload, timeout_s):
+            assert payload["return_masks"] is True
+            return {
+                "regions": [{"bbox": [4, 3, 20, 12], "score": 0.9, "label": "icon"}],
+                "raw_regions": [
+                    {
+                        "bbox": [4, 3, 20, 12],
+                        "score": 0.9,
+                        "mask_path": "masks/icon.png",
+                        "geometry": {
+                            "kind": "mask",
+                            "mask_path": "masks/icon.png",
+                            "bbox": [4, 3, 20, 12],
+                        },
+                    }
+                ],
+                "artifacts": {
+                    "regions_json": str(runtime_dir / "regions.json"),
+                    "mask_dir": str(mask_dir),
+                },
+            }, 5.0
+
+    cfg = load_drawai_config(config)
+    paths = prepare_artifact_paths(cfg.input.output_dir)
+    result = run_sam3_prompt_plan(cfg.sam3, image, paths, transport=MaskTransport())
+
+    mask_files = sorted(paths.sam_masks_dir.glob("*.png"))
+    assert len(mask_files) == 1
+    region = result.raw_regions[0]
+    assert region["mask_path"] == mask_files[0].relative_to(paths.root).as_posix()
+    assert region["geometry"]["kind"] == "mask"
+    assert region["geometry"]["mask_path"] == region["mask_path"]
+    raw_regions_payload = json.loads(paths.raw_regions_json.read_text(encoding="utf-8"))
+    assert raw_regions_payload["raw_regions"][0]["geometry"]["mask_path"] == region["mask_path"]
+
+
 def test_run_sam3_prompt_plan_normalizes_missing_optional_response_fields(tmp_path: Path):
     class MissingOptionalFieldsTransport:
         def post_json(self, path, payload, timeout_s):

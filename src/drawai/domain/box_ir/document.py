@@ -7,6 +7,8 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from ...asset_geometry import geometry_bbox, normalize_asset_geometry, normalize_geometry_from_region
+
 BOX_IR_SCHEMA = "drawai.box_ir.v1"
 BOX_IR_VERSION = 1
 BOX_IR_COORDINATE_SYSTEM = "figure_image_pixels"
@@ -171,6 +173,13 @@ def _normalize_raw_region(
         return None
 
     bbox = _extract_bbox(raw_region)
+    geometry = normalize_geometry_from_region(
+        raw_region,
+        fallback_bbox=bbox,
+        image_size=(canvas_width, canvas_height),
+    )
+    if bbox is None:
+        bbox = geometry_bbox(geometry)
     if bbox is None:
         return None
     clamped = _clamp_bbox(bbox, canvas_width, canvas_height)
@@ -185,6 +194,10 @@ def _normalize_raw_region(
         "child_ids": [],
         "source_region_index": index,
     }
+    if geometry is not None:
+        box["geometry"] = geometry
+        if geometry.get("kind") == "mask" and isinstance(geometry.get("mask_path"), str):
+            box["mask_path"] = geometry["mask_path"]
     if "score" in raw_region and _is_finite_number(raw_region["score"]):
         box["score"] = float(raw_region["score"])
     if "source_prompt" in raw_region:
@@ -368,6 +381,10 @@ def _validate_box_records(
             issues.append(f"{prefix}.bbox must contain four finite numbers")
         else:
             _validate_bbox_bounds(prefix, bbox, canvas_size, issues)
+        if "geometry" in record:
+            geometry = normalize_asset_geometry(record.get("geometry"), fallback_bbox=bbox, image_size=canvas_size)
+            if geometry is None:
+                issues.append(f"{prefix}.geometry must be a bbox, polygon, or mask geometry")
     return seen_ids
 
 

@@ -10,7 +10,7 @@ sam3:
   base_url: http://127.0.0.1:18080
   timeout_seconds: 60
   return_overlay: true
-  return_masks: false
+  return_masks: true
   service_merge_threshold: 0.0
   prompts:
     - id: arrow

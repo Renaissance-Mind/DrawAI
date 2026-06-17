@@ -164,6 +164,43 @@ def test_invalid_and_zero_area_boxes_are_excluded_from_raw_box_ir():
     ]
 
 
+def test_build_raw_box_ir_preserves_mask_and_polygon_geometry():
+    raw = build_raw_box_ir(
+        canvas=(120, 100),
+        source_image="inputs/figure.png",
+        normalized_long_edge=3840,
+        prompt_runs=[],
+        raw_regions=[
+            {
+                "source_prompt": "picture",
+                "geometry": {
+                    "kind": "polygon",
+                    "points": [[10, 12], [42, 14], [38, 40], [12, 36]],
+                },
+                "score": 0.9,
+            },
+            {
+                "source_prompt": "icon",
+                "bbox": [70, 20, 96, 54],
+                "mask_path": "sam3/masks/icon.png",
+                "score": 0.8,
+            },
+        ],
+    )
+
+    assert validate_box_ir(raw) == []
+    picture, icon = raw["boxes"]
+    assert picture["bbox"] == [10.0, 12.0, 42.0, 40.0]
+    assert picture["geometry"]["kind"] == "polygon"
+    assert picture["geometry"]["points"] == [[10.0, 12.0], [42.0, 14.0], [38.0, 40.0], [12.0, 36.0]]
+    assert icon["geometry"] == {
+        "kind": "mask",
+        "mask_path": "sam3/masks/icon.png",
+        "bbox": [70.0, 20.0, 96.0, 54.0],
+        "coordinate_system": "figure_image_pixels",
+    }
+
+
 def test_box_ids_are_assigned_in_top_left_reading_order():
     raw = build_raw_box_ir(
         canvas=(200, 200),

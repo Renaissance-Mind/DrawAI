@@ -23,6 +23,7 @@ import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudi
 import type {
   ArtifactRecord,
   AssetElement,
+  AssetGeometry,
   AssetPlan,
   BatchDetail,
   BatchRecord,
@@ -50,8 +51,8 @@ type TaskContextMenuState = { caseId: string; caseName: string; x: number; y: nu
 type BatchContextMenuState = { batchId: string; batchName: string; caseCount: number; running: boolean; x: number; y: number };
 type TaskDialogTarget = { batchId: string; name: string };
 type DragState =
-  | { kind: "move"; id: string; startX: number; startY: number; bbox: [number, number, number, number] }
-  | { kind: "resize"; id: string; handle: string; startX: number; startY: number; bbox: [number, number, number, number] }
+  | { kind: "move"; id: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
+  | { kind: "resize"; id: string; handle: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
   | { kind: "add"; startX: number; startY: number; currentX: number; currentY: number };
 type SelectedUploadFile = { file: File; relativePath: string };
 type UploadPreviewImage = { name: string; source: string; kind: "image" | "zip" };
@@ -2856,7 +2857,6 @@ function CanvasEditor({
   const [guidanceVisible, setGuidanceVisible] = useState(true);
   const [polygonPoints, setPolygonPoints] = useState<Array<[number, number]>>([]);
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
-  const polygonStore = useRef<Map<string, Array<[number, number]>>>(new Map());
 
   const selectedCandidate = assetPlan?.elements.find((item) => item.box_id === selectedAssetId) || null;
   const selected = selectedCandidate && isEditorSourceStrategy(selectedCandidate.source_strategy) ? selectedCandidate : null;
@@ -2893,7 +2893,6 @@ function CanvasEditor({
       return;
     }
     const id = nextNewId(assetPlan.elements);
-    polygonStore.current.set(id, points);
     onChange({
       ...assetPlan,
       elements: [
@@ -2903,6 +2902,12 @@ function CanvasEditor({
           source_candidate_ids: [],
           refinement_action: "added",
           bbox,
+          geometry: {
+            kind: "polygon",
+            points: points.map((point) => [point[0], point[1]]),
+            bbox,
+            coordinate_system: "figure_image_pixels"
+          },
           source_strategy: "crop",
           visual_role: "多边形区域",
           type: "未知",
@@ -2971,9 +2976,11 @@ function CanvasEditor({
       const dx = point.x - drag.startX;
       const dy = point.y - drag.startY;
       const [x1, y1, x2, y2] = drag.bbox;
-      updateElement(drag.id, { bbox: [x1 + dx, y1 + dy, x2 + dx, y2 + dy] }, { track: false });
+      const bbox = normalizeBBox([x1 + dx, y1 + dy, x2 + dx, y2 + dy]);
+      updateElement(drag.id, { bbox, geometry: transformGeometryForBBox(drag.geometry, drag.bbox, bbox) }, { track: false });
     } else if (drag.kind === "resize") {
-      updateElement(drag.id, { bbox: resizeBBox(drag.bbox, drag.handle, point.x - drag.startX, point.y - drag.startY) }, { track: false });
+      const bbox = resizeBBox(drag.bbox, drag.handle, point.x - drag.startX, point.y - drag.startY);
+      updateElement(drag.id, { bbox, geometry: transformGeometryForBBox(drag.geometry, drag.bbox, bbox) }, { track: false });
     } else {
       setDrag({ ...drag, currentX: point.x, currentY: point.y });
     }
@@ -3046,14 +3053,14 @@ function CanvasEditor({
                   const point = pointFromEvent(event);
                   onSelect(element.box_id);
                   onBeginEdit();
-                  setDrag({ kind: "move", id: element.box_id, startX: point.x, startY: point.y, bbox: [...element.bbox] });
+                  setDrag({ kind: "move", id: element.box_id, startX: point.x, startY: point.y, bbox: [...element.bbox], geometry: cloneAssetGeometry(element.geometry) });
                 }}
                 onResizeStart={(event, handle) => {
                   event.stopPropagation();
                   const point = pointFromEvent(event);
                   onSelect(element.box_id);
                   onBeginEdit();
-                  setDrag({ kind: "resize", id: element.box_id, handle, startX: point.x, startY: point.y, bbox: [...element.bbox] });
+                  setDrag({ kind: "resize", id: element.box_id, handle, startX: point.x, startY: point.y, bbox: [...element.bbox], geometry: cloneAssetGeometry(element.geometry) });
                 }}
                 onDelete={() => {
                   onSelect(element.box_id);
@@ -3071,7 +3078,7 @@ function CanvasEditor({
               aria-hidden="true"
             >
               {visibleElements.map(({ element }) => {
-                const points = polygonStore.current.get(element.box_id);
+                const points = element.geometry?.kind === "polygon" ? element.geometry.points : null;
                 if (!points || points.length < 3) return null;
                 return <polygon key={element.box_id} className="polygon-region" points={points.map((p) => p.join(",")).join(" ")} />;
               })}
@@ -4317,11 +4324,53 @@ function cloneAssetPlan(plan: AssetPlan): AssetPlan {
     elements: plan.elements.map((element) => ({
       ...element,
       bbox: [...element.bbox],
+      geometry: cloneAssetGeometry(element.geometry),
       source_candidate_ids: [...element.source_candidate_ids],
       evidence: [...element.evidence]
     })),
     categories: plan.categories ? { ...plan.categories } : undefined
   };
+}
+
+function cloneAssetGeometry(geometry: AssetGeometry | undefined): AssetGeometry | undefined {
+  if (!geometry) return undefined;
+  if (geometry.kind === "polygon") {
+    return {
+      ...geometry,
+      bbox: geometry.bbox ? [...geometry.bbox] : undefined,
+      points: geometry.points.map((point) => [point[0], point[1]])
+    };
+  }
+  if (geometry.kind === "mask") {
+    return { ...geometry, bbox: [...geometry.bbox] };
+  }
+  return { ...geometry, bbox: [...geometry.bbox] };
+}
+
+function transformGeometryForBBox(
+  geometry: AssetGeometry | undefined,
+  fromBBox: [number, number, number, number],
+  toBBox: [number, number, number, number]
+): AssetGeometry | undefined {
+  if (!geometry) return undefined;
+  if (geometry.kind === "polygon") {
+    const fromWidth = Math.max(1e-6, fromBBox[2] - fromBBox[0]);
+    const fromHeight = Math.max(1e-6, fromBBox[3] - fromBBox[1]);
+    const toWidth = toBBox[2] - toBBox[0];
+    const toHeight = toBBox[3] - toBBox[1];
+    return {
+      ...geometry,
+      bbox: [...toBBox],
+      points: geometry.points.map((point) => [
+        toBBox[0] + ((point[0] - fromBBox[0]) / fromWidth) * toWidth,
+        toBBox[1] + ((point[1] - fromBBox[1]) / fromHeight) * toHeight
+      ])
+    };
+  }
+  if (geometry.kind === "mask") {
+    return { ...geometry, bbox: [...toBBox] };
+  }
+  return { ...geometry, bbox: [...toBBox] };
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
