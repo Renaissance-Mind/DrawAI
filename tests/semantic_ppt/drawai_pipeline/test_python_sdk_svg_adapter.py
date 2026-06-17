@@ -44,6 +44,60 @@ def test_controlled_codex_config_overrides_disable_agent_surfaces():
     assert 'shell_environment_policy.exclude=["CODEX_HOME","DRAWAI_HOST_HOME","DRAWAI_HOST_CODEX_HOME"]' in overrides
 
 
+def test_controlled_codex_config_overrides_can_inherit_host_model_provider(monkeypatch, tmp_path):
+    host_codex_home = tmp_path / "host_codex"
+    host_codex_home.mkdir()
+    (host_codex_home / "config.toml").write_text(
+        """
+model_provider = "custom"
+model = "gpt-5.5"
+
+[model_providers.custom]
+name = "custom"
+wire_api = "responses"
+requires_openai_auth = true
+base_url = "http://127.0.0.1:15721/v1"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DRAWAI_HOST_CODEX_HOME", str(host_codex_home))
+    monkeypatch.setenv("DRAWAI_CODEX_INHERIT_HOST_CONFIG", "1")
+
+    overrides = controlled_codex_config_overrides()
+
+    assert 'model_provider="custom"' in overrides
+    assert 'model="gpt-5.5"' in overrides
+    assert 'model_providers.custom.name="custom"' in overrides
+    assert 'model_providers.custom.wire_api="responses"' in overrides
+    assert "model_providers.custom.requires_openai_auth=true" in overrides
+    assert 'model_providers.custom.base_url="http://127.0.0.1:15721/v1"' in overrides
+
+
+def test_controlled_codex_config_overrides_allows_model_env_override(monkeypatch, tmp_path):
+    host_codex_home = tmp_path / "host_codex"
+    host_codex_home.mkdir()
+    (host_codex_home / "config.toml").write_text(
+        """
+model_provider = "custom"
+model = "gpt-5.4"
+
+[model_providers.custom]
+name = "custom"
+wire_api = "responses"
+base_url = "http://127.0.0.1:15721/v1"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DRAWAI_HOST_CODEX_HOME", str(host_codex_home))
+    monkeypatch.setenv("DRAWAI_CODEX_INHERIT_HOST_CONFIG", "1")
+    monkeypatch.setenv("DRAWAI_CODEX_MODEL", "gpt-5.5")
+
+    overrides = controlled_codex_config_overrides()
+
+    assert 'model="gpt-5.5"' in overrides
+    assert 'model="gpt-5.4"' not in overrides
+
+
 def test_isolated_codex_home_copies_auth_without_global_agents(monkeypatch, tmp_path):
     host_codex_home = tmp_path / "host_codex"
     host_codex_home.mkdir()

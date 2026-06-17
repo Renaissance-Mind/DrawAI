@@ -314,6 +314,8 @@ uv run drawai \
 | `DRAWAI_WORKBENCH_FRONTEND_PORT` | 前端端口 |
 | `DRAWAI_WORKBENCH_API_PORT` | Workbench API 端口 |
 | `DRAWAI_WORKBENCH_WORKSPACE` | Workbench 数据目录 |
+| `DRAWAI_CODEX_INHERIT_HOST_CONFIG` | 设为 `1` 时，受控 Codex 子进程继承 host Codex `config.toml` 里的模型 provider/base_url/model 配置 |
+| `DRAWAI_CODEX_MODEL` | 覆盖继承到受控 Codex 子进程的模型名，例如 CCswitch 中可用的 `gpt-5.5` |
 | `OPENAI_API_KEY` | Codex/OpenAI 认证方式之一 |
 | `HF_TOKEN` | Hugging Face 下载 gated repo 时使用 |
 
@@ -371,7 +373,7 @@ uv run drawai run examples/demo_figure.png --local --dry-run
 - 局域网访问失败：服务端用 `--host 0.0.0.0`，客户端用服务器真实 IP，不要用 `127.0.0.1` 或 `0.0.0.0`。
 - 模型服务连不上：先在服务所在机器运行 `curl http://127.0.0.1:18080/health`，再从客户端机器访问 `curl http://<server-ip>:18080/health`。
 - GPU 没生效：确认 setup 时用了 `--device gpu`，并检查 `nvidia-smi` 和 `uv run drawai doctor local`。
-- Codex 认证失败：设置 `OPENAI_API_KEY`，或先完成 Codex 登录，再运行 `uv run drawai doctor local`。
+- Codex 认证失败：设置 `OPENAI_API_KEY`，或先完成 Codex 登录，再运行 `uv run drawai doctor local`。如果 Codex 通过 CCswitch 等本地 provider 代理运行，可设置 `DRAWAI_CODEX_INHERIT_HOST_CONFIG=1` 让 DrawAI 的受控 Codex 子进程继承 host Codex provider 配置；如果继承到的模型不可用，再用 `DRAWAI_CODEX_MODEL` 指定可用模型。
 
 ## 协议提醒
 

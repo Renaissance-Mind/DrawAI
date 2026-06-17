@@ -559,20 +559,9 @@ def image_cli_args(image_paths: Sequence[Path]) -> list[str]:
 
 
 def cli_config_args(reasoning_effort: str, extra_overrides: Sequence[str]) -> list[str]:
-    overrides = [
-        'web_search="disabled"',
-        "features.shell_tool=true",
-        "features.multi_agent=false",
-        "features.memories=false",
-        "features.hooks=false",
-        "features.apps=false",
-        "project_doc_max_bytes=0",
-        "project_doc_fallback_filenames=[]",
-        'cli_auth_credentials_store="file"',
-        f'model_reasoning_effort="{reasoning_effort}"',
-        'sandbox_mode="danger-full-access"',
-        *[str(item) for item in extra_overrides],
-    ]
+    overrides = controlled_codex_config_overrides(
+        [f'model_reasoning_effort="{reasoning_effort}"', *[str(item) for item in extra_overrides]]
+    )
     args: list[str] = []
     for override in overrides:
         args.extend(["-c", override])

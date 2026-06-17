@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -75,7 +76,65 @@ def controlled_codex_config_overrides(
         'shell_environment_policy.exclude=["CODEX_HOME","DRAWAI_HOST_HOME","DRAWAI_HOST_CODEX_HOME"]',
         'sandbox_mode="danger-full-access"',
     )
-    return (*overrides, *(str(item) for item in (extra_overrides or ())))
+    return (
+        *overrides,
+        *_host_codex_model_provider_overrides_from_env(),
+        *(str(item) for item in (extra_overrides or ())),
+    )
+
+
+def _host_codex_model_provider_overrides_from_env() -> tuple[str, ...]:
+    if not _env_truthy(os.environ.get("DRAWAI_CODEX_INHERIT_HOST_CONFIG")):
+        return ()
+    return host_codex_model_provider_overrides(_host_codex_home() / "config.toml")
+
+
+def host_codex_model_provider_overrides(config_path: str | Path) -> tuple[str, ...]:
+    """Return safe model/provider -c overrides from a host Codex config."""
+
+    path = Path(config_path).expanduser().resolve(strict=False)
+    try:
+        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ()
+    if not isinstance(payload, Mapping):
+        return ()
+
+    provider_name = str(payload.get("model_provider") or "").strip()
+    providers = payload.get("model_providers")
+    if not provider_name or not isinstance(providers, Mapping):
+        return ()
+    provider = providers.get(provider_name)
+    if not isinstance(provider, Mapping):
+        return ()
+
+    overrides: list[str] = [f"model_provider={_toml_string(provider_name)}"]
+    model_name = str(os.environ.get("DRAWAI_CODEX_MODEL") or payload.get("model") or "").strip()
+    if model_name:
+        overrides.append(f"model={_toml_string(model_name)}")
+
+    provider_key = _toml_dotted_key(provider_name)
+    prefix = f"model_providers.{provider_key}"
+    for key in ("name", "wire_api", "base_url", "env_key"):
+        value = provider.get(key)
+        if isinstance(value, str) and value.strip():
+            overrides.append(f"{prefix}.{key}={_toml_string(value.strip())}")
+    requires_auth = provider.get("requires_openai_auth")
+    if isinstance(requires_auth, bool):
+        overrides.append(f"{prefix}.requires_openai_auth={str(requires_auth).lower()}")
+    return tuple(overrides)
+
+
+def _env_truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _toml_dotted_key(value: str) -> str:
+    return value if re.fullmatch(r"[A-Za-z0-9_-]+", value) else _toml_string(value)
+
+
+def _toml_string(value: str) -> str:
+    return json.dumps(str(value))
 
 
 def parse_svg_from_final_response(final_response: Any) -> tuple[str, dict[str, str]]:
