@@ -1,5 +1,6 @@
 """DrawAI v2 package contracts."""
 
+from .fusion import FusionConfig, FusionResult, fuse_candidates
 from .packages import (
     RunClassification,
     classify_run_root,
@@ -9,6 +10,7 @@ from .packages import (
     write_element_plan,
     write_run_package,
 )
+from .parsers import ocr_payload_to_candidates, sam3_payload_to_candidates
 from .registry import DrawAiRegistry, default_registry
 from .schema import (
     ASSET_PACKAGE_SCHEMA,
@@ -35,6 +37,8 @@ __all__ = [
     "ASSET_PACKAGE_SCHEMA",
     "ELEMENT_CANDIDATE_SCHEMA",
     "ELEMENT_PLAN_SCHEMA",
+    "FusionConfig",
+    "FusionResult",
     "RUN_PACKAGE_SCHEMA",
     "AssetPackage",
     "AssetStatus",
@@ -48,7 +52,10 @@ __all__ = [
     "classify_run_root",
     "default_registry",
     "element_dir",
+    "fuse_candidates",
+    "ocr_payload_to_candidates",
     "read_run_package",
+    "sam3_payload_to_candidates",
     "utc_now",
     "validate_asset_package",
     "validate_bbox",
