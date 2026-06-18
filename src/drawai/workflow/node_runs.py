@@ -97,6 +97,7 @@ def write_input_manifest(
 def finish_node_run_ok(
     record: NodeRunRecord,
     *,
+    inputs: Sequence[Mapping[str, Any]] = (),
     outputs: Sequence[Mapping[str, Any]] = (),
     prompt_path: str = "",
     stdout_path: str = "",
@@ -106,6 +107,7 @@ def finish_node_run_ok(
     _write_node_run_payload(
         record,
         status="ok",
+        inputs=inputs,
         outputs=outputs,
         prompt_path=prompt_path,
         stdout_path=stdout_path,
@@ -120,6 +122,7 @@ def finish_node_run_failed(
     record: NodeRunRecord,
     *,
     error: str,
+    inputs: Sequence[Mapping[str, Any]] = (),
     exit_code: int | None = None,
     prompt_path: str = "",
     stdout_path: str = "",
@@ -128,10 +131,27 @@ def finish_node_run_failed(
     _write_node_run_payload(
         record,
         status="failed",
+        inputs=inputs,
         prompt_path=prompt_path,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         exit_code=exit_code,
+        error=error,
+        ended_at=_utc_now(),
+        duration_ms=_duration_ms(record),
+    )
+
+
+def finish_node_run_blocked(
+    record: NodeRunRecord,
+    *,
+    error: str,
+    inputs: Sequence[Mapping[str, Any]] = (),
+) -> None:
+    _write_node_run_payload(
+        record,
+        status="blocked",
+        inputs=inputs,
         error=error,
         ended_at=_utc_now(),
         duration_ms=_duration_ms(record),
