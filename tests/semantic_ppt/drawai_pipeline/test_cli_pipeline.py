@@ -556,6 +556,207 @@ def test_cli_dry_run_config_prints_default_summary():
     assert payload["model_runtime"]["timeout_seconds"] == 600
 
 
+def _write_minimal_cli_config(tmp_path: Path) -> Path:
+    image = tmp_path / "input.png"
+    Image.new("RGB", (64, 32), "white").save(image)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"""
+input:
+  image: {image.name}
+  output_dir: out
+  normalization:
+    enabled: false
+sam3:
+  prompts:
+    - id: icon
+      text: icon
+      confidence_threshold: 0.3
+ocr:
+  provider: fixture
+  fixture:
+    path: ocr_fixture.json
+asset_materialization:
+  rmbg:
+    enabled: false
+v2:
+  refine:
+    enabled: false
+svg_to_ppt:
+  enabled: true
+  export_pptx: false
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "ocr_fixture.json").write_text(
+        '{"ocr_text_boxes":[{"id":"T001","bbox":[4,5,20,14],"text":"Hello","confidence":0.9}]}',
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_cli_accepts_v2_public_stage(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+
+    code = main(["run", "parse_elements", "--config", str(config)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "pipeline_summary:" in captured.out or "drawai.run_package.v1" in captured.out
+
+
+def test_cli_asset_process_requires_v2_run(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    legacy = tmp_path / "legacy"
+    (legacy / "svg").mkdir(parents=True)
+    (legacy / "svg" / "semantic.svg").write_text("<svg />\n", encoding="utf-8")
+
+    code = main(["asset", "process", str(legacy), "E001", "--processor", "crop"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "legacy_readonly" in captured.err
+
+
+def test_cli_asset_process_rejects_unsafe_element_id(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+
+    code = main(["asset", "process", str(root), "../E001", "--processor", "crop"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "safe single path segment" in captured.err
+
+
+def test_cli_asset_process_updates_v2_package(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+
+    code = main(["asset", "process", str(root), "E001", "--processor", "crop"])
+
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    payload = json.loads((root / "elements" / "E001" / "asset_package.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "ok"
+    assert payload["processor_type"] == "crop"
+    result_path = root / payload["active_result"]["path"]
+    assert result_path.is_file()
+    run_package = json.loads((root / "drawai_package.json").read_text(encoding="utf-8"))
+    assert run_package["asset_packages"][0]["status"] == "ok"
+
+
+def test_cli_asset_process_syncs_failed_asset_package(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+
+    code = main(["asset", "process", str(root), "E001", "--processor", "crop_nobg"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "rmbg_client is required" in captured.err
+    payload = json.loads((root / "elements" / "E001" / "asset_package.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["processor_type"] == "crop_nobg"
+    run_package = json.loads((root / "drawai_package.json").read_text(encoding="utf-8"))
+    assert run_package["asset_packages"][0]["status"] == "failed"
+    assert run_package["asset_packages"][0]["processor_type"] == "crop_nobg"
+
+
+def test_cli_asset_process_rejects_mismatched_element_plan(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+    plan_path = root / "elements" / "E001" / "element.json"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan_payload["element_id"] = "E999"
+    plan_path.write_text(json.dumps(plan_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    code = main(["asset", "process", str(root), "E001", "--processor", "crop"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "does not match requested element_id" in captured.err
+    assert not (root / "elements" / "E999" / "asset_package.json").exists()
+
+
+def test_cli_asset_activate_updates_active_result(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+    assert main(["asset", "process", str(root), "E001", "--processor", "crop"]) == 0
+
+    package_path = root / "elements" / "E001" / "asset_package.json"
+    payload = json.loads(package_path.read_text(encoding="utf-8"))
+    alternate = dict(payload["active_result"])
+    alternate["result_id"] = "manual_result"
+    payload["all_results"].append(alternate)
+    package_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    code = main(["asset", "activate", str(root), "E001", "manual_result"])
+
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    updated = json.loads(package_path.read_text(encoding="utf-8"))
+    assert updated["active_result"]["result_id"] == "manual_result"
+    run_package = json.loads((root / "drawai_package.json").read_text(encoding="utf-8"))
+    assert run_package["asset_packages"][0]["active_result"]["result_id"] == "manual_result"
+
+
+def test_cli_export_existing_v2_run_updates_package(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+
+    code = main(["export", str(root)])
+
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert "pipeline_summary:" in captured.out
+    report = json.loads((root / "reports" / "svg_to_ppt_export_report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "ok"
+    package = json.loads((root / "drawai_package.json").read_text(encoding="utf-8"))
+    assert package["metadata"]["last_stage"] == "export"
+    assert package["export_outputs"]["report"] == "reports/svg_to_ppt_export_report.json"
+
+
+def test_cli_export_requires_available_config(tmp_path: Path, capsys) -> None:
+    from drawai.cli import main
+
+    config = _write_minimal_cli_config(tmp_path)
+    assert main(["run", "plan_assets", "--config", str(config)]) == 0
+    root = tmp_path / "out"
+    package_path = root / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["metadata"]["config_path"] = str(tmp_path / "missing-config.yaml")
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    code = main(["export", str(root)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "pass --config" in captured.err
+    assert "missing-config.yaml" in captured.err
+
+
 def test_cli_setup_local_dry_run_prints_single_setup_flow(tmp_path: Path, capsys):
     from drawai.cli import main
 

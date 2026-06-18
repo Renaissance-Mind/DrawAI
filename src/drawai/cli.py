@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .artifacts import write_json
 from .config import DrawAiPipelineConfig, load_drawai_config
 
 
@@ -22,6 +23,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return doctor_cli(args_list[1:])
     if args_list and args_list[0] == "run":
         return _run_cli(args_list[1:])
+    if args_list and args_list[0] == "asset":
+        return _asset_cli(args_list[1:])
+    if args_list and args_list[0] == "compose":
+        return _run_root_stage_cli(args_list[1:], stage="compose_svg")
+    if args_list and args_list[0] == "export":
+        return _run_root_stage_cli(args_list[1:], stage="export")
     if args_list and args_list[0] == "server":
         from .server_cli import server_cli
 
@@ -120,6 +127,205 @@ def _run_public_stage_cli(argv: Sequence[str]) -> int:
     except Exception as exc:  # noqa: BLE001 - CLI boundary.
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
+
+
+def _asset_cli(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(description="Manage DrawAI v2 asset packages.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    process = subparsers.add_parser("process", help="Process a single v2 element asset.")
+    process.add_argument("run_dir", help="Path to a v2 run directory.")
+    process.add_argument("element_id", help="Element id to process.")
+    process.add_argument("--processor", required=True, help="Processor type to run.")
+
+    activate = subparsers.add_parser("activate", help="Activate an existing asset result.")
+    activate.add_argument("run_dir", help="Path to a v2 run directory.")
+    activate.add_argument("element_id", help="Element id to update.")
+    activate.add_argument("result_id", help="Result id to activate.")
+
+    args = parser.parse_args(argv)
+    root = Path(args.run_dir)
+    if not _ensure_v2_root(root):
+        return 2
+
+    try:
+        if args.command == "process":
+            package = _process_single_asset(root, args.element_id, args.processor)
+            print(json.dumps(package, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "activate":
+            package = _activate_asset_result(root, args.element_id, args.result_id)
+            print(json.dumps(package, ensure_ascii=False, indent=2))
+            return 0
+    except Exception as exc:  # noqa: BLE001 - CLI boundary.
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+    raise AssertionError(f"Unsupported asset command: {args.command}")
+
+
+def _run_root_stage_cli(argv: Sequence[str], *, stage: str) -> int:
+    parser = argparse.ArgumentParser(description=f"Run DrawAI v2 {stage} for an existing run directory.")
+    parser.add_argument("run_dir", help="Path to a v2 run directory.")
+    parser.add_argument("--config", help="Optional DrawAI YAML config. Defaults to package metadata config_path.")
+    args = parser.parse_args(argv)
+    root = Path(args.run_dir)
+    if not _ensure_v2_root(root):
+        return 2
+    try:
+        from .pipeline import run_drawai_pipeline_from_stage
+
+        cfg = _config_for_run_root(root, config_path=Path(args.config) if args.config else None)
+        summary = run_drawai_pipeline_from_stage(cfg, stage, to_stage=stage)
+        summary_path = summary.get("artifacts", {}).get("pipeline_summary")
+        if summary_path:
+            print(f"pipeline_summary: {summary_path}")
+        else:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0 if summary.get("status") == "ok" else 1
+    except Exception as exc:  # noqa: BLE001 - CLI boundary.
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+
+def _ensure_v2_root(root: Path) -> bool:
+    from .v2.packages import classify_run_root
+
+    classification = classify_run_root(root)
+    if classification.mode == "v2":
+        return True
+    print(
+        f"DrawAI run root is {classification.mode}; v2 asset commands require a v2 run.",
+        file=sys.stderr,
+    )
+    return False
+
+
+def _process_single_asset(root: Path, element_id: str, processor_type: str) -> dict[str, Any]:
+    from .v2.packages import element_dir
+    from .v2.processors import processor_for_type
+    from .v2.schema import ProcessingIntent
+    from .v2.stages import _plan_from_payload
+
+    root = root.expanduser().resolve()
+    element_path = element_dir(root, element_id)
+    plan_payload = _read_json(element_path / "element.json")
+    plan = _plan_from_payload(plan_payload)
+    if plan.element_id != element_id:
+        raise ValueError(
+            f"element plan id {plan.element_id!r} does not match requested element_id {element_id!r}"
+        )
+    plan = replace(
+        plan,
+        processing_intent=ProcessingIntent(
+            object_type=plan.processing_intent.object_type,
+            processing_type=processor_type,
+            parameters=dict(plan.processing_intent.parameters),
+        ),
+    )
+    processor = processor_for_type(processor_type, providers={})
+    try:
+        package = processor.process(root, plan, source_image_path=_source_image_for_run(root))
+    except Exception:
+        failed_package_path = element_path / "asset_package.json"
+        if failed_package_path.is_file():
+            _sync_asset_package_into_run_package(root, _read_json(failed_package_path))
+        raise
+    payload = package.to_dict()
+    _sync_asset_package_into_run_package(root, payload)
+    return payload
+
+
+def _activate_asset_result(root: Path, element_id: str, result_id: str) -> dict[str, Any]:
+    from .v2.packages import read_asset_package
+
+    root = root.expanduser().resolve()
+    payload = read_asset_package(root, element_id)
+    results = payload.get("all_results")
+    if not isinstance(results, list):
+        raise ValueError("asset package all_results must be a list")
+    active_result = next(
+        (result for result in results if isinstance(result, Mapping) and result.get("result_id") == result_id),
+        None,
+    )
+    if active_result is None:
+        raise ValueError(f"asset result not found: {result_id}")
+    payload["active_result"] = dict(active_result)
+    payload["status"] = str(active_result.get("status") or payload.get("status") or "ok")
+    if payload["status"] == "ok":
+        payload["failure"] = None
+    write_json(root / "elements" / element_id / "asset_package.json", payload)
+    _sync_asset_package_into_run_package(root, payload)
+    return payload
+
+
+def _sync_asset_package_into_run_package(root: Path, package_payload: Mapping[str, Any]) -> None:
+    run_package_path = root / "drawai_package.json"
+    run_package = _read_json(run_package_path)
+    asset_packages = run_package.get("asset_packages")
+    if not isinstance(asset_packages, list):
+        asset_packages = []
+    updated: list[Any] = []
+    replaced_existing = False
+    package_element_id = package_payload.get("element_id")
+    package_asset_id = package_payload.get("asset_id")
+    for item in asset_packages:
+        if (
+            isinstance(item, Mapping)
+            and (item.get("element_id") == package_element_id or item.get("asset_id") == package_asset_id)
+        ):
+            updated.append(dict(package_payload))
+            replaced_existing = True
+        else:
+            updated.append(item)
+    if not replaced_existing:
+        updated.append(dict(package_payload))
+    run_package["asset_packages"] = updated
+    write_json(run_package_path, run_package)
+
+
+def _config_for_run_root(root: Path, *, config_path: Path | None) -> DrawAiPipelineConfig:
+    root = root.expanduser().resolve()
+    run_package = _read_json(root / "drawai_package.json")
+    metadata = run_package.get("metadata") if isinstance(run_package.get("metadata"), Mapping) else {}
+    raw_config_path = config_path
+    if raw_config_path is None:
+        metadata_config_path = metadata.get("config_path")
+        if isinstance(metadata_config_path, str) and metadata_config_path and metadata_config_path != "None":
+            raw_config_path = Path(metadata_config_path)
+    source_image = _source_image_for_run(root)
+    if raw_config_path is None:
+        raise ValueError("v2 run root does not record a config_path; pass --config for compose/export")
+    resolved_config_path = raw_config_path.expanduser().resolve()
+    if not resolved_config_path.exists():
+        raise FileNotFoundError(
+            f"v2 run config is unavailable: {resolved_config_path}; pass --config for compose/export"
+        )
+    cfg = load_drawai_config(resolved_config_path, validate_input_exists=False)
+    return replace(
+        cfg,
+        input=replace(cfg.input, image=source_image, output_dir=root),
+    )
+
+
+def _source_image_for_run(root: Path) -> Path:
+    run_package = _read_json(root / "drawai_package.json")
+    raw_source = run_package.get("source_image")
+    if isinstance(raw_source, str) and raw_source:
+        source = Path(raw_source)
+        return source if source.is_absolute() else root / source
+    fallback = root / "inputs" / "figure.png"
+    if fallback.exists():
+        return fallback
+    return root / "inputs" / "original.png"
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected JSON object: {path}")
+    return payload
 
 
 def dry_run_config_summary(cfg: DrawAiPipelineConfig) -> dict[str, Any]:
