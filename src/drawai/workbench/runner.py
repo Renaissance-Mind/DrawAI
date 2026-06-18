@@ -14,6 +14,7 @@ from typing import Any, Iterator, Literal
 
 import yaml
 
+from drawai.artifacts import DrawAiArtifactPaths, prepare_artifact_paths
 from drawai.config import load_drawai_config
 from drawai.pipeline import run_drawai_pipeline_from_stage
 from drawai.rmbg_client import RemoteRmbgClient
@@ -407,11 +408,27 @@ class WorkbenchRunner:
             return
         if stage not in {*ANALYSIS_STAGES, "process_assets", "compose_svg", "export"}:
             raise ValueError(f"unsupported stage: {stage}")
+        self._prepare_refinement_analysis_if_needed(case, stage)
         summary = run_drawai_pipeline_from_stage(case.config_path, stage, to_stage=stage)
         if summary.get("status") != "ok":
             message = _pipeline_failure_message(summary)
             failed_stage = summary.get("failed_stage") or stage
             raise RuntimeError(f"DrawAI stage {failed_stage} failed: {message or summary.get('status')}")
+
+    def _prepare_refinement_analysis_if_needed(self, case: CaseRecord, stage: str) -> None:
+        if stage != "refine_elements":
+            return
+        cfg = load_drawai_config(case.config_path, validate_input_exists=False)
+        if not cfg.v2.enabled or not cfg.v2.refine.enabled:
+            return
+        if cfg.v2.refine.provider != "codex_element_refiner":
+            return
+        paths = prepare_artifact_paths(cfg.input.output_dir)
+        if _has_external_refinement_analysis(paths):
+            return
+        from drawai import pipeline as drawai_pipeline
+
+        drawai_pipeline._run_codex_run0_asset_analysis(cfg, paths)
 
     def _materialize_approved_assets(self, case: CaseRecord) -> dict[str, Any]:
         cfg = load_drawai_config(case.config_path, validate_input_exists=False)
@@ -530,6 +547,16 @@ def _idle_wait_remaining(deadline: float | None) -> float | None:
     if deadline is None:
         return None
     return deadline - time.monotonic()
+
+
+def _has_external_refinement_analysis(paths: DrawAiArtifactPaths) -> bool:
+    if not paths.element_analysis_json.is_file():
+        return False
+    analysis = json.loads(paths.element_analysis_json.read_text(encoding="utf-8"))
+    if not isinstance(analysis, dict):
+        raise ValueError("Codex element refinement analysis must be a JSON object")
+    source = str(analysis.get("source") or "")
+    return not source.startswith("v2.")
 
 
 def _next_svg_archive_dir(root: Path) -> Path:
