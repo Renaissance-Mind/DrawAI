@@ -49,6 +49,7 @@ build/
 .vscode/
 .codex/
 .claude/
+.drawai/
 .superpowers/
 superpowers/
 .worktrees/

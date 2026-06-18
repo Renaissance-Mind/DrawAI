@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, Literal, Mapping
 
-from .schema import WorkflowEdge, WorkflowNode, WorkflowPort, WorkflowTemplate
+from .schema import (
+    WORKFLOW_TEMPLATE_SCHEMA,
+    WorkflowEdge,
+    WorkflowNode,
+    WorkflowPort,
+    WorkflowTemplate,
+)
+from .validation import validate_workflow_template
 
 DEFAULT_WORKFLOW_TEMPLATE_ID = "default_drawai_dag"
+_BUILTIN_TEMPLATE_IDS = (DEFAULT_WORKFLOW_TEMPLATE_ID,)
 
 
 def default_drawai_workflow_template() -> WorkflowTemplate:
@@ -219,11 +229,80 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
 
 
 def workflow_templates_dir(workspace: str | Path) -> Path:
-    return Path(workspace).expanduser().resolve(strict=False) / "workflows"
+    return Path(workspace).expanduser().resolve(strict=False) / ".drawai" / "workflows"
 
 
 def user_workflow_template_path(workspace: str | Path, template_id: str) -> Path:
     return workflow_templates_dir(workspace) / f"{_safe_template_id(template_id)}.json"
+
+
+def builtin_workflow_templates() -> tuple[WorkflowTemplate, ...]:
+    return (default_drawai_workflow_template(),)
+
+
+def load_workflow_template_by_id(workspace: str | Path, template_id: str) -> WorkflowTemplate:
+    if template_id in _BUILTIN_TEMPLATE_IDS:
+        return _builtin_workflow_template(template_id)
+    return load_workflow_template(user_workflow_template_path(workspace, template_id))
+
+
+def list_workflow_templates(
+    workspace: str | Path,
+    *,
+    include_builtin: bool = True,
+) -> tuple[WorkflowTemplate, ...]:
+    templates: list[WorkflowTemplate] = []
+    if include_builtin:
+        templates.extend(builtin_workflow_templates())
+
+    directory = workflow_templates_dir(workspace)
+    if directory.exists():
+        for path in sorted(directory.glob("*.json")):
+            template = load_workflow_template(path)
+            if template.template_id not in {item.template_id for item in templates}:
+                templates.append(template)
+    return tuple(templates)
+
+
+def load_workflow_template(path: str | Path) -> WorkflowTemplate:
+    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"workflow template must be a JSON object: {path}")
+    template = workflow_template_from_dict(payload)
+    _raise_if_invalid(template)
+    return template
+
+
+def save_workflow_template(
+    workspace: str | Path,
+    template: WorkflowTemplate,
+    *,
+    overwrite: bool = True,
+    validate: bool = True,
+) -> Path:
+    if validate:
+        _raise_if_invalid(template)
+    path = user_workflow_template_path(workspace, template.template_id)
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"workflow template already exists: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(template.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def copy_builtin_template_to_workspace(
+    workspace: str | Path,
+    template_id: str,
+    *,
+    name: str,
+    overwrite: bool = True,
+) -> WorkflowTemplate:
+    template = copy_builtin_template(template_id, name=name)
+    save_workflow_template(workspace, template, overwrite=overwrite)
+    return template
 
 
 def copy_builtin_template(template_id: str, *, name: str) -> WorkflowTemplate:
@@ -240,6 +319,83 @@ def copy_builtin_template(template_id: str, *, name: str) -> WorkflowTemplate:
         name=name,
         defaults=defaults,
     )
+
+
+def workflow_template_from_dict(payload: Mapping[str, Any]) -> WorkflowTemplate:
+    schema = _string(payload.get("schema", WORKFLOW_TEMPLATE_SCHEMA), "schema")
+    if schema != WORKFLOW_TEMPLATE_SCHEMA:
+        raise ValueError(f"unsupported workflow template schema: {schema}")
+    return WorkflowTemplate(
+        schema=schema,
+        template_id=_string(payload.get("template_id"), "template_id"),
+        name=_string(payload.get("name"), "name"),
+        description=_string(payload.get("description", ""), "description"),
+        version=_integer(payload.get("version", 1), "version"),
+        nodes=tuple(_node_from_dict(item, f"nodes[{index}]") for index, item in enumerate(_sequence(payload.get("nodes"), "nodes"))),
+        edges=tuple(_edge_from_dict(item, f"edges[{index}]") for index, item in enumerate(_sequence(payload.get("edges"), "edges"))),
+        defaults=dict(_mapping(payload.get("defaults", {}), "defaults")),
+    )
+
+
+def _builtin_workflow_template(template_id: str) -> WorkflowTemplate:
+    if template_id == DEFAULT_WORKFLOW_TEMPLATE_ID:
+        return default_drawai_workflow_template()
+    raise ValueError(f"unknown built-in workflow template: {template_id}")
+
+
+def _node_from_dict(payload: object, field_name: str) -> WorkflowNode:
+    data = _mapping(payload, field_name)
+    return WorkflowNode(
+        node_id=_string(data.get("node_id"), f"{field_name}.node_id"),
+        node_type=_string(data.get("node_type"), f"{field_name}.node_type"),
+        title=_string(data.get("title"), f"{field_name}.title"),
+        inputs=tuple(
+            _port_from_dict(item, f"{field_name}.inputs[{index}]")
+            for index, item in enumerate(_sequence(data.get("inputs", ()), f"{field_name}.inputs"))
+        ),
+        outputs=tuple(
+            _port_from_dict(item, f"{field_name}.outputs[{index}]")
+            for index, item in enumerate(_sequence(data.get("outputs", ()), f"{field_name}.outputs"))
+        ),
+        config=dict(_mapping(data.get("config", {}), f"{field_name}.config")),
+        position=_number_mapping(data.get("position", {}), f"{field_name}.position"),
+        description=_string(data.get("description", ""), f"{field_name}.description"),
+    )
+
+
+def _port_from_dict(payload: object, field_name: str) -> WorkflowPort:
+    data = _mapping(payload, field_name)
+    cardinality = _string(data.get("cardinality", "single"), f"{field_name}.cardinality")
+    if cardinality not in {"single", "many"}:
+        raise ValueError(f"{field_name}.cardinality must be single or many")
+    return WorkflowPort(
+        port_id=_string(data.get("port_id"), f"{field_name}.port_id"),
+        label=_string(data.get("label"), f"{field_name}.label"),
+        types=_string_tuple(data.get("types"), f"{field_name}.types"),
+        required=_boolean(data.get("required", True), f"{field_name}.required"),
+        cardinality=cardinality,  # type: ignore[arg-type]
+        formats=_string_tuple(data.get("formats", ()), f"{field_name}.formats"),
+        description=_string(data.get("description", ""), f"{field_name}.description"),
+    )
+
+
+def _edge_from_dict(payload: object, field_name: str) -> WorkflowEdge:
+    data = _mapping(payload, field_name)
+    return WorkflowEdge(
+        edge_id=_string(data.get("edge_id"), f"{field_name}.edge_id"),
+        source_node_id=_string(data.get("source_node_id"), f"{field_name}.source_node_id"),
+        source_port_id=_string(data.get("source_port_id"), f"{field_name}.source_port_id"),
+        target_node_id=_string(data.get("target_node_id"), f"{field_name}.target_node_id"),
+        target_port_id=_string(data.get("target_port_id"), f"{field_name}.target_port_id"),
+        enabled_types=_string_tuple(data.get("enabled_types", ()), f"{field_name}.enabled_types"),
+    )
+
+
+def _raise_if_invalid(template: WorkflowTemplate) -> None:
+    result = validate_workflow_template(template)
+    if not result.ok:
+        codes = ", ".join(error.code for error in result.errors)
+        raise ValueError(f"workflow template is invalid: {codes}")
 
 
 def _input(
@@ -299,3 +455,55 @@ def _safe_template_id(value: str) -> str:
     if not slug:
         raise ValueError("template id must contain at least one safe character")
     return slug
+
+
+def _mapping(value: object, field_name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    return value
+
+
+def _sequence(value: object, field_name: str) -> tuple[object, ...]:
+    if not isinstance(value, list | tuple):
+        raise ValueError(f"{field_name} must be an array")
+    return tuple(value)
+
+
+def _string(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    items = _sequence(value, field_name)
+    strings: list[str] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name}[{index}] must be a string")
+        strings.append(item)
+    return tuple(strings)
+
+
+def _boolean(value: object, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a boolean")
+    return value
+
+
+def _integer(value: object, field_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    return value
+
+
+def _number_mapping(value: object, field_name: str) -> Mapping[str, float]:
+    data = _mapping(value, field_name)
+    result: dict[str, float] = {}
+    for key, item in data.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{field_name} keys must be strings")
+        if not isinstance(item, int | float) or isinstance(item, bool):
+            raise ValueError(f"{field_name}.{key} must be numeric")
+        result[key] = float(item)
+    return result
