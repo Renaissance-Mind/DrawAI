@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import io
+import shutil
 import threading
 import time
 import zipfile
@@ -17,6 +18,8 @@ from pptx import Presentation
 from drawai.codex_python_sdk_imagegen import CodexGeneratedImage, CodexImageGenResult
 from drawai.http_utils import is_loopback_url
 from drawai.rmbg_client import RmbgResult
+from drawai.v2.packages import write_asset_package, write_element_plan
+from drawai.v2.schema import AssetPackage, ElementPlan, ProcessingIntent, RUN_PACKAGE_SCHEMA
 import drawai.workbench.api as workbench_api
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
@@ -139,16 +142,17 @@ def test_runner_completes_analysis_and_stops_for_asset_review(tmp_path: Path) ->
 
     updated = store.get_case(case.case_id)
     assert updated.status == "assets_review"
-    assert updated.stage == "asset_analyze"
+    assert updated.stage == "plan_assets"
     assert observed_stages == [
         "prepare",
-        "detect_structure",
-        "detect_text",
-        "assemble_boxir",
-        "asset_plan",
-        "asset_analyze",
+        "parse_elements",
+        "fuse_elements",
+        "refine_elements",
+        "plan_assets",
     ]
     assert (Path(updated.run_root) / "reports" / "workbench" / "asset_draft.json").exists()
+    assert (Path(updated.run_root) / "drawai_package.json").exists()
+    assert (Path(updated.run_root) / "elements" / "E001" / "asset_package.json").exists()
     assert not (Path(updated.run_root) / "svg_to_ppt" / "assets" / "asset_manifest.json").exists()
     assert store.get_batch(batch.batch_id).status == "waiting_review"
 
@@ -223,7 +227,7 @@ def test_runner_svg_rerun_executes_export_by_default(tmp_path: Path) -> None:
     stages = [stage.stage_name for stage in store.list_stage_runs(case.case_id)]
     assert updated.status == "failed"
     assert "RuntimeError: export unavailable" in (updated.error_message or "")
-    assert stages == ["svg", "export"]
+    assert stages == ["compose_svg", "export"]
     assert "semantic_svg" in labels
     assert "rendered_png" in labels
     assert "pptx" not in labels
@@ -267,7 +271,7 @@ def test_runner_archives_existing_svg_outputs_before_rerun(tmp_path: Path) -> No
     _write_json(root / "reports" / "svg_validation_report.json", {"status": "old"})
 
     def new_svg_executor(case_record, stage: str) -> None:
-        if stage != "svg":
+        if stage != "compose_svg":
             _deterministic_stage_executor(case_record, stage)
             return
         case_root = Path(case_record.run_root)
@@ -322,7 +326,7 @@ def test_runner_rejects_duplicate_case_jobs(tmp_path: Path) -> None:
     release = threading.Event()
 
     def blocking_stage_executor(case_record, stage: str) -> None:
-        if stage == "svg":
+        if stage == "compose_svg":
             started.set()
             release.wait(timeout=5)
         _deterministic_stage_executor(case_record, stage)
@@ -373,7 +377,7 @@ def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     release = threading.Event()
 
     def blocking_codex_executor(case_record, stage: str) -> None:
-        if stage == "asset_analyze" and not first_codex_started.is_set():
+        if stage == "refine_elements" and not first_codex_started.is_set():
             first_codex_started.set()
             release.wait(timeout=5)
         _deterministic_stage_executor(case_record, stage)
@@ -389,6 +393,60 @@ def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     codex_activity = runner.resource_activity()["codex"]
     assert codex_activity["queued"] == 0
     assert codex_activity["running"] == 0
+
+
+def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    settings = WorkbenchSettings(
+        workspace=tmp_path / "workspace",
+        default_config=base_config,
+        max_concurrent_cases=2,
+        sam_concurrency=2,
+        ocr_concurrency=1,
+    )
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    batch = store.create_batch(
+        name="batch",
+        input_mode="local_dir",
+        max_concurrent_cases=2,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    for index in range(2):
+        case_root = store.runs_root / batch.batch_id / f"case_{index}"
+        store.create_case(
+            batch_id=batch.batch_id,
+            name=f"source_{index}.png",
+            source_image_path=source,
+            config_path=create_case_config(
+                base_config_path=base_config,
+                source_image=source,
+                output_dir=case_root,
+                target_path=case_root / "drawai.config.yaml",
+            ),
+        )
+    first_parse_started = threading.Event()
+    release = threading.Event()
+
+    def blocking_parse_executor(case_record, stage: str) -> None:
+        if stage == "parse_elements" and not first_parse_started.is_set():
+            first_parse_started.set()
+            release.wait(timeout=5)
+        _deterministic_stage_executor(case_record, stage)
+
+    runner = WorkbenchRunner(store, settings, stage_executor=blocking_parse_executor)
+
+    runner.submit_batch(batch.batch_id)
+    assert first_parse_started.wait(timeout=5)
+    assert _wait_for_resource_activity(runner, "ocr", queued=1, running=1, timeout=5)
+
+    release.set()
+    runner.wait_for_idle(timeout=5)
+    ocr_activity = runner.resource_activity()["ocr"]
+    assert ocr_activity["queued"] == 0
+    assert ocr_activity["running"] == 0
 
 
 def test_runner_marks_interrupted_running_case_failed_on_startup(tmp_path: Path) -> None:
@@ -499,6 +557,228 @@ def test_runner_copies_case_failure_to_batch_error(tmp_path: Path) -> None:
     assert "detector unavailable" in updated.error_message
 
 
+def test_api_exposes_v2_package_and_asset_package(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="v2 batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+
+    package_response = client.get(f"/api/cases/{case.case_id}/package")
+    elements_response = client.get(f"/api/cases/{case.case_id}/elements")
+    asset_response = client.get(f"/api/cases/{case.case_id}/elements/E001/asset-package")
+
+    assert package_response.status_code == 200
+    assert package_response.json()["package"]["schema"] == "drawai.run_package.v1"
+    assert package_response.json()["compatibility"]["mode"] == "v2"
+    assert elements_response.status_code == 200
+    assert elements_response.json()["elements"][0]["element_id"] == "E001"
+    assert asset_response.status_code == 200
+    assert asset_response.json()["asset_package"]["element_id"] == "E001"
+
+
+def test_api_asset_process_marks_downstream_outputs_stale(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="v2 batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    package_path = Path(case.run_root) / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["compose_outputs"] = {"semantic_svg": "svg/semantic.svg"}
+    package["export_outputs"] = {"report": "reports/svg_to_ppt_export_report.json"}
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    store.update_case_status(case.case_id, status="completed", phase="reconstruction", stage="completed")
+
+    response = client.post(
+        f"/api/cases/{case.case_id}/elements/E001/process",
+        json={"processor": "crop"},
+    )
+
+    assert response.status_code == 200
+    updated_package = json.loads(package_path.read_text(encoding="utf-8"))
+    assert "compose_outputs" not in updated_package
+    assert "export_outputs" not in updated_package
+    updated_case = store.get_case(case.case_id)
+    assert updated_case.status == "assets_review"
+    assert updated_case.stale_from_stage == "compose_svg"
+
+
+def test_api_failed_asset_process_marks_downstream_outputs_stale(tmp_path: Path) -> None:
+    class FailingRmbgClient:
+        def remove_background(self, *_args: object, **_kwargs: object) -> RmbgResult:
+            raise RuntimeError("rmbg unavailable")
+
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    app = create_app(settings, store=store, runner=runner, rmbg_client=FailingRmbgClient())
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="v2 batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    package_path = Path(case.run_root) / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["compose_outputs"] = {"semantic_svg": "svg/semantic.svg"}
+    package["export_outputs"] = {"report": "reports/svg_to_ppt_export_report.json"}
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    store.update_case_status(case.case_id, status="completed", phase="reconstruction", stage="completed")
+
+    response = client.post(
+        f"/api/cases/{case.case_id}/elements/E001/process",
+        json={"processor": "crop_nobg"},
+    )
+
+    assert response.status_code == 400
+    updated_package = json.loads(package_path.read_text(encoding="utf-8"))
+    assert updated_package["asset_packages"][0]["status"] == "failed"
+    assert "compose_outputs" not in updated_package
+    assert "export_outputs" not in updated_package
+    updated_case = store.get_case(case.case_id)
+    assert updated_case.status == "assets_review"
+    assert updated_case.stale_from_stage == "compose_svg"
+
+
+def test_api_asset_process_file_error_marks_downstream_outputs_stale(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="v2 batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    package_path = Path(case.run_root) / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["source_image"] = str(Path(case.run_root) / "inputs" / "missing.png")
+    package["compose_outputs"] = {"semantic_svg": "svg/semantic.svg"}
+    package["export_outputs"] = {"report": "reports/svg_to_ppt_export_report.json"}
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    store.update_case_status(case.case_id, status="completed", phase="reconstruction", stage="completed")
+
+    response = client.post(
+        f"/api/cases/{case.case_id}/elements/E001/process",
+        json={"processor": "crop"},
+    )
+
+    assert response.status_code == 400
+    updated_package = json.loads(package_path.read_text(encoding="utf-8"))
+    assert updated_package["asset_packages"][0]["status"] == "failed"
+    assert "compose_outputs" not in updated_package
+    assert "export_outputs" not in updated_package
+    updated_case = store.get_case(case.case_id)
+    assert updated_case.status == "assets_review"
+    assert updated_case.stale_from_stage == "compose_svg"
+
+
+def test_legacy_case_mutation_is_rejected_but_can_fork_from_source(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="legacy batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    root = Path(case.run_root)
+    (root / "inputs").mkdir(parents=True)
+    shutil.copy2(source, root / "inputs" / "figure.png")
+    (root / "svg").mkdir()
+    (root / "svg" / "semantic.svg").write_text("<svg />\n", encoding="utf-8")
+
+    process_response = client.post(
+        f"/api/cases/{case.case_id}/elements/E001/process",
+        json={"processor": "crop"},
+    )
+    retry_response = client.post(f"/api/cases/{case.case_id}/retry")
+    fork_response = client.post(f"/api/cases/{case.case_id}/fork-v2-from-source")
+
+    assert process_response.status_code == 409
+    assert process_response.json()["detail"] == "legacy_readonly_case"
+    assert retry_response.status_code == 409
+    assert retry_response.json()["detail"] == "legacy_readonly_case"
+    assert fork_response.status_code == 200
+    forked_case = fork_response.json()["case"]
+    assert forked_case["case_id"] != case.case_id
+    runner.wait_for_idle(timeout=5)
+    assert (Path(forked_case["run_root"]) / "drawai_package.json").exists()
+
+
 def test_api_creates_batch_polls_assets_and_approves(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
@@ -549,14 +829,23 @@ def test_api_creates_batch_polls_assets_and_approves(tmp_path: Path) -> None:
     assert not (Path(case_payload["run_root"]) / "svg_to_ppt" / "assets" / "asset_manifest.json").exists()
 
 
-def test_api_approve_with_run_svg_enters_running_state_immediately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_approve_with_run_svg_enters_running_state_immediately(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
     image_dir = tmp_path / "images"
     image_dir.mkdir()
     Image.new("RGB", (24, 24), "white").save(image_dir / "source.png")
     settings = _settings(tmp_path, base_config)
-    runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_process_assets(case_record, stage: str) -> None:
+        if stage == "process_assets":
+            started.set()
+            release.wait(timeout=5)
+        _deterministic_stage_executor(case_record, stage)
+
+    runner = WorkbenchRunner(store, settings, stage_executor=blocking_process_assets)
     app = create_app(settings, store=store, runner=runner)
     client = TestClient(app)
 
@@ -575,21 +864,12 @@ def test_api_approve_with_run_svg_enters_running_state_immediately(tmp_path: Pat
     case_id = response.json()["cases"][0]["case_id"]
     runner.wait_for_idle(timeout=5)
 
-    started = threading.Event()
-    release = threading.Event()
-
-    def blocking_materialize(*_: object, **__: object) -> dict[str, object]:
-        started.set()
-        release.wait(timeout=5)
-        return {"assets": []}
-
-    monkeypatch.setattr("drawai.workbench.runner.materialize_approved_assets", blocking_materialize)
     approve_response = client.post(f"/api/cases/{case_id}/approve-assets", json={"run_svg": True})
 
     assert approve_response.status_code == 200
     case_payload = approve_response.json()["case"]
     assert case_payload["status"] == "svg_running"
-    assert case_payload["stage"] == "materialize"
+    assert case_payload["stage"] == "process_assets"
     assert started.wait(timeout=5)
     assert store.get_batch(case_payload["batch_id"]).status == "running"
 
@@ -1005,7 +1285,8 @@ def test_api_case_list_uses_source_image_preview_before_artifacts(tmp_path: Path
         config_path=base_config,
     )
     _deterministic_stage_executor(case, "prepare")
-    _deterministic_stage_executor(case, "svg")
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _deterministic_stage_executor(case, "compose_svg")
     store.register_artifact(case.case_id, label="figure", path=Path(case.run_root) / "inputs" / "figure.png", media_type="image/png")
     store.register_artifact(case.case_id, label="rendered_png", path=Path(case.run_root) / "svg" / "rendered.png", media_type="image/png")
 
@@ -1100,7 +1381,8 @@ def test_api_case_progress_exposes_case_files(tmp_path: Path) -> None:
         source_image_path=source,
         config_path=base_config,
     )
-    _deterministic_stage_executor(case, "svg")
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _deterministic_stage_executor(case, "compose_svg")
     app = create_app(_settings(tmp_path, base_config), store=store, runner=WorkbenchRunner(store, _settings(tmp_path, base_config)))
     client = TestClient(app)
 
@@ -1166,7 +1448,13 @@ def test_api_reads_and_updates_svg_source(tmp_path: Path) -> None:
         source_image_path=source,
         config_path=base_config,
     )
-    _deterministic_stage_executor(case, "svg")
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _deterministic_stage_executor(case, "compose_svg")
+    package_path = Path(case.run_root) / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["compose_outputs"] = {"semantic_svg": "svg/semantic.svg"}
+    package["export_outputs"] = {"report": "reports/svg_to_ppt_export_report.json"}
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     store.update_case_status(case.case_id, status="completed", phase="reconstruction", stage="completed")
     store.update_batch_status(batch.batch_id, "completed")
     app = create_app(_settings(tmp_path, base_config), store=store, runner=WorkbenchRunner(store, _settings(tmp_path, base_config)))
@@ -1187,6 +1475,9 @@ def test_api_reads_and_updates_svg_source(tmp_path: Path) -> None:
     updated_case = client.get(f"/api/cases/{case.case_id}").json()["case"]
     assert updated_case["stage"] == "svg_edit"
     assert updated_case["stale_from_stage"] == "export"
+    updated_package = json.loads(package_path.read_text(encoding="utf-8"))
+    assert updated_package["compose_outputs"] == {"semantic_svg": "svg/semantic.svg"}
+    assert "export_outputs" not in updated_package
     labels = {artifact["label"] for artifact in client.get(f"/api/cases/{case.case_id}").json()["artifacts"]}
     assert "semantic_svg" in labels
 
@@ -1209,7 +1500,8 @@ def test_api_rejects_unsafe_svg_source(tmp_path: Path) -> None:
         source_image_path=source,
         config_path=base_config,
     )
-    _deterministic_stage_executor(case, "svg")
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _deterministic_stage_executor(case, "compose_svg")
     app = create_app(_settings(tmp_path, base_config), store=store, runner=WorkbenchRunner(store, _settings(tmp_path, base_config)))
     client = TestClient(app)
 
@@ -1778,7 +2070,12 @@ def _deterministic_stage_executor(case, stage: str) -> None:
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "figure.png")
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "original.png")
         _write_json(root / "inputs" / "source_metadata.json", {"width": 24, "height": 24})
-    elif stage == "asset_analyze":
+    elif stage == "parse_elements":
+        _write_json(root / "reports" / "parser_outputs" / "element_candidates.json", {"candidates": []})
+    elif stage == "fuse_elements":
+        _write_json(root / "trace" / "v2_fusion_trace.json", {"schema": "drawai.v2.fusion_trace.v1"})
+    elif stage in {"refine_elements", "asset_analyze"}:
+        _write_json(root / "trace" / "v2_refine_trace.json", {"schema": "drawai.v2.refine_trace.v1"})
         _write_json(
             root / "reports" / "element_analysis_codex" / "element_analysis.json",
             {
@@ -1801,7 +2098,11 @@ def _deterministic_stage_executor(case, stage: str) -> None:
                 ],
             },
         )
-    elif stage == "svg":
+    elif stage == "plan_assets":
+        _write_minimal_v2_package(root, case.case_id)
+    elif stage == "process_assets":
+        _write_minimal_v2_package(root, case.case_id)
+    elif stage in {"compose_svg", "svg"}:
         (root / "svg").mkdir(parents=True, exist_ok=True)
         (root / "svg" / "semantic.svg").write_text(
             '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"></svg>\n',
@@ -1825,8 +2126,55 @@ def _deterministic_stage_executor(case, stage: str) -> None:
         )
 
 
+def _write_minimal_v2_package(root: Path, case_id: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    figure_path = root / "inputs" / "figure.png"
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    if not figure_path.exists():
+        Image.new("RGB", (24, 24), "white").save(figure_path)
+    _write_json(root / "inputs" / "source_metadata.json", {"width": 24, "height": 24})
+    plan = ElementPlan(
+        element_id="E001",
+        source_candidate_ids=("fixture:E001",),
+        element_type="picture",
+        bbox=(2.0, 2.0, 12.0, 12.0),
+        geometry={"kind": "bbox", "bbox": [2, 2, 12, 12]},
+        z_order=1,
+        confidence="high",
+        processing_intent=ProcessingIntent(
+            object_type="picture",
+            processing_type="crop",
+            parameters={},
+        ),
+        review_status="deterministic",
+        created_by_stage="plan_assets",
+        change_reason="Workbench test fixture.",
+    )
+    asset_package = AssetPackage.empty(
+        asset_id="A001",
+        element_id="E001",
+        processor_type="crop",
+    )
+    write_element_plan(root, plan)
+    write_asset_package(root, asset_package)
+    _write_json(
+        root / "drawai_package.json",
+        {
+            "schema": RUN_PACKAGE_SCHEMA,
+            "run_id": case_id,
+            "root": str(root),
+            "source_image": str(figure_path),
+            "canvas": {"width": 24, "height": 24},
+            "created_at": "2026-06-18T00:00:00Z",
+            "metadata": {"last_stage": "plan_assets", "v2_enabled": True},
+            "elements": [plan.to_dict()],
+            "asset_packages": [asset_package.to_dict()],
+        },
+    )
+
+
 def _failing_stage_executor(case, stage: str) -> None:
-    if stage == "detect_structure":
+    if stage == "parse_elements":
         raise RuntimeError("detector unavailable")
     _deterministic_stage_executor(case, stage)
 

@@ -5,7 +5,7 @@ import os
 import shutil
 import threading
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +15,6 @@ import yaml
 
 from drawai.config import load_drawai_config
 from drawai.pipeline import run_drawai_pipeline_from_stage
-from drawai.public_stages import run_public_stage
 from drawai.rmbg_client import RemoteRmbgClient
 
 from .assets import (
@@ -29,24 +28,47 @@ from .models import CaseRecord, WorkbenchSettings
 from .store import WorkbenchStore
 
 StageExecutor = Callable[[CaseRecord, str], None]
-RerunStage = Literal["analysis", "asset_analyze", "materialize", "svg", "export"]
+RerunStage = Literal[
+    "analysis",
+    "asset_analyze",
+    "materialize",
+    "svg",
+    "export",
+    "parse_elements",
+    "fuse_elements",
+    "refine_elements",
+    "plan_assets",
+    "process_assets",
+    "compose",
+    "compose_svg",
+]
 
 ANALYSIS_STAGES = (
     "prepare",
-    "detect_structure",
-    "detect_text",
-    "assemble_boxir",
-    "asset_plan",
-    "asset_analyze",
+    "parse_elements",
+    "fuse_elements",
+    "refine_elements",
+    "plan_assets",
 )
 
-STAGE_RESOURCE = {
-    "detect_structure": "sam3",
-    "detect_text": "ocr",
-    "asset_analyze": "codex",
-    "svg": "codex",
-    "export": "export",
+STAGE_RESOURCES = {
+    "parse_elements": ("sam3", "ocr"),
+    "refine_elements": ("codex",),
+    "process_assets": ("rmbg",),
+    "compose_svg": ("codex",),
+    "export": ("export",),
 }
+
+RERUN_STAGE_ALIASES = {
+    "asset_analyze": "analysis",
+    "materialize": "process_assets",
+    "svg": "compose_svg",
+    "compose": "compose_svg",
+}
+
+
+def _canonical_rerun_stage(stage: str) -> str:
+    return RERUN_STAGE_ALIASES.get(stage, stage)
 
 
 class WorkbenchRunner:
@@ -120,15 +142,15 @@ class WorkbenchRunner:
             status="assets_review",
             phase="analysis",
             stage="approved_asset_plan",
-            stale_from_stage="svg",
+            stale_from_stage="compose_svg",
         )
         if run_svg:
             self.store.update_case_status(
                 case_id,
                 status="svg_running",
                 phase="reconstruction",
-                stage="materialize",
-                stale_from_stage="svg",
+                stage="process_assets",
+                stale_from_stage="compose_svg",
             )
             self._submit_case(self._materialize_and_run_svg, case_id)
         self._refresh_batch_status(case.batch_id)
@@ -244,21 +266,21 @@ class WorkbenchRunner:
                     status="assets_review",
                     phase="analysis",
                     stage="approved_asset_plan",
-                    stale_from_stage="svg",
+                    stale_from_stage="compose_svg",
                 )
                 self.store.update_case_status(
                     case_id,
                     status="svg_running",
                     phase="reconstruction",
-                    stage="materialize",
-                    stale_from_stage="svg",
+                    stage="process_assets",
+                    stale_from_stage="compose_svg",
                 )
-                self._materialize_approved_assets(case)
+                self._run_stage(case_id, "process_assets")
                 self._register_standard_artifacts(case_id)
-                self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="svg")
+                self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="compose_svg")
                 self._run_svg_generation(case_id)
             else:
-                self.store.update_case_status(case_id, status="assets_review", phase="analysis", stage="asset_analyze")
+                self.store.update_case_status(case_id, status="assets_review", phase="analysis", stage="plan_assets")
             self._refresh_batch_status(case.batch_id)
         except Exception as exc:  # noqa: BLE001 - background job boundary records failures.
             self.store.update_case_status(
@@ -273,19 +295,20 @@ class WorkbenchRunner:
     def _rerun_case(self, case_id: str, stage: RerunStage) -> None:
         case = self._refresh_case_runtime_config(self.store.get_case(case_id))
         try:
-            if stage in {"analysis", "asset_analyze"}:
-                self._invalidate_from(case_id, "asset_analyze")
+            canonical_stage = _canonical_rerun_stage(stage)
+            if canonical_stage in {"analysis", "parse_elements", "fuse_elements", "refine_elements", "plan_assets"}:
+                self._invalidate_from(case_id, "plan_assets")
                 self._run_analysis(case_id)
-            elif stage == "materialize":
-                self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="materialize")
-                self._materialize_approved_assets(case)
+            elif canonical_stage == "process_assets":
+                self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="process_assets")
+                self._run_stage(case_id, "process_assets")
                 self._register_standard_artifacts(case_id)
-                self.store.update_case_status(case_id, status="assets_review", phase="reconstruction", stage="approved_asset_plan")
-            elif stage == "svg":
+                self.store.update_case_status(case_id, status="assets_review", phase="reconstruction", stage="process_assets")
+            elif canonical_stage == "compose_svg":
                 self._archive_current_svg_outputs(case_id)
-                self._invalidate_from(case_id, "svg")
+                self._invalidate_from(case_id, "compose_svg")
                 self._run_svg_generation(case_id)
-            elif stage == "export":
+            elif canonical_stage == "export":
                 self._invalidate_from(case_id, "export")
                 self._run_export(case_id)
             self._refresh_batch_status(case.batch_id)
@@ -303,8 +326,8 @@ class WorkbenchRunner:
     def _materialize_and_run_svg(self, case_id: str) -> None:
         case = self._refresh_case_runtime_config(self.store.get_case(case_id))
         try:
-            self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="materialize")
-            self._materialize_approved_assets(case)
+            self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="process_assets")
+            self._run_stage(case_id, "process_assets")
             self._register_standard_artifacts(case_id)
             self._run_svg_generation(case_id)
             self._refresh_batch_status(case.batch_id)
@@ -320,8 +343,8 @@ class WorkbenchRunner:
             self._refresh_batch_status(case.batch_id)
 
     def _run_svg_generation(self, case_id: str) -> None:
-        self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="svg")
-        self._run_stage(case_id, "svg")
+        self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="compose_svg")
+        self._run_stage(case_id, "compose_svg")
         self._register_standard_artifacts(case_id)
         self._run_export(case_id)
         case = self.store.get_case(case_id)
@@ -335,20 +358,23 @@ class WorkbenchRunner:
 
     def _run_stage(self, case_id: str, stage: str) -> None:
         case = self.store.get_case(case_id)
+        reconstruction_stages = {"process_assets", "compose_svg", "export"}
         self.store.update_case_status(
             case_id,
-            status="svg_running" if stage in {"svg", "export"} else "analysis_running",
-            phase="reconstruction" if stage in {"svg", "export"} else "analysis",
+            status="svg_running" if stage in reconstruction_stages else "analysis_running",
+            phase="reconstruction" if stage in reconstruction_stages else "analysis",
             stage=stage,
         )
         stage_run = self.store.start_stage_run(case_id, stage)
-        resource = STAGE_RESOURCE.get(stage)
+        resources = STAGE_RESOURCES.get(stage, ())
         try:
-            if resource is None:
-                self._execute_stage(case, stage)
-            else:
-                with self._resource_slot(resource):
+            if resources:
+                with ExitStack() as stack:
+                    for resource in resources:
+                        stack.enter_context(self._resource_slot(resource))
                     self._execute_stage(case, stage)
+            else:
+                self._execute_stage(case, stage)
             self.store.finish_stage_run(stage_run.stage_run_id, status="ok")
         except Exception as exc:
             self.store.finish_stage_run(stage_run.stage_run_id, status="failed", error_message=f"{type(exc).__name__}: {exc}")
@@ -358,14 +384,9 @@ class WorkbenchRunner:
         if self.stage_executor is not None:
             self.stage_executor(case, stage)
             return
-        if stage in ANALYSIS_STAGES:
-            summary = run_public_stage(case.config_path, stage)
-        elif stage == "svg":
-            summary = run_drawai_pipeline_from_stage(case.config_path, "svg_generated", to_stage="svg_generated")
-        elif stage == "export":
-            summary = run_drawai_pipeline_from_stage(case.config_path, "svg_to_ppt_exported", to_stage="svg_to_ppt_exported")
-        else:
+        if stage not in {*ANALYSIS_STAGES, "process_assets", "compose_svg", "export"}:
             raise ValueError(f"unsupported stage: {stage}")
+        summary = run_drawai_pipeline_from_stage(case.config_path, stage, to_stage=stage)
         if summary.get("status") != "ok":
             message = _pipeline_failure_message(summary)
             failed_stage = summary.get("failed_stage") or stage
@@ -386,6 +407,9 @@ class WorkbenchRunner:
         root = Path(case.run_root)
         artifacts = (
             ("figure", "inputs/figure.png", "image/png"),
+            ("run_package", "drawai_package.json", "application/json"),
+            ("fusion_trace", "trace/v2_fusion_trace.json", "application/json"),
+            ("refine_trace", "trace/v2_refine_trace.json", "application/json"),
             ("asset_draft", "reports/workbench/asset_draft.json", "application/json"),
             ("approved_asset_plan", "reports/workbench/approved_asset_plan.json", "application/json"),
             ("element_analysis", "reports/element_analysis_codex/element_analysis.json", "application/json"),
@@ -400,10 +424,17 @@ class WorkbenchRunner:
             path = root / relative_path
             if path.exists():
                 self.store.register_artifact(case_id, label=label, path=path, media_type=media_type)
+        for package_path in sorted((root / "elements").glob("*/asset_package.json")):
+            self.store.register_artifact(
+                case_id,
+                label=f"asset_package:{package_path.parent.name}",
+                path=package_path,
+                media_type="application/json",
+            )
 
     def _invalidate_from(self, case_id: str, stage: str) -> None:
         current = self.store.get_case(case_id)
-        status = "assets_review" if stage in {"asset_analyze", "svg"} else current.status
+        status = "assets_review" if stage in {"plan_assets", "compose_svg"} else current.status
         self.store.update_case_status(
             case_id,
             status=status,

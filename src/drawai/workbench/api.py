@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from lxml import etree
 
+from ..artifacts import write_json
 from .assets import process_asset_plan_elements, read_asset_draft, validate_asset_plan, write_asset_draft
 from ..codex_python_sdk_imagegen import (
     CodexPythonSdkImageGenError,
@@ -31,6 +32,18 @@ from ..codex_python_sdk_imagegen import (
 from ..config import load_drawai_config
 from ..http_utils import urlopen_direct_for_loopback
 from ..rmbg_client import RemoteRmbgClient
+from ..v2.packages import classify_run_root, element_dir
+from ..v2.workbench import (
+    LegacyReadOnlyCaseError,
+    V2PackageUnavailableError,
+    activate_case_asset_result,
+    case_asset_package_payload,
+    case_elements_payload,
+    case_package_payload,
+    ensure_v2_mutation_allowed,
+    fork_v2_case_from_source,
+    process_case_asset,
+)
 from .models import CaseRecord, WorkbenchSettings
 from .runner import WorkbenchRunner, create_case_config
 from .store import WorkbenchStore
@@ -312,6 +325,115 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="asset draft is not available yet") from exc
 
+    @app.get("/api/cases/{case_id}/package")
+    def get_case_package(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            return case_package_payload(case)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/cases/{case_id}/elements")
+    def get_case_elements(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            return case_elements_payload(case)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/cases/{case_id}/elements/{element_id}/asset-package")
+    def get_case_asset_package(case_id: str, element_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            return case_asset_package_payload(case, element_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/cases/{case_id}/elements/{element_id}/process")
+    async def process_case_element(case_id: str, element_id: str, request: Request) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="asset process payload must be an object")
+        processor = payload.get("processor")
+        if not isinstance(processor, str) or not processor:
+            raise HTTPException(status_code=400, detail="processor must be a non-empty string")
+        try:
+            asset_package = process_case_asset(
+                case,
+                element_id,
+                processor,
+                providers=_asset_processor_providers(case, processor, resolved_settings, app.state.rmbg_client),
+            )
+        except LegacyReadOnlyCaseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except V2PackageUnavailableError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            _mark_asset_outputs_stale_if_failed_package(resolved_store, case_id, element_id, processor)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _mark_asset_outputs_stale(resolved_store, case_id)
+        return {"asset_package": asset_package, "case": resolved_store.get_case(case_id).to_api()}
+
+    @app.post("/api/cases/{case_id}/elements/{element_id}/active-result")
+    async def activate_case_element_result(case_id: str, element_id: str, request: Request) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="active-result payload must be an object")
+        result_id = payload.get("result_id")
+        if not isinstance(result_id, str) or not result_id:
+            raise HTTPException(status_code=400, detail="result_id must be a non-empty string")
+        try:
+            asset_package = activate_case_asset_result(case, element_id, result_id)
+        except LegacyReadOnlyCaseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except V2PackageUnavailableError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _mark_asset_outputs_stale(resolved_store, case_id)
+        return {"asset_package": asset_package, "case": resolved_store.get_case(case_id).to_api()}
+
+    @app.post("/api/cases/{case_id}/compose")
+    def compose_case(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            ensure_v2_mutation_allowed(case)
+            resolved_runner.submit_rerun(case_id, "compose")
+        except LegacyReadOnlyCaseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except V2PackageUnavailableError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"case": resolved_store.get_case(case_id).to_api()}
+
+    @app.post("/api/cases/{case_id}/export")
+    def export_case(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            ensure_v2_mutation_allowed(case)
+            resolved_runner.submit_rerun(case_id, "export")
+        except LegacyReadOnlyCaseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except V2PackageUnavailableError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"case": resolved_store.get_case(case_id).to_api()}
+
+    @app.post("/api/cases/{case_id}/fork-v2-from-source")
+    def fork_case_v2_from_source(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        try:
+            forked = fork_v2_case_from_source(resolved_store, resolved_runner, case)
+        except (LegacyReadOnlyCaseError, V2PackageUnavailableError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"case": forked.to_api()}
+
     @app.get("/api/cases/{case_id}/svg-source")
     def get_svg_source(case_id: str) -> dict[str, Any]:
         case = _get_case_or_404(resolved_store, case_id)
@@ -323,6 +445,7 @@ def create_app(
     @app.patch("/api/cases/{case_id}/svg-source")
     async def update_svg_source(case_id: str, request: Request) -> dict[str, Any]:
         case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         if case.status in {"analysis_running", "svg_running"}:
             raise HTTPException(status_code=409, detail="cannot edit SVG while the case is running")
         payload = await request.json()
@@ -335,6 +458,7 @@ def create_app(
         path = Path(case.run_root) / "svg" / "semantic.svg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(svg_source.strip() + "\n", encoding="utf-8")
+        _clear_v2_run_package_outputs(case, "export_outputs")
         resolved_store.register_artifact(case_id, label="semantic_svg", path=path, media_type="image/svg+xml")
         resolved_store.update_case_status(
             case_id,
@@ -349,6 +473,7 @@ def create_app(
     @app.patch("/api/cases/{case_id}/asset-draft")
     async def update_asset_draft(case_id: str, request: Request) -> dict[str, Any]:
         case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         plan = await request.json()
         if not isinstance(plan, dict):
             raise HTTPException(status_code=400, detail="asset draft payload must be an object")
@@ -367,6 +492,7 @@ def create_app(
     @app.post("/api/cases/{case_id}/asset-processing")
     async def process_asset_elements(case_id: str, request: Request) -> dict[str, Any]:
         case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         payload = await request.json()
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="asset processing payload must be an object")
@@ -410,7 +536,8 @@ def create_app(
 
     @app.post("/api/cases/{case_id}/approve-assets")
     async def approve_assets(case_id: str, request: Request) -> dict[str, Any]:
-        _get_case_or_404(resolved_store, case_id)
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         payload = await _optional_json(request)
         run_svg = _as_bool(payload.get("run_svg")) if payload else False
         try:
@@ -421,11 +548,26 @@ def create_app(
 
     @app.post("/api/cases/{case_id}/run-stage")
     async def run_stage(case_id: str, request: Request) -> dict[str, Any]:
-        _get_case_or_404(resolved_store, case_id)
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         payload = await request.json()
         stage = str(payload.get("stage") or "")
-        if stage not in {"analysis", "asset_analyze", "materialize", "svg", "export"}:
-            raise HTTPException(status_code=400, detail="stage must be analysis, asset_analyze, materialize, svg, or export")
+        accepted_stages = {
+            "analysis",
+            "asset_analyze",
+            "materialize",
+            "svg",
+            "export",
+            "parse_elements",
+            "fuse_elements",
+            "refine_elements",
+            "plan_assets",
+            "process_assets",
+            "compose",
+            "compose_svg",
+        }
+        if stage not in accepted_stages:
+            raise HTTPException(status_code=400, detail="stage is not supported")
         try:
             resolved_runner.submit_rerun(case_id, stage)  # type: ignore[arg-type]
         except RuntimeError as exc:
@@ -440,7 +582,8 @@ def create_app(
 
     @app.post("/api/cases/{case_id}/retry")
     def retry_case(case_id: str) -> dict[str, Any]:
-        _get_case_or_404(resolved_store, case_id)
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
         resolved_runner.submit_rerun(case_id, "analysis")
         return {"case": resolved_store.get_case(case_id).to_api()}
 
@@ -524,6 +667,78 @@ async def _optional_json(request: Request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="JSON payload must be an object")
     return payload
+
+
+def _reject_legacy_case_mutation(case: CaseRecord) -> None:
+    if classify_run_root(case.run_root).mode == "legacy_readonly":
+        raise HTTPException(status_code=409, detail="legacy_readonly_case")
+
+
+def _mark_asset_outputs_stale(store: WorkbenchStore, case_id: str) -> None:
+    case = store.get_case(case_id)
+    store.update_case_status(
+        case_id,
+        status="assets_review",
+        phase="analysis",
+        stage="asset_package_updated",
+        stale_from_stage="compose_svg",
+    )
+    _refresh_batch_status_from_cases(store, case.batch_id)
+
+
+def _mark_asset_outputs_stale_if_failed_package(
+    store: WorkbenchStore,
+    case_id: str,
+    element_id: str,
+    processor: str,
+) -> None:
+    case = store.get_case(case_id)
+    try:
+        package_path = element_dir(case.run_root, element_id) / "asset_package.json"
+    except ValueError:
+        return
+    if not package_path.is_file():
+        return
+    payload = json.loads(package_path.read_text(encoding="utf-8"))
+    if (
+        isinstance(payload, dict)
+        and payload.get("status") == "failed"
+        and payload.get("processor_type") == processor
+    ):
+        _mark_asset_outputs_stale(store, case_id)
+
+
+def _clear_v2_run_package_outputs(case: CaseRecord, *keys: str) -> None:
+    if classify_run_root(case.run_root).mode != "v2":
+        return
+    package_path = Path(case.run_root) / "drawai_package.json"
+    payload = json.loads(package_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("v2 run package must be a JSON object")
+    changed = False
+    for key in keys:
+        if key in payload:
+            payload.pop(key, None)
+            changed = True
+    if changed:
+        write_json(package_path, payload)
+
+
+def _asset_processor_providers(
+    case: CaseRecord,
+    processor: str,
+    settings: WorkbenchSettings,
+    rmbg_client: Any,
+) -> dict[str, Any]:
+    providers: dict[str, Any] = {}
+    if processor == "crop_nobg":
+        if rmbg_client is not None:
+            providers["rmbg_client"] = rmbg_client
+        else:
+            cfg = load_drawai_config(case.config_path, validate_input_exists=False)
+            base_url = cfg.asset_materialization.rmbg.base_url or settings.rmbg_base_url
+            providers["rmbg_client"] = RemoteRmbgClient(base_url.rstrip("/"))
+    return providers
 
 
 async def _collect_sources(
