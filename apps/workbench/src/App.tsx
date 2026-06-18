@@ -978,7 +978,7 @@ export default function App() {
           packageError={v2PackageError}
           loadingElementId={v2AssetLoadingElementId}
           actionPending={v2ActionPending}
-          figureUrl={activeCase?.case.preview_url || figureArtifact?.url || ""}
+          figureUrl={figureArtifact?.url || activeCase?.case.preview_url || ""}
           runInProgress={activeCaseRunning}
           onBackToBoard={() => setActiveView("board")}
           onSelectElement={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
@@ -1613,7 +1613,7 @@ function V2AssetPackagePanel({
                 <strong>{humanize(selectedElement.element_type)}</strong>
               </div>
               <div>
-                <span>BBox</span>
+                <span>XYWH</span>
                 <strong>{bboxText(selectedElement.bbox)}</strong>
               </div>
               <div>
@@ -1879,7 +1879,7 @@ function V2AssetCanvas({
     return items;
   }, [runPackage, selectedAssetPackage]);
   const visibleElements = elements
-    .map((element, originalIndex) => ({ element, originalIndex, area: bboxArea(element.bbox) }))
+    .map((element, originalIndex) => ({ element, originalIndex, area: v2BBoxArea(element.bbox) }))
     .sort((left, right) => right.area - left.area || left.originalIndex - right.originalIndex);
   const hoveredElement = visibleElements.find(({ element }) => element.element_id === hoveredElementId)?.element || null;
   const selectedStatus = selectedElement ? packageByElementId.get(selectedElement.element_id)?.status || "pending" : "";
@@ -1953,7 +1953,7 @@ function V2ElementBox({
   onHover: () => void;
   onLeave: () => void;
 }) {
-  const style = { ...bboxStyle(element.bbox, naturalSize), zIndex };
+  const style = { ...v2BBoxStyle(element.bbox, naturalSize), zIndex };
   const statusClass = status === "failed" ? "v2-asset-box-failed" : status === "unsupported" ? "v2-asset-box-unsupported" : "";
   return (
     <div
@@ -1995,7 +1995,7 @@ function V2ElementTooltip({
   status: V2AssetStatus;
 }) {
   return (
-    <div className={`canvas-tooltip ${v2ElementProcessingClass(element)}`} style={tooltipStyle(element.bbox, naturalSize)}>
+    <div className={`canvas-tooltip ${v2ElementProcessingClass(element)}`} style={v2TooltipStyle(element.bbox, naturalSize)}>
       <strong>{element.element_id}</strong>
       <em>{humanize(element.element_type)} · {humanize(element.processing_intent.object_type)}</em>
       <small>{humanize(element.processing_intent.processing_type)} · {humanize(status)} · {element.confidence}</small>
@@ -5489,8 +5489,22 @@ function bboxStyle(bbox: [number, number, number, number], size: { width: number
   };
 }
 
+function v2BBoxStyle(bbox: [number, number, number, number], size: { width: number; height: number }) {
+  const [left, top, width, height] = bbox;
+  return {
+    left: `${(left / size.width) * 100}%`,
+    top: `${(top / size.height) * 100}%`,
+    width: `${(width / size.width) * 100}%`,
+    height: `${(height / size.height) * 100}%`
+  };
+}
+
 function bboxArea(bbox: [number, number, number, number]) {
   return Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1]);
+}
+
+function v2BBoxArea(bbox: [number, number, number, number]) {
+  return Math.max(0, bbox[2]) * Math.max(0, bbox[3]);
 }
 
 function bboxText(bbox: [number, number, number, number]): string {
@@ -5773,6 +5787,21 @@ function tooltipStyle(bbox: [number, number, number, number], size: { width: num
     y2 / size.height > 0.72
       ? { bottom: `${((size.height - y1) / size.height) * 100}%`, transform: "translateY(-8px)" }
       : { top: `${(y2 / size.height) * 100}%`, transform: "translateY(8px)" };
+  return { ...horizontal, ...vertical };
+}
+
+function v2TooltipStyle(bbox: [number, number, number, number], size: { width: number; height: number }) {
+  const [left, top, width, height] = bbox;
+  const right = left + width;
+  const bottom = top + height;
+  const horizontal =
+    left / size.width > 0.65
+      ? { right: `${((size.width - right) / size.width) * 100}%` }
+      : { left: `${(left / size.width) * 100}%` };
+  const vertical =
+    bottom / size.height > 0.72
+      ? { bottom: `${((size.height - top) / size.height) * 100}%`, transform: "translateY(-8px)" }
+      : { top: `${(bottom / size.height) * 100}%`, transform: "translateY(8px)" };
   return { ...horizontal, ...vertical };
 }
 
