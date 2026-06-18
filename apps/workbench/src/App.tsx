@@ -48,6 +48,7 @@ import type {
   RunCompatibilityMode,
   V2AssetPackage,
   V2AssetResult,
+  V2AssetStatus,
   V2ElementPlan,
   V2RunPackage
 } from "./types";
@@ -362,25 +363,25 @@ export default function App() {
     }
   }
 
-  async function selectCase(caseId: string): Promise<{ detail: CaseDetail; hasAssetPlan: boolean }> {
+  async function selectCase(caseId: string): Promise<{ detail: CaseDetail; hasAssetPlan: boolean; compatibility: RunCompatibilityMode }> {
     const detail = await getCase(caseId);
     setActiveCase(detail);
     setCaseProgress(await getCaseProgress(caseId));
     clearAssetEditingState();
     const hasV2Package = await loadV2PackageForCase(caseId);
     if (hasV2Package) {
-      return { detail, hasAssetPlan: false };
+      return { detail, hasAssetPlan: false, compatibility: "v2" };
     }
     if (detail.case.compatibility_mode === "legacy_readonly" || caseHasLegacyArtifacts(detail)) {
       applyLegacyCompatibility(detail);
-      return { detail, hasAssetPlan: false };
+      return { detail, hasAssetPlan: false, compatibility: "legacy_readonly" };
     }
     try {
       await loadAssetsForCase(caseId);
-      return { detail, hasAssetPlan: true };
+      return { detail, hasAssetPlan: true, compatibility: "none" };
     } catch {
       setAssetPlan(null);
-      return { detail, hasAssetPlan: false };
+      return { detail, hasAssetPlan: false, compatibility: "none" };
     }
   }
 
@@ -666,22 +667,24 @@ export default function App() {
     runFromAssets().catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }
 
-  async function openAssetsEditor() {
-    if (!activeCase) return;
-    if (runCompatibility === "legacy_readonly") {
+  async function openAssetsEditorForCase(caseId: string) {
+    const selected = activeCase?.case.case_id === caseId;
+    const selection = selected
+      ? { hasAssetPlan: Boolean(activeAssetPlan), compatibility: runCompatibility }
+      : await selectCase(caseId);
+    if (selection.compatibility === "legacy_readonly") {
       setError("这是历史只读结果，不能继续编辑素材。");
       return;
     }
-    if (runCompatibility === "v2") {
-      setActiveView("board");
+    if (selection.compatibility === "v2") {
+      setActiveView("editor");
       return;
     }
-    if (!assetsReady) {
+    if (selected && !activeAssetPlan) {
+      await loadAssetsForCase(caseId, selectedAssetId);
+    } else if (!selected && !selection.hasAssetPlan) {
       setError("素材还没准备好。");
       return;
-    }
-    if (!activeAssetPlan) {
-      await loadAssetsForCase(activeCase.case.case_id, selectedAssetId);
     }
     setActiveView("editor");
   }
@@ -944,7 +947,7 @@ export default function App() {
           batchPptxDownloadPendingId={batchPptxDownloadPendingId}
           batchRunPendingId={batchRunPendingId}
           onOpenSubmit={() => setSubmitOpen(true)}
-          onOpenAssetsEditor={() => openAssetsEditor().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onOpenCaseAssets={(caseId) => openAssetsEditorForCase(caseId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onOpenSvgEditor={() => setActiveView("svg")}
           onRenameBatch={(batch) => setTaskRenameTarget({ batchId: batch.batch_id, name: batch.name })}
           onDeleteBatch={(batch) => setTaskDeleteTarget({ batchId: batch.batch_id, name: batch.name })}
@@ -965,6 +968,25 @@ export default function App() {
           onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
         />
         )
+      ) : activeView === "editor" && runCompatibility === "v2" ? (
+        <V2AssetsWorkspace
+          activeCase={activeCase}
+          runPackage={activeRunPackage}
+          elements={v2Elements}
+          selectedElementId={selectedV2ElementId}
+          selectedAssetPackage={selectedAssetPackage}
+          packageError={v2PackageError}
+          loadingElementId={v2AssetLoadingElementId}
+          actionPending={v2ActionPending}
+          figureUrl={activeCase?.case.preview_url || figureArtifact?.url || ""}
+          runInProgress={activeCaseRunning}
+          onBackToBoard={() => setActiveView("board")}
+          onSelectElement={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onProcessAsset={(processor) => processSelectedV2Asset(processor).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onSetActiveResult={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onCompose={() => composeActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onExport={() => exportActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+        />
       ) : activeView === "editor" ? (
         <EditorWorkspace
           activeCase={activeCase}
@@ -1060,7 +1082,7 @@ function BoardWorkspace({
   batchPptxDownloadPendingId,
   batchRunPendingId,
   onOpenSubmit,
-  onOpenAssetsEditor,
+  onOpenCaseAssets,
   onOpenSvgEditor,
   onRenameBatch,
   onDeleteBatch,
@@ -1102,7 +1124,7 @@ function BoardWorkspace({
   batchPptxDownloadPendingId: string;
   batchRunPendingId: string;
   onOpenSubmit: () => void;
-  onOpenAssetsEditor: () => void;
+  onOpenCaseAssets: (caseId: string) => void;
   onOpenSvgEditor: () => void;
   onRenameBatch: (batch: BatchRecord) => void;
   onDeleteBatch: (batch: BatchRecord) => void;
@@ -1139,7 +1161,7 @@ function BoardWorkspace({
           batchPptxDownloadPendingId={batchPptxDownloadPendingId}
           batchRunPendingId={batchRunPendingId}
           onOpenSubmit={onOpenSubmit}
-          onOpenAssetsEditor={onOpenAssetsEditor}
+          onOpenCaseAssets={onOpenCaseAssets}
           onOpenSvgEditor={onOpenSvgEditor}
           onRenameBatch={onRenameBatch}
           onDeleteBatch={onDeleteBatch}
@@ -1682,6 +1704,303 @@ function V2AssetPackagePanel({
         )}
       </div>
     </section>
+  );
+}
+
+function V2AssetsWorkspace({
+  activeCase,
+  runPackage,
+  elements,
+  selectedElementId,
+  selectedAssetPackage,
+  packageError,
+  loadingElementId,
+  actionPending,
+  figureUrl,
+  runInProgress,
+  onBackToBoard,
+  onSelectElement,
+  onProcessAsset,
+  onSetActiveResult,
+  onCompose,
+  onExport
+}: {
+  activeCase: CaseDetail | null;
+  runPackage: V2RunPackage | null;
+  elements: V2ElementPlan[];
+  selectedElementId: string;
+  selectedAssetPackage: V2AssetPackage | null;
+  packageError: string;
+  loadingElementId: string;
+  actionPending: string;
+  figureUrl: string;
+  runInProgress: boolean;
+  onBackToBoard: () => void;
+  onSelectElement: (elementId: string) => void;
+  onProcessAsset: (processor: V2ProcessorType) => void;
+  onSetActiveResult: (resultId: string) => void;
+  onCompose: () => void;
+  onExport: () => void;
+}) {
+  const editorRef = useRef<HTMLElement | null>(null);
+  const [zoom, setZoom] = useState(0.72);
+  const canCompose = Boolean(runPackage && !actionPending && !runInProgress && !hasBlockingAssetPackage(runPackage));
+  const canExport = Boolean(runPackage && !actionPending && !runInProgress && !hasBlockingAssetPackage(runPackage) && runPackage.compose_outputs);
+
+  const changeZoom = useCallback((delta: number) => {
+    setZoom((value) => clamp(Number((value + delta).toFixed(2)), 0.25, 2.5));
+  }, []);
+
+  useEffect(() => {
+    const root = editorRef.current;
+    if (!root) return;
+
+    function handleWheel(event: globalThis.WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      if (event.target instanceof Element && event.target.closest(".canvas-stage")) {
+        changeZoom(event.deltaY < 0 ? 0.03 : -0.03);
+      }
+    }
+
+    root.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+    return () => root.removeEventListener("wheel", handleWheel, { capture: true });
+  }, [changeZoom]);
+
+  const topbarTarget = typeof document !== "undefined" ? document.getElementById("drawai-view-controls") : null;
+  const topbarPortal = topbarTarget
+    ? createPortal(
+        <div className="editor-banner-controls assets-banner-controls v2-assets-banner-controls">
+          <button className="home-button" title="返回任务" aria-label="返回任务" onClick={onBackToBoard}>
+            <HomeIcon />
+          </button>
+          <div className="editor-title">
+            <div>
+              <strong>{activeCase?.case.name || "未选择图片"}</strong>
+              <span>{humanize(activeCase?.case.status || "idle")} · {humanize(activeCase?.case.stage || "select a case")}</span>
+            </div>
+          </div>
+          <div className="toolbar-note v2-assets-mode-note">
+            Assets · {elements.length}
+          </div>
+          <div className="editor-toolbar">
+            <div className="tool-group">
+              <button className="icon-button" title="缩小" onClick={() => changeZoom(-0.1)}>−</button>
+              <span className="zoom-readout">{Math.round(zoom * 100)}%</span>
+              <button className="icon-button" title="放大" onClick={() => changeZoom(0.1)}>+</button>
+            </div>
+          </div>
+          <div className="editor-actions">
+            <button type="button" className={actionPending === "compose" ? "running" : ""} disabled={!canCompose} onClick={onCompose}>
+              {actionPending === "compose" && <ButtonSpinner />}
+              Compose
+            </button>
+            <button type="button" className={actionPending === "export" ? "primary running" : "primary"} disabled={!canExport} onClick={onExport}>
+              {actionPending === "export" && <ButtonSpinner />}
+              Export
+            </button>
+          </div>
+        </div>,
+        topbarTarget
+      )
+    : null;
+
+  return (
+    <>
+      {topbarPortal}
+      <main ref={editorRef} className="editor-workspace v2-assets-workspace">
+        <div className="asset-stage v2-assets-stage" data-asset-view="extraction">
+          <div className="v2-assets-workspace-grid">
+            <V2AssetCanvas
+              activeCase={activeCase}
+              runPackage={runPackage}
+              elements={elements}
+              selectedElementId={selectedElementId}
+              selectedAssetPackage={selectedAssetPackage}
+              figureUrl={figureUrl}
+              zoom={zoom}
+              onSelectElement={onSelectElement}
+            />
+            <aside className="v2-assets-workspace-panel">
+              <V2AssetPackagePanel
+                runPackage={runPackage}
+                elements={elements}
+                selectedElementId={selectedElementId}
+                selectedAssetPackage={selectedAssetPackage}
+                loadingElementId={loadingElementId}
+                packageError={packageError}
+                actionPending={actionPending}
+                onSelectElement={onSelectElement}
+                onProcessAsset={onProcessAsset}
+                onSetActiveResult={onSetActiveResult}
+                onCompose={onCompose}
+                onExport={onExport}
+              />
+            </aside>
+          </div>
+        </div>
+      </main>
+    </>
+  );
+}
+
+function V2AssetCanvas({
+  activeCase,
+  runPackage,
+  elements,
+  selectedElementId,
+  selectedAssetPackage,
+  figureUrl,
+  zoom,
+  onSelectElement
+}: {
+  activeCase: CaseDetail | null;
+  runPackage: V2RunPackage | null;
+  elements: V2ElementPlan[];
+  selectedElementId: string;
+  selectedAssetPackage: V2AssetPackage | null;
+  figureUrl: string;
+  zoom: number;
+  onSelectElement: (elementId: string) => void;
+}) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const [naturalSize, setNaturalSize] = useState({ width: 1, height: 1 });
+  const [hoveredElementId, setHoveredElementId] = useState("");
+  const selectedElement = elements.find((element) => element.element_id === selectedElementId) || null;
+  const canvasWidth = naturalSize.width > 1 ? Math.max(320, Math.round(naturalSize.width * zoom)) : undefined;
+  const packageByElementId = useMemo(() => {
+    const items = new Map<string, V2AssetPackage>();
+    (runPackage?.asset_packages || []).forEach((assetPackage) => {
+      items.set(assetPackage.element_id, assetPackage);
+    });
+    if (selectedAssetPackage) {
+      items.set(selectedAssetPackage.element_id, selectedAssetPackage);
+    }
+    return items;
+  }, [runPackage, selectedAssetPackage]);
+  const visibleElements = elements
+    .map((element, originalIndex) => ({ element, originalIndex, area: bboxArea(element.bbox) }))
+    .sort((left, right) => right.area - left.area || left.originalIndex - right.originalIndex);
+  const hoveredElement = visibleElements.find(({ element }) => element.element_id === hoveredElementId)?.element || null;
+  const selectedStatus = selectedElement ? packageByElementId.get(selectedElement.element_id)?.status || "pending" : "";
+  const activeResultId = selectedElement ? packageByElementId.get(selectedElement.element_id)?.active_result?.result_id || "" : "";
+
+  return (
+    <section className="canvas-layout v2-assets-layout">
+      <div className="canvas-stage v2-assets-canvas">
+        {figureUrl ? (
+          <div className="image-overlay-wrap v2-image-overlay-wrap" style={canvasWidth ? { width: `${canvasWidth}px` } : undefined}>
+            <img
+              ref={imageRef}
+              src={figureUrl}
+              alt=""
+              draggable={false}
+              onLoad={(event) => setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+            />
+            {visibleElements.map(({ element }, layerIndex) => {
+              const assetPackage = packageByElementId.get(element.element_id);
+              return (
+                <V2ElementBox
+                  key={element.element_id}
+                  element={element}
+                  naturalSize={naturalSize}
+                  selected={element.element_id === selectedElementId}
+                  status={assetPackage?.status || "pending"}
+                  zIndex={layerIndex + 1}
+                  onSelect={() => onSelectElement(element.element_id)}
+                  onHover={() => setHoveredElementId(element.element_id)}
+                  onLeave={() => setHoveredElementId((id) => (id === element.element_id ? "" : id))}
+                />
+              );
+            })}
+            {hoveredElement && <V2ElementTooltip element={hoveredElement} naturalSize={naturalSize} status={packageByElementId.get(hoveredElement.element_id)?.status || "pending"} />}
+          </div>
+        ) : (
+          <EmptyState label="原图还没准备好" />
+        )}
+      </div>
+      {selectedElement && (
+        <div className="selection-bar v2-selection-bar">
+          <strong>{selectedElement.element_id}</strong>
+          <span>{humanize(selectedElement.element_type)} · {humanize(selectedElement.processing_intent.processing_type)}</span>
+          <em className={selectedStatus === "failed" ? "asset-status-failed" : selectedStatus === "unsupported" ? "asset-status-unsupported" : ""}>
+            {humanize(selectedStatus)}
+          </em>
+          {activeResultId && <code>{activeResultId}</code>}
+        </div>
+      )}
+      {!activeCase && <EmptyState label="请选择一张图" />}
+    </section>
+  );
+}
+
+function V2ElementBox({
+  element,
+  naturalSize,
+  selected,
+  status,
+  zIndex,
+  onSelect,
+  onHover,
+  onLeave
+}: {
+  element: V2ElementPlan;
+  naturalSize: { width: number; height: number };
+  selected: boolean;
+  status: V2AssetStatus;
+  zIndex: number;
+  onSelect: () => void;
+  onHover: () => void;
+  onLeave: () => void;
+}) {
+  const style = { ...bboxStyle(element.bbox, naturalSize), zIndex };
+  const statusClass = status === "failed" ? "v2-asset-box-failed" : status === "unsupported" ? "v2-asset-box-unsupported" : "";
+  return (
+    <div
+      className={`asset-box v2-asset-box ${v2ElementProcessingClass(element)} ${statusClass} ${selected ? "selected" : ""}`}
+      data-asset-id={element.element_id}
+      role="button"
+      tabIndex={0}
+      style={style}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+      onPointerEnter={onHover}
+      onPointerLeave={onLeave}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <span className="asset-badge">
+        {element.element_id} · {humanize(element.element_type)} · {humanize(element.processing_intent.processing_type)}
+      </span>
+      <span className="v2-asset-status-chip">{humanize(status)}</span>
+    </div>
+  );
+}
+
+function V2ElementTooltip({
+  element,
+  naturalSize,
+  status
+}: {
+  element: V2ElementPlan;
+  naturalSize: { width: number; height: number };
+  status: V2AssetStatus;
+}) {
+  return (
+    <div className={`canvas-tooltip ${v2ElementProcessingClass(element)}`} style={tooltipStyle(element.bbox, naturalSize)}>
+      <strong>{element.element_id}</strong>
+      <em>{humanize(element.element_type)} · {humanize(element.processing_intent.object_type)}</em>
+      <small>{humanize(element.processing_intent.processing_type)} · {humanize(status)} · {element.confidence}</small>
+      <p>{element.change_reason || bboxText(element.bbox)}</p>
+    </div>
   );
 }
 
@@ -2238,7 +2557,7 @@ function TaskSelectionWorkspace({
   batchPptxDownloadPendingId,
   batchRunPendingId,
   onOpenSubmit,
-  onOpenAssetsEditor,
+  onOpenCaseAssets,
   onOpenSvgEditor,
   onRenameBatch,
   onDeleteBatch,
@@ -2265,7 +2584,7 @@ function TaskSelectionWorkspace({
   batchPptxDownloadPendingId: string;
   batchRunPendingId: string;
   onOpenSubmit: () => void;
-  onOpenAssetsEditor: () => void;
+  onOpenCaseAssets: (caseId: string) => void;
   onOpenSvgEditor: () => void;
   onRenameBatch: (batch: BatchRecord) => void;
   onDeleteBatch: (batch: BatchRecord) => void;
@@ -2288,7 +2607,15 @@ function TaskSelectionWorkspace({
   const contextSelected = Boolean(contextCase && activeCase?.case.case_id === contextCase.case_id);
   const contextCompatibility = contextSelected ? runCompatibility : contextCase?.compatibility_mode || "none";
   const contextReadOnly = contextCompatibility === "legacy_readonly";
-  const contextAssetsReady = contextSelected && assetsReady && !contextReadOnly;
+  const contextAssetsReady = Boolean(
+    contextCase &&
+      !contextReadOnly &&
+      (contextCompatibility === "v2"
+        ? contextCase.editor_ready
+        : contextSelected
+          ? assetsReady
+          : contextCase.editor_ready)
+  );
   const contextCanvasReady = contextSelected && canvasReady;
   const contextRunReady = contextSelected && canRunFromAssets && !contextReadOnly;
   const batchContextBusy = Boolean(batchContextMenu && (batchContextMenu.running || batchRunPendingId === batchContextMenu.batchId));
@@ -2376,14 +2703,15 @@ function TaskSelectionWorkspace({
 
   async function runContextAction(action: "assets" | "canvas" | "run") {
     if (!contextCase) return;
+    if (action === "assets") {
+      setContextMenu(null);
+      onOpenCaseAssets(contextCase.case_id);
+      return;
+    }
     if (activeCase?.case.case_id !== contextCase.case_id) {
       await onFocusCase(contextCase.case_id);
     }
     setContextMenu(null);
-    if (action === "assets") {
-      onOpenAssetsEditor();
-      return;
-    }
     if (action === "canvas") {
       onOpenSvgEditor();
       return;
@@ -2514,11 +2842,7 @@ function TaskSelectionWorkspace({
                       className={needsAssetReview ? "task-thumb-action needs-review" : "task-thumb-action"}
                       disabled={!taskAssetsEnabled}
                       onClick={() => {
-                        if (itemV2) {
-                          void onFocusCase(item.case_id);
-                          return;
-                        }
-                        onOpenAssetsEditor();
+                        onOpenCaseAssets(item.case_id);
                       }}
                     >
                       <span className="task-thumb-action__zh">{itemV2 ? "Assets" : "素材"}</span>
@@ -2679,7 +3003,7 @@ function TaskSelectionWorkspace({
             }}
           >
             <span>{contextCompatibility === "v2" ? "Assets" : "素材"}</span>
-            <em>{contextReadOnly ? "历史只读" : contextSelected ? "编辑素材" : "正在选择"}</em>
+            <em>{contextReadOnly ? "历史只读" : contextCompatibility === "v2" ? "打开画布" : contextSelected ? "编辑素材" : "正在选择"}</em>
           </button>
           <button
             type="button"
@@ -4339,6 +4663,13 @@ function assetPackageFromRunPackage(runPackage: V2RunPackage | null, elementId: 
 
 function hasBlockingAssetPackage(runPackage: V2RunPackage): boolean {
   return (runPackage.asset_packages || []).some((assetPackage) => assetPackage.status === "failed" || assetPackage.status === "unsupported");
+}
+
+function v2ElementProcessingClass(element: V2ElementPlan): string {
+  const processing = element.processing_intent.processing_type;
+  if (processing === "crop_nobg") return "strategy-nobg";
+  if (processing === "crop") return "strategy-crop";
+  return "strategy-svg";
 }
 
 function caseHasLegacyArtifacts(detail: CaseDetail): boolean {
