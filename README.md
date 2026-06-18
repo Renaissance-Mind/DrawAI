@@ -176,6 +176,7 @@ DrawAI 的目标不是把原图简单塞进 PPT，而是尽量生成可编辑、
 ## 📚 更多文档
 
 - [运行方式、参数、端口和模型路径](docs/zh-CN/runtime-options.md)
+- [更新日志](CHANGELOG.md)
 
 ## ❓ FAQ
 
