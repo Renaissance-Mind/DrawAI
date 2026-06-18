@@ -143,6 +143,12 @@ class V2StageOptions:
         return {name: provider for name, provider in providers.items() if provider is not None}
 
 
+@dataclass(frozen=True)
+class RefinementPlanSet:
+    current_plans: tuple[ElementPlan, ...]
+    source_elements: tuple[ElementPlan, ...] = ()
+
+
 def build_v2_run_context(
     cfg: DrawAiPipelineConfig,
     paths: DrawAiArtifactPaths,
@@ -223,18 +229,21 @@ def _run_v2_stage(
         plans = _plans_with_candidate_text(fusion_result.elements, candidates)
         _write_element_plans(paths.root, plans)
         write_json(paths.v2_fusion_trace_json, fusion_result.trace)
-        _write_v2_package(paths, cfg, elements=plans, stage="fuse_elements")
+        _write_v2_package(paths, cfg, elements=plans, source_elements=(), stage="fuse_elements")
         _write_box_ir_compat_output(paths, plans)
         return
 
     if stage == "refine_elements":
         plans = _read_element_plans(paths)
+        source_elements: tuple[ElementPlan, ...] = ()
         if cfg.v2.refine.enabled:
             refine_config = RefineConfig(
                 enabled=cfg.v2.refine.enabled,
                 provider=cfg.v2.refine.provider,
             )
-            plans = _refine_with_codex_analysis(paths, plans, refine_config)
+            refined = _refine_with_codex_analysis(paths, plans, refine_config)
+            plans = refined.current_plans
+            source_elements = refined.source_elements
             write_json(
                 paths.v2_refine_trace_json,
                 {
@@ -243,6 +252,7 @@ def _run_v2_stage(
                     "status": "agent_refined",
                     "provider": refine_config.provider,
                     "element_count": len(plans),
+                    "source_element_count": len(source_elements),
                     "analysis_path": str(paths.element_analysis_json),
                 },
             )
@@ -258,13 +268,14 @@ def _run_v2_stage(
                 },
             )
         _write_element_plans(paths.root, plans)
-        _write_v2_package(paths, cfg, elements=plans, stage="refine_elements")
+        _write_v2_package(paths, cfg, elements=plans, source_elements=source_elements, stage="refine_elements")
         _write_compat_outputs(paths, plans)
         return
 
     if stage == "plan_assets":
         plans = tuple(_asset_planned_element(cfg, plan) for plan in _read_element_plans(paths))
         _write_element_plans(paths.root, plans)
+        _remove_stale_asset_packages(paths, {plan.element_id for plan in plans})
         pending_packages = tuple(
             AssetPackage.empty(
                 asset_id=_asset_id(plan),
@@ -639,7 +650,7 @@ def _refine_with_codex_analysis(
     paths: DrawAiArtifactPaths,
     plans: Sequence[ElementPlan],
     refine_config: RefineConfig,
-) -> tuple[ElementPlan, ...]:
+) -> RefinementPlanSet:
     if refine_config.provider != "codex_element_refiner":
         raise RuntimeError(f"Unsupported v2 refine provider: {refine_config.provider}")
     raw_analysis = _read_external_refinement_analysis(paths)
@@ -657,7 +668,7 @@ def _refine_with_codex_analysis(
         expected_candidate_ids=expected_candidate_ids,
         locked_geometry_by_candidate=locked_geometry_by_candidate,
     )
-    return _merge_refined_plans_with_unexposed(plans, refined_plans, exposed_plan_ids)
+    return _split_refined_plans_and_source_elements(plans, refined_plans, exposed_plan_ids)
 
 
 def _refinement_exposed_element_ids(
@@ -763,6 +774,42 @@ def _merge_refined_plans_with_unexposed(
 
     merged = sorted((*unexposed_plans, *refined_plans), key=plan_order)
     return tuple(replace(plan, z_order=index) for index, plan in enumerate(merged))
+
+
+def _split_refined_plans_and_source_elements(
+    original_plans: Sequence[ElementPlan],
+    refined_plans: Sequence[ElementPlan],
+    exposed_plan_ids: set[str],
+) -> RefinementPlanSet:
+    if not exposed_plan_ids:
+        return RefinementPlanSet(current_plans=tuple(refined_plans))
+    source_elements = tuple(plan for plan in original_plans if plan.element_id not in exposed_plan_ids)
+    if not source_elements:
+        return RefinementPlanSet(current_plans=tuple(refined_plans))
+
+    order_by_source_id = {
+        source_id: plan.z_order
+        for plan in original_plans
+        for source_id in plan.source_candidate_ids
+    }
+    order_by_element_id = {plan.element_id: plan.z_order for plan in original_plans}
+    fallback_order = len(original_plans)
+
+    def plan_order(plan: ElementPlan) -> tuple[int, int]:
+        source_orders = [
+            order_by_source_id[source_id]
+            for source_id in plan.source_candidate_ids
+            if source_id in order_by_source_id
+        ]
+        if source_orders:
+            return (min(source_orders), plan.z_order)
+        return (order_by_element_id.get(plan.element_id, fallback_order + plan.z_order), plan.z_order)
+
+    current_plans = tuple(
+        replace(plan, z_order=index)
+        for index, plan in enumerate(sorted(refined_plans, key=plan_order))
+    )
+    return RefinementPlanSet(current_plans=current_plans, source_elements=source_elements)
 
 
 def _translate_compat_analysis_source_ids(
@@ -909,6 +956,14 @@ def _read_asset_packages(
         if package_path.is_file():
             packages.append(_asset_package_from_payload(_read_json_file(package_path, "v2 asset package")))
     return tuple(packages)
+
+
+def _remove_stale_asset_packages(paths: DrawAiArtifactPaths, active_element_ids: set[str]) -> None:
+    if not paths.v2_elements_dir.is_dir():
+        return
+    for package_path in paths.v2_elements_dir.glob("*/asset_package.json"):
+        if package_path.parent.name not in active_element_ids:
+            package_path.unlink()
 
 
 def _require_compose_asset_packages_ready(
@@ -1061,6 +1116,7 @@ def _write_v2_package(
     *,
     elements: Sequence[ElementPlan],
     asset_packages: Sequence[AssetPackage | Mapping[str, Any]] = (),
+    source_elements: Sequence[ElementPlan | Mapping[str, Any]] | None = None,
     stage: str,
     compose_outputs: Mapping[str, Any] | None = None,
     export_outputs: Mapping[str, Any] | None = None,
@@ -1085,12 +1141,34 @@ def _write_v2_package(
             for package in asset_packages
         ],
     }
+    source_payload = _source_elements_payload(paths, source_elements)
+    if source_payload:
+        payload["source_elements"] = source_payload
     if compose_outputs is not None:
         payload["compose_outputs"] = dict(compose_outputs)
     if export_outputs is not None:
         payload["export_outputs"] = dict(export_outputs)
     write_json(paths.run_package_json, payload)
     return payload
+
+
+def _source_elements_payload(
+    paths: DrawAiArtifactPaths,
+    source_elements: Sequence[ElementPlan | Mapping[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if source_elements is None:
+        existing = _read_json_if_exists(paths.run_package_json, default={})
+        existing_source_elements = existing.get("source_elements") if isinstance(existing, Mapping) else None
+        raw_source_elements: Sequence[ElementPlan | Mapping[str, Any]] = (
+            existing_source_elements if isinstance(existing_source_elements, list) else ()
+        )
+    else:
+        raw_source_elements = source_elements
+    return [
+        item.to_dict() if isinstance(item, ElementPlan) else dict(item)
+        for item in raw_source_elements
+        if isinstance(item, ElementPlan) or isinstance(item, Mapping)
+    ]
 
 
 def _compose_outputs(paths: DrawAiArtifactPaths) -> dict[str, Any]:

@@ -161,6 +161,48 @@ def test_v2_export_counts_codex_removal_records_for_coverage(tmp_path: Path):
     ]
 
 
+def test_v2_export_keeps_retained_merged_records_as_elements(tmp_path: Path):
+    module = _load_run0_module()
+    output_dir = tmp_path / "reports" / "element_analysis_codex"
+    analysis = {
+        "schema": module.SCHEMA_OUTPUT,
+        "elements": [
+            {
+                "box_id": "B001_M01",
+                "source_candidate_ids": ["B001", "B002"],
+                "refinement_action": "merged",
+                "category": "svg_self_draw",
+                "confidence": "high",
+                "visual_role": "merged frame",
+                "reason": "Retained frame merged from duplicate parser candidates.",
+                "bbox": [1, 2, 21, 32],
+                "type": "frame",
+            },
+            {
+                "box_id": "B001_S01",
+                "source_candidate_ids": ["B001"],
+                "refinement_action": "split",
+                "category": "svg_self_draw",
+                "confidence": "high",
+                "visual_role": "split label",
+                "reason": "Label split from the broad source candidate.",
+                "bbox": [3, 4, 10, 12],
+                "type": "text",
+            },
+        ],
+    }
+    request = {"candidates": [{"box_id": "B001"}, {"box_id": "B002"}]}
+
+    validation = module.validate_analysis(analysis, request)
+    assert validation["element_count"] == 2
+    assert validation["removal_count"] == 0
+
+    v2_export = module.write_v2_element_plans_export(output_dir, analysis, request)
+
+    assert [element["element_id"] for element in v2_export["elements"]] == ["B001_M01", "B001_S01"]
+    assert v2_export["removals"] == []
+
+
 def test_finalize_analysis_outputs_counts_top_level_removal_records(tmp_path: Path):
     module = _load_run0_module()
     case_dir = tmp_path / "case"

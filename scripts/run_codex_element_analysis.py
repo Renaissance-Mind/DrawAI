@@ -499,11 +499,22 @@ def normalized_element_source_ids(
 
 
 def is_removal_record(element: Mapping[str, Any]) -> bool:
-    return record_refinement_action(element) in {"removed", "merged"}
+    action = record_refinement_action(element)
+    if action == "removed":
+        return True
+    if action != "merged":
+        return False
+    if "removed_source_candidate_ids" in element:
+        return True
+    return not has_retained_element_payload(element)
 
 
 def record_refinement_action(record: Mapping[str, Any]) -> str:
     return str(record.get("refinement_action") or record.get("action") or "").strip()
+
+
+def has_retained_element_payload(record: Mapping[str, Any]) -> bool:
+    return any(record.get(key) not in (None, "", []) for key in ("category", "bbox", "element_type", "type", "geometry"))
 
 
 def analysis_removal_records(analysis: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -1190,7 +1201,7 @@ def validate_analysis(analysis: Mapping[str, Any], request: Mapping[str, Any]) -
         source_ids = validate_source_record(element, box_id)
         if action == "added" and source_ids:
             raise ValueError(f"{box_id} added element must not include source_candidate_ids")
-        if action in {"removed", "merged"}:
+        if is_removal_record(element):
             validate_removal_record(element, box_id, action)
             continue
         category = str(element.get("category") or "")

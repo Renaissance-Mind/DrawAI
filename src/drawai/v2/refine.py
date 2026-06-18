@@ -380,7 +380,17 @@ def _normalized_removal_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
 def _is_removal_record(record: Mapping[str, Any]) -> bool:
     action = str(record.get("refinement_action") or record.get("action") or "").strip()
-    return action in REMOVAL_ACTIONS
+    if action == "removed":
+        return True
+    if action != "merged":
+        return False
+    if "removed_source_candidate_ids" in record:
+        return True
+    return not _has_retained_element_payload(record)
+
+
+def _has_retained_element_payload(record: Mapping[str, Any]) -> bool:
+    return any(record.get(key) not in (None, "", []) for key in ("category", "bbox", "element_type", "type", "geometry"))
 
 
 def _normalize_id_set(raw_ids: object, field_name: str) -> set[str]:

@@ -206,6 +206,45 @@ def test_refine_validation_rejects_retained_and_removed_same_source() -> None:
         )
 
 
+def test_refine_allows_retained_merged_element_with_split_source_trace() -> None:
+    analysis = {
+        "schema": "drawai.codex_element_analysis.v1",
+        "elements": [
+            {
+                "box_id": "E001_M01",
+                "source_candidate_ids": ["B001", "B002"],
+                "refinement_action": "merged",
+                "category": "svg_self_draw",
+                "confidence": "high",
+                "visual_role": "merged frame",
+                "reason": "Retained frame merged from duplicate parser candidates.",
+                "bbox": [1, 2, 21, 32],
+                "type": "frame",
+            },
+            {
+                "box_id": "E001_S01",
+                "source_candidate_ids": ["B001"],
+                "refinement_action": "split",
+                "category": "svg_self_draw",
+                "confidence": "high",
+                "visual_role": "split label",
+                "reason": "Label split from the broad source candidate.",
+                "bbox": [3, 4, 10, 12],
+                "type": "text",
+            },
+        ],
+    }
+
+    plans = CodexElementRefiner().convert_analysis(
+        analysis,
+        expected_candidate_ids={"B001", "B002"},
+        locked_geometry_by_candidate={},
+    )
+
+    assert [plan.element_id for plan in plans] == ["E001_M01", "E001_S01"]
+    assert plans[0].source_candidate_ids == ("B001", "B002")
+
+
 def test_refine_validation_rejects_locked_mask_bbox_change() -> None:
     changed = _plan("E001", ("sam3:B001",))
     changed = replace(changed, bbox=(0.0, 0.0, 40.0, 40.0))

@@ -13,6 +13,7 @@ from drawai.v2.schema import ElementPlan, ProcessingIntent
 from drawai.v2.stages import (
     _merge_refined_plans_with_unexposed,
     _refinement_expected_source_candidate_ids,
+    _split_refined_plans_and_source_elements,
     _translate_compat_analysis_source_ids,
 )
 
@@ -369,6 +370,51 @@ def test_refine_expected_sources_can_be_limited_to_exposed_compat_plans() -> Non
         ("E001", "pending", 0),
         ("E002", "agent_refined", 1),
     ]
+
+
+def test_refine_splits_unexposed_plans_into_source_elements() -> None:
+    plans = (
+        ElementPlan(
+            element_id="E001",
+            source_candidate_ids=("ocr:T001",),
+            element_type="text",
+            bbox=(4, 5, 16, 9),
+            geometry={"kind": "bbox", "bbox": [4, 5, 20, 14]},
+            z_order=0,
+            confidence="high",
+            processing_intent=ProcessingIntent(
+                object_type="text",
+                processing_type="svg_self_draw",
+            ),
+            review_status="pending",
+            created_by_stage="fuse_elements",
+            change_reason="fixture",
+        ),
+        ElementPlan(
+            element_id="E002",
+            source_candidate_ids=("sam3:B113",),
+            element_type="icon",
+            bbox=(20, 5, 10, 10),
+            geometry={"kind": "bbox", "bbox": [20, 5, 30, 15]},
+            z_order=1,
+            confidence="high",
+            processing_intent=ProcessingIntent(
+                object_type="icon",
+                processing_type="crop_nobg",
+            ),
+            review_status="pending",
+            created_by_stage="fuse_elements",
+            change_reason="fixture",
+        ),
+    )
+
+    refined_icon = replace(plans[1], review_status="agent_refined")
+    result = _split_refined_plans_and_source_elements(plans, (refined_icon,), {"E002"})
+
+    assert [(plan.element_id, plan.review_status, plan.z_order) for plan in result.current_plans] == [
+        ("E002", "agent_refined", 0),
+    ]
+    assert [plan.element_id for plan in result.source_elements] == ["E001"]
 
 
 def test_export_refuses_failed_asset_by_default(tmp_path: Path) -> None:
