@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping as MappingABC
 from collections.abc import Sequence as SequenceABC
 from dataclasses import dataclass, field
@@ -193,6 +194,8 @@ def validate_bbox(bbox: Sequence[float]) -> BBox:
     if len(bbox) != 4:
         raise ValueError("bbox must contain exactly four numbers")
     left, top, width, height = (float(value) for value in bbox)
+    if not all(math.isfinite(value) for value in (left, top, width, height)):
+        raise ValueError("bbox must contain only finite numbers")
     if width <= 0 or height <= 0:
         raise ValueError("bbox must have positive area")
     return (left, top, width, height)
@@ -234,7 +237,13 @@ def validate_element_plan(
         plan.processing_intent.processing_type,
         "processing_intent.processing_type",
     )
-    _validate_source_candidate_ids(plan.source_candidate_ids)
+    _validate_source_candidate_ids(
+        plan.source_candidate_ids,
+        allow_empty=(
+            plan.review_status == "agent_refined"
+            and plan.created_by_stage == "refine_elements"
+        ),
+    )
     _validate_literal(plan.confidence, _PLAN_CONFIDENCES, "confidence")
     _validate_literal(plan.review_status, get_args(ReviewStatus), "review_status")
     if not registry.has_element_type(plan.element_type):
@@ -271,8 +280,12 @@ def validate_run_package_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError("canvas must be a mapping")
 
 
-def _validate_source_candidate_ids(value: object) -> None:
-    if isinstance(value, str) or not isinstance(value, SequenceABC) or not value:
+def _validate_source_candidate_ids(value: object, *, allow_empty: bool = False) -> None:
+    if isinstance(value, str) or not isinstance(value, SequenceABC):
+        raise ValueError("source_candidate_ids must be a non-string sequence")
+    if not value:
+        if allow_empty:
+            return
         raise ValueError("source_candidate_ids must be a non-string sequence")
     for candidate_id in value:
         if not isinstance(candidate_id, str) or not candidate_id:

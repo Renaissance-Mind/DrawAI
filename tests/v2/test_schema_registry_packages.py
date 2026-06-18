@@ -160,6 +160,18 @@ def test_element_plan_validation_rejects_invalid_source_candidate_ids(tmp_path: 
             write_element_plan(tmp_path, plan)
 
 
+def test_validate_bbox_rejects_non_finite_values() -> None:
+    invalid_bboxes = (
+        (float("nan"), 2.0, 20.0, 30.0),
+        (1.0, float("inf"), 20.0, 30.0),
+        (1.0, 2.0, float("-inf"), 30.0),
+    )
+
+    for bbox in invalid_bboxes:
+        with pytest.raises(ValueError, match="finite"):
+            v2_schema.validate_bbox(bbox)
+
+
 def test_to_dict_recursively_normalizes_nested_json_values() -> None:
     plan = _element_plan(
         geometry={"kind": "polyline", "points": ((1, 2), (3, 4))},
