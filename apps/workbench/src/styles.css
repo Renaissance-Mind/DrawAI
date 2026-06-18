@@ -2674,17 +2674,6 @@ button.asset-status-unsupported {
   align-content: start;
 }
 
-.v2-assets-mode-note {
-  justify-self: start;
-  border: 1px solid rgba(8, 120, 79, 0.16);
-  border-radius: 999px;
-  background: rgba(8, 120, 79, 0.08);
-  color: var(--teal);
-  padding: 7px 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .detail-metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3474,21 +3463,6 @@ button.asset-status-unsupported {
     grid-template-areas:
       "home title mode actions"
       "toolbar toolbar toolbar toolbar";
-  }
-
-  .v2-assets-banner-controls {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "home title actions"
-      "mode toolbar toolbar";
-  }
-
-  .v2-assets-banner-controls > .v2-assets-mode-note {
-    grid-area: mode;
-  }
-
-  .v2-assets-banner-controls > .editor-toolbar {
-    grid-area: toolbar;
   }
 
   .svg-banner-controls {

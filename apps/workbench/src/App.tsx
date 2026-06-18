@@ -6,7 +6,6 @@ import {
   createUploadBatch,
   deleteBatch,
   downloadBatchPptx,
-  exportV2Case,
   forkV2FromSource,
   getAssetPackage,
   getAssets,
@@ -588,22 +587,6 @@ export default function App() {
     }
   }
 
-  async function exportActiveV2Case() {
-    if (!activeCase || runCompatibility !== "v2") return;
-    const caseId = activeCase.case.case_id;
-    setV2ActionPending("export");
-    setPptxExportPendingCaseId(caseId);
-    setV2PackageError("");
-    try {
-      const response = await exportV2Case(caseId);
-      mergeCaseStatus(response.case);
-      await refreshCaseAfterV2Mutation(caseId, selectedV2ElementId);
-    } finally {
-      setV2ActionPending("");
-      setPptxExportPendingCaseId((current) => (current === caseId ? "" : current));
-    }
-  }
-
   async function forkActiveCaseToV2() {
     if (!activeCase || !canForkV2FromSource) return;
     const currentCase = activeCase.case;
@@ -965,8 +948,6 @@ export default function App() {
           onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onComposeV2={() => composeActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onExportV2={() => exportActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
         />
         )
@@ -986,8 +967,7 @@ export default function App() {
           onSelectElement={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onProcessAsset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onSetActiveResult={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onCompose={() => composeActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onExport={() => exportActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onRun={runFromEditor}
         />
       ) : activeView === "editor" ? (
         <EditorWorkspace
@@ -1100,8 +1080,6 @@ function BoardWorkspace({
   onSelectV2Element,
   onProcessV2Asset,
   onSetActiveV2Result,
-  onComposeV2,
-  onExportV2,
   onForkV2FromSource
 }: {
   batches: BatchRecord[];
@@ -1142,8 +1120,6 @@ function BoardWorkspace({
   onSelectV2Element: (elementId: string) => void;
   onProcessV2Asset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveV2Result: (resultId: string) => void;
-  onComposeV2: () => void;
-  onExportV2: () => void;
   onForkV2FromSource: () => void;
 }) {
   return (
@@ -1192,8 +1168,6 @@ function BoardWorkspace({
           onSelectV2Element={onSelectV2Element}
           onProcessV2Asset={onProcessV2Asset}
           onSetActiveV2Result={onSetActiveV2Result}
-          onComposeV2={onComposeV2}
-          onExportV2={onExportV2}
           onForkV2FromSource={onForkV2FromSource}
         />
       </div>
@@ -1441,8 +1415,6 @@ function TaskDetailPanel({
   onSelectV2Element,
   onProcessV2Asset,
   onSetActiveV2Result,
-  onComposeV2,
-  onExportV2,
   onForkV2FromSource
 }: {
   caseDetail: CaseDetail | null;
@@ -1459,8 +1431,6 @@ function TaskDetailPanel({
   onSelectV2Element: (elementId: string) => void;
   onProcessV2Asset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveV2Result: (resultId: string) => void;
-  onComposeV2: () => void;
-  onExportV2: () => void;
   onForkV2FromSource: () => void;
 }) {
   if (!caseDetail) {
@@ -1493,8 +1463,6 @@ function TaskDetailPanel({
           onSelectElement={onSelectV2Element}
           onProcessAsset={onProcessV2Asset}
           onSetActiveResult={onSetActiveV2Result}
-          onCompose={onComposeV2}
-          onExport={onExportV2}
         />
       )}
       {caseDetail.case.error_message && <p className="detail-error">{shortenError(caseDetail.case.error_message)}</p>}
@@ -1540,9 +1508,7 @@ function V2AssetPackagePanel({
   actionPending,
   onSelectElement,
   onProcessAsset,
-  onSetActiveResult,
-  onCompose,
-  onExport
+  onSetActiveResult
 }: {
   activeCase: CaseDetail | null;
   runPackage: V2RunPackage | null;
@@ -1555,8 +1521,6 @@ function V2AssetPackagePanel({
   onSelectElement: (elementId: string) => void;
   onProcessAsset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveResult: (resultId: string) => void;
-  onCompose: () => void;
-  onExport: () => void;
 }) {
   const selectedElement = elements.find((element) => element.element_id === selectedElementId) || null;
   const packageByElementId = useMemo(() => {
@@ -1580,8 +1544,6 @@ function V2AssetPackagePanel({
     return status === "pending" || status === "running";
   }).length;
   const canProcess = Boolean(selectedElement && !actionPending);
-  const canCompose = Boolean(runPackage && !actionPending && !hasBlockingAssetPackage(runPackage));
-  const canExport = Boolean(runPackage && !actionPending && !hasBlockingAssetPackage(runPackage) && runPackage.compose_outputs);
   const activeProcessAction = (elementId: string, processor: V2ProcessorType) => actionPending === `process:${elementId}:${processor}`;
   const activeAction = (prefix: string) => actionPending.startsWith(prefix);
 
@@ -1591,16 +1553,6 @@ function V2AssetPackagePanel({
         <div>
           <span>Assets 处理</span>
           <strong>{elements.length} 个元素 · {processedCount} 已处理 · {pendingCount} 待处理</strong>
-        </div>
-        <div className="v2-package-actions">
-          <button type="button" className={actionPending === "compose" ? "running" : ""} disabled={!canCompose} onClick={onCompose}>
-            {actionPending === "compose" && <ButtonSpinner />}
-            处理并组合
-          </button>
-          <button type="button" className={actionPending === "export" ? "running primary" : "primary"} disabled={!canExport} onClick={onExport}>
-            {actionPending === "export" && <ButtonSpinner />}
-            导出
-          </button>
         </div>
       </header>
 
@@ -1808,8 +1760,7 @@ function V2AssetsWorkspace({
   onSelectElement,
   onProcessAsset,
   onSetActiveResult,
-  onCompose,
-  onExport
+  onRun
 }: {
   activeCase: CaseDetail | null;
   runPackage: V2RunPackage | null;
@@ -1825,13 +1776,12 @@ function V2AssetsWorkspace({
   onSelectElement: (elementId: string) => void;
   onProcessAsset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveResult: (resultId: string) => void;
-  onCompose: () => void;
-  onExport: () => void;
+  onRun: () => void;
 }) {
   const editorRef = useRef<HTMLElement | null>(null);
   const [zoom, setZoom] = useState(0.72);
-  const canCompose = Boolean(runPackage && !actionPending && !runInProgress && !hasBlockingAssetPackage(runPackage));
-  const canExport = Boolean(runPackage && !actionPending && !runInProgress && !hasBlockingAssetPackage(runPackage) && runPackage.compose_outputs);
+  const runPending = runInProgress || actionPending === "compose";
+  const canRun = Boolean(runPackage && !runPending && !actionPending && !hasBlockingAssetPackage(runPackage));
 
   const changeZoom = useCallback((delta: number) => {
     setZoom((value) => clamp(Number((value + delta).toFixed(2)), 0.25, 2.5));
@@ -1856,7 +1806,7 @@ function V2AssetsWorkspace({
   const topbarTarget = typeof document !== "undefined" ? document.getElementById("drawai-view-controls") : null;
   const topbarPortal = topbarTarget
     ? createPortal(
-        <div className="editor-banner-controls assets-banner-controls v2-assets-banner-controls">
+        <div className="editor-banner-controls assets-banner-controls">
           <button className="home-button" title="返回任务" aria-label="返回任务" onClick={onBackToBoard}>
             <HomeIcon />
           </button>
@@ -1866,7 +1816,7 @@ function V2AssetsWorkspace({
               <span>{humanize(activeCase?.case.status || "idle")} · {humanize(activeCase?.case.stage || "select a case")}</span>
             </div>
           </div>
-          <div className="toolbar-note v2-assets-mode-note">
+          <div className="toolbar-note">
             Assets · {elements.length}
           </div>
           <div className="editor-toolbar">
@@ -1877,13 +1827,14 @@ function V2AssetsWorkspace({
             </div>
           </div>
           <div className="editor-actions">
-            <button type="button" className={actionPending === "compose" ? "running" : ""} disabled={!canCompose} onClick={onCompose}>
-              {actionPending === "compose" && <ButtonSpinner />}
-              处理并组合
-            </button>
-            <button type="button" className={actionPending === "export" ? "primary running" : "primary"} disabled={!canExport} onClick={onExport}>
-              {actionPending === "export" && <ButtonSpinner />}
-              导出
+            <button
+              type="button"
+              className={runPending ? "primary run-button running" : "primary run-button"}
+              disabled={!canRun}
+              onClick={onRun}
+            >
+              {runPending && <ButtonSpinner />}
+              {runPending ? "运行中" : "运行"}
             </button>
           </div>
         </div>,
@@ -1920,8 +1871,6 @@ function V2AssetsWorkspace({
                 onSelectElement={onSelectElement}
                 onProcessAsset={onProcessAsset}
                 onSetActiveResult={onSetActiveResult}
-                onCompose={onCompose}
-                onExport={onExport}
               />
             </aside>
           </div>
@@ -2892,7 +2841,7 @@ function TaskSelectionWorkspace({
             const retryStage = retryStageForCase(item);
             const taskActionRunning = caseActionPendingId === item.case_id || pptxExporting || (selected && runInProgress);
             const taskActionEnabled = failed ? !taskActionRunning && !itemReadOnly : actionsEnabled && canRunFromAssets && !itemReadOnly;
-            const taskActionLabel = taskActionRunning ? "运行中" : failed ? `重试（从 ${humanize(retryStage)} 开始）` : itemV2 ? "组合" : "运行";
+            const taskActionLabel = taskActionRunning ? "运行中" : failed ? `重试（从 ${humanize(retryStage)} 开始）` : "运行";
             const taskAssetsEnabled = itemV2 ? editorReady && !itemReadOnly : actionsEnabled && assetsReady && !itemReadOnly;
             return (
               <article
@@ -3114,7 +3063,7 @@ function TaskSelectionWorkspace({
             }}
           >
             <PlayIcon />
-            <span>{runInProgress && contextSelected ? "运行中" : contextCompatibility === "v2" ? "组合" : "运行"}</span>
+            <span>{runInProgress && contextSelected ? "运行中" : "运行"}</span>
             <em>{contextReadOnly ? "历史只读" : contextSelected ? "从素材继续" : "正在选择"}</em>
           </button>
         </div>
