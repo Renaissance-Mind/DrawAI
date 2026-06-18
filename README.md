@@ -14,6 +14,19 @@
 
 它会把输入图片拆成结构、文字和局部素材，再生成更容易继续编辑的矢量结果。你可以把它当成一个 CLI，也可以启动 Workbench，在浏览器里批量上传、查看进度和管理结果。
 
+<a id="demo"></a>
+## 🎬 演示
+
+<p align="center">
+  <a href="figures/readme_demo/drawai-workbench-demo.mp4">
+    <img src="figures/readme_demo/drawai-workbench-demo-poster.jpg" alt="DrawAI Workbench 演示视频" width="900">
+  </a>
+</p>
+
+<p align="center">
+  <a href="figures/readme_demo/drawai-workbench-demo.mp4">打开 76 秒 Workbench 演示视频（MP4，2.7 MB）</a>
+</p>
+
 <a id="roadmap"></a>
 ## 🗺️ 规划
 

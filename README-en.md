@@ -14,6 +14,19 @@
 
 It decomposes input images into structure, text, and local assets, then generates vector results that are easier to keep editing. Use it as a CLI, or start the Workbench in the browser for batch uploads, progress tracking, and artifact management.
 
+<a id="demo"></a>
+## 🎬 Demo
+
+<p align="center">
+  <a href="figures/readme_demo/drawai-workbench-demo.mp4">
+    <img src="figures/readme_demo/drawai-workbench-demo-poster.jpg" alt="DrawAI Workbench demo video" width="900">
+  </a>
+</p>
+
+<p align="center">
+  <a href="figures/readme_demo/drawai-workbench-demo.mp4">Open the 76-second Workbench demo video (MP4, 2.7 MB)</a>
+</p>
+
 <a id="roadmap"></a>
 ## 🗺️ Roadmap
 
