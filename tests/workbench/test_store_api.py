@@ -4,6 +4,7 @@ import base64
 import json
 import io
 import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -335,6 +336,59 @@ def test_runner_rejects_duplicate_case_jobs(tmp_path: Path) -> None:
 
     release.set()
     runner.wait_for_idle(timeout=5)
+
+
+def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    settings = WorkbenchSettings(
+        workspace=tmp_path / "workspace",
+        default_config=base_config,
+        max_concurrent_cases=2,
+        codex_concurrency=1,
+    )
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    batch = store.create_batch(
+        name="batch",
+        input_mode="local_dir",
+        max_concurrent_cases=2,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    for index in range(2):
+        case_root = store.runs_root / batch.batch_id / f"case_{index}"
+        store.create_case(
+            batch_id=batch.batch_id,
+            name=f"source_{index}.png",
+            source_image_path=source,
+            config_path=create_case_config(
+                base_config_path=base_config,
+                source_image=source,
+                output_dir=case_root,
+                target_path=case_root / "drawai.config.yaml",
+            ),
+        )
+    first_codex_started = threading.Event()
+    release = threading.Event()
+
+    def blocking_codex_executor(case_record, stage: str) -> None:
+        if stage == "asset_analyze" and not first_codex_started.is_set():
+            first_codex_started.set()
+            release.wait(timeout=5)
+        _deterministic_stage_executor(case_record, stage)
+
+    runner = WorkbenchRunner(store, settings, stage_executor=blocking_codex_executor)
+
+    runner.submit_batch(batch.batch_id)
+    assert first_codex_started.wait(timeout=5)
+    assert _wait_for_resource_activity(runner, "codex", queued=1, running=1, timeout=5)
+
+    release.set()
+    runner.wait_for_idle(timeout=5)
+    codex_activity = runner.resource_activity()["codex"]
+    assert codex_activity["queued"] == 0
+    assert codex_activity["running"] == 0
 
 
 def test_runner_marks_interrupted_running_case_failed_on_startup(tmp_path: Path) -> None:
@@ -991,6 +1045,8 @@ def test_api_health_reports_runtime_services(tmp_path: Path) -> None:
     assert runtime_services["sam3"]["status"] == "online"
     assert runtime_services["ocr"]["base_url"] == "http://127.0.0.1:18080"
     assert runtime_services["rmbg"]["base_url"] == "http://127.0.0.1:18080"
+    assert payload["runtime_activity"]["sam3"] == {"limit": 1, "queued": 0, "running": 0}
+    assert payload["runtime_activity"]["codex"] == {"limit": 5, "queued": 0, "running": 0}
 
 
 def test_api_health_is_degraded_when_any_runtime_service_is_offline(tmp_path: Path) -> None:
@@ -1677,6 +1733,23 @@ def _settings(tmp_path: Path, base_config: Path) -> WorkbenchSettings:
         default_config=base_config,
         max_concurrent_cases=2,
     )
+
+
+def _wait_for_resource_activity(
+    runner: WorkbenchRunner,
+    resource: str,
+    *,
+    queued: int,
+    running: int,
+    timeout: float,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        activity = runner.resource_activity()[resource]
+        if activity["queued"] == queued and activity["running"] == running:
+            return True
+        time.sleep(0.01)
+    return False
 
 
 def _base_config(tmp_path: Path) -> Path:

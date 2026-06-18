@@ -421,7 +421,7 @@ select:focus {
   position: absolute;
   top: calc(100% + 12px);
   right: 0;
-  width: 430px;
+  width: min(460px, calc(100vw - 28px));
   display: none;
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 8px;
@@ -608,8 +608,8 @@ select:focus {
 
 .backend-service-card {
   display: grid;
-  gap: 5px;
-  min-height: 54px;
+  gap: 7px;
+  min-height: 78px;
   border: 1px solid #fecaca;
   border-radius: 8px;
   background: #fffafa;
@@ -667,6 +667,42 @@ select:focus {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backend-service-activity {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.backend-service-activity span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 5px 6px;
+}
+
+.backend-service-activity strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1;
+}
+
+.backend-service-activity small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

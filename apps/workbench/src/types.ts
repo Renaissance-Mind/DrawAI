@@ -19,6 +19,7 @@ export interface HealthResponse {
   workspace: string;
   cloud_mode: boolean;
   runtime_services: Record<string, RuntimeServiceStatus>;
+  runtime_activity?: Record<string, RuntimeActivityStatus>;
 }
 
 export interface RuntimeServiceStatus {
@@ -27,6 +28,12 @@ export interface RuntimeServiceStatus {
   health_url: string;
   status: "online" | "offline" | string;
   error?: string;
+}
+
+export interface RuntimeActivityStatus {
+  limit: number;
+  queued: number;
+  running: number;
 }
 
 export interface BatchRecord {

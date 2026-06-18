@@ -31,6 +31,8 @@ import type {
   CaseRecord,
   CaseProgress,
   HealthResponse,
+  RuntimeActivityStatus,
+  RuntimeServiceStatus,
   SourceStrategy,
   StageRunRecord
 } from "./types";
@@ -54,6 +56,14 @@ type DragState =
   | { kind: "move"; id: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
   | { kind: "resize"; id: string; handle: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
   | { kind: "add"; startX: number; startY: number; currentX: number; currentY: number };
+type RuntimeStatusRow = {
+  key: string;
+  label: string;
+  online: boolean;
+  statusLabel: string;
+  detail: string;
+  activity: RuntimeActivityStatus;
+};
 type SelectedUploadFile = { file: File; relativePath: string };
 type UploadPreviewImage = { name: string; source: string; kind: "image" | "zip" };
 type UploadConfirmation = {
@@ -2458,6 +2468,7 @@ function NewBatchForm({
 
 function BackendStatusIndicator({ health, healthError }: { health: HealthResponse | null; healthError: string }) {
   const services = Object.entries(health?.runtime_services || {});
+  const runtimeRows = runtimeStatusRows(health);
   const allModelsOnline = Boolean(health && services.length > 0 && services.every(([, service]) => service.status === "online"));
   const connected = Boolean(health && health.status === "ok" && allModelsOnline);
   const offlineServices = services.filter(([, service]) => service.status !== "online");
@@ -2487,30 +2498,40 @@ function BackendStatusIndicator({ health, healthError }: { health: HealthRespons
         <div className="backend-health-bar" aria-hidden="true">
           <span style={{ width: `${onlinePercent}%` }} />
         </div>
-        {services.length > 0 ? (
+        {runtimeRows.length > 0 ? (
           <div className="backend-runtime-map">
             <div className={health?.status === "ok" ? "backend-api-node online" : "backend-api-node offline"}>
               <span>API</span>
               <strong>{health?.status === "ok" ? "正常" : "离线"}</strong>
             </div>
             <div className="backend-service-links" aria-hidden="true">
-              {services.map(([key, service]) => (
-                <span key={key} className={service.status === "online" ? "online" : "offline"} />
+              {runtimeRows.map((row) => (
+                <span key={row.key} className={row.online ? "online" : "offline"} />
               ))}
             </div>
             <div className="backend-service-grid">
-            {services.map(([key, service]) => (
-                <article key={key} className={service.status === "online" ? "backend-service-card online" : "backend-service-card offline"}>
+              {runtimeRows.map((row) => (
+                <article key={row.key} className={row.online ? "backend-service-card online" : "backend-service-card offline"}>
                   <div className="backend-service-card-head">
                     <span aria-hidden="true" />
-                    <strong>{runtimeServiceLabel(key)}</strong>
-                    <em>{service.status === "online" ? "在线" : "离线"}</em>
+                    <strong>{row.label}</strong>
+                    <em>{row.statusLabel}</em>
                   </div>
-                  <p title={service.status === "online" ? service.base_url : service.error || "离线"}>
-                    {service.status === "online" ? service.base_url : service.error || "离线"}
+                  <p title={row.detail}>
+                    {row.detail}
                   </p>
+                  <div className="backend-service-activity" aria-label={`${row.label} 当前状态`}>
+                    <span>
+                      <strong>{row.activity.queued}</strong>
+                      <small>排队</small>
+                    </span>
+                    <span>
+                      <strong>{row.activity.running}</strong>
+                      <small>Running</small>
+                    </span>
+                  </div>
                 </article>
-            ))}
+              ))}
             </div>
           </div>
         ) : (
@@ -2535,10 +2556,61 @@ function backendStatusSummary(
   return `离线模型：${offlineServices.map(([key]) => runtimeServiceLabel(key)).join("、")}。`;
 }
 
+function runtimeStatusRows(health: HealthResponse | null): RuntimeStatusRow[] {
+  if (!health) return [];
+  const services = health.runtime_services || {};
+  const activity = health.runtime_activity || {};
+  const preferredKeys = ["sam3", "ocr", "rmbg", "codex"];
+  const keys = [...preferredKeys, ...Object.keys(services)].filter(uniqueRuntimeKey);
+  return keys
+    .filter((key) => services[key] || activity[key])
+    .map((key) => runtimeStatusRow(key, services[key], activity[key]));
+}
+
+function uniqueRuntimeKey(key: string, index: number, keys: string[]): boolean {
+  return keys.indexOf(key) === index;
+}
+
+function runtimeStatusRow(
+  key: string,
+  service: RuntimeServiceStatus | undefined,
+  activity: RuntimeActivityStatus | undefined
+): RuntimeStatusRow {
+  const normalizedActivity = activity || { limit: 0, queued: 0, running: 0 };
+  const online = service ? service.status === "online" : true;
+  return {
+    key,
+    label: runtimeServiceLabel(key),
+    online,
+    statusLabel: runtimeStatusLabel(service, normalizedActivity),
+    detail: runtimeStatusDetail(key, service, normalizedActivity),
+    activity: normalizedActivity
+  };
+}
+
+function runtimeStatusLabel(service: RuntimeServiceStatus | undefined, activity: RuntimeActivityStatus): string {
+  if (activity.running > 0) return "运行中";
+  if (activity.queued > 0) return "排队中";
+  if (service && service.status !== "online") return "离线";
+  return service ? "在线" : "待命";
+}
+
+function runtimeStatusDetail(
+  key: string,
+  service: RuntimeServiceStatus | undefined,
+  activity: RuntimeActivityStatus
+): string {
+  const capacity = activity.limit > 0 ? `并发 ${activity.limit}` : "并发未配置";
+  if (!service) return `${runtimeServiceLabel(key)} 本地执行队列 · ${capacity}`;
+  if (service.status !== "online") return service.error || "离线";
+  return `${service.base_url || "本地服务"} · ${capacity}`;
+}
+
 function runtimeServiceLabel(key: string): string {
   if (key === "sam3") return "SAM3";
   if (key === "ocr") return "OCR";
   if (key === "rmbg") return "RMBG";
+  if (key === "codex") return "Codex";
   return key.toUpperCase();
 }
 

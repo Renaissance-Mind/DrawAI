@@ -106,6 +106,7 @@ def create_app(
             "workspace": str(resolved_store.workspace),
             "cloud_mode": resolved_settings.cloud_mode,
             "runtime_services": runtime_services,
+            "runtime_activity": resolved_runner.resource_activity(),
         }
 
     @app.post("/api/imagegen/generations")

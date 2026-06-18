@@ -5,10 +5,11 @@ import os
 import shutil
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 import yaml
 
@@ -40,7 +41,7 @@ ANALYSIS_STAGES = (
 )
 
 STAGE_RESOURCE = {
-    "detect_structure": "sam",
+    "detect_structure": "sam3",
     "detect_text": "ocr",
     "asset_analyze": "codex",
     "svg": "codex",
@@ -64,8 +65,16 @@ class WorkbenchRunner:
         self._futures_lock = threading.Lock()
         self._case_jobs: set[str] = set()
         self._case_jobs_lock = threading.Lock()
+        self._resource_activity_lock = threading.Lock()
+        self._resource_activity = {
+            "sam3": {"limit": max(1, settings.sam_concurrency), "queued": 0, "running": 0},
+            "ocr": {"limit": max(1, settings.ocr_concurrency), "queued": 0, "running": 0},
+            "codex": {"limit": max(1, settings.codex_concurrency), "queued": 0, "running": 0},
+            "rmbg": {"limit": max(1, settings.rmbg_concurrency), "queued": 0, "running": 0},
+            "export": {"limit": max(1, settings.export_concurrency), "queued": 0, "running": 0},
+        }
         self._resource_locks = {
-            "sam": threading.Semaphore(max(1, settings.sam_concurrency)),
+            "sam3": threading.Semaphore(max(1, settings.sam_concurrency)),
             "ocr": threading.Semaphore(max(1, settings.ocr_concurrency)),
             "codex": threading.Semaphore(max(1, settings.codex_concurrency)),
             "rmbg": threading.Semaphore(max(1, settings.rmbg_concurrency)),
@@ -81,6 +90,10 @@ class WorkbenchRunner:
             futures = list(self._futures)
         for future in futures:
             future.result(timeout=timeout)
+
+    def resource_activity(self) -> dict[str, dict[str, int]]:
+        with self._resource_activity_lock:
+            return {key: dict(value) for key, value in self._resource_activity.items()}
 
     def submit_batch(self, batch_id: str) -> None:
         batch = self.store.get_batch(batch_id)
@@ -140,6 +153,24 @@ class WorkbenchRunner:
     def _case_has_active_job(self, case_id: str) -> bool:
         with self._case_jobs_lock:
             return case_id in self._case_jobs
+
+    @contextmanager
+    def _resource_slot(self, resource: str) -> Iterator[None]:
+        lock = self._resource_locks[resource]
+        self._change_resource_activity(resource, queued=1)
+        lock.acquire()
+        self._change_resource_activity(resource, queued=-1, running=1)
+        try:
+            yield
+        finally:
+            self._change_resource_activity(resource, running=-1)
+            lock.release()
+
+    def _change_resource_activity(self, resource: str, *, queued: int = 0, running: int = 0) -> None:
+        with self._resource_activity_lock:
+            activity = self._resource_activity[resource]
+            activity["queued"] = max(0, activity["queued"] + queued)
+            activity["running"] = max(0, activity["running"] + running)
 
     def _discard_future(self, future: Future[Any]) -> None:
         with self._futures_lock:
@@ -311,12 +342,12 @@ class WorkbenchRunner:
             stage=stage,
         )
         stage_run = self.store.start_stage_run(case_id, stage)
-        lock = self._resource_locks.get(STAGE_RESOURCE.get(stage, ""))
+        resource = STAGE_RESOURCE.get(stage)
         try:
-            if lock is None:
+            if resource is None:
                 self._execute_stage(case, stage)
             else:
-                with lock:
+                with self._resource_slot(resource):
                     self._execute_stage(case, stage)
             self.store.finish_stage_run(stage_run.stage_run_id, status="ok")
         except Exception as exc:
@@ -346,6 +377,8 @@ class WorkbenchRunner:
         rmbg_client = None
         if rmbg_config.enabled:
             rmbg_client = RemoteRmbgClient((rmbg_config.base_url or self.settings.rmbg_base_url).rstrip("/"))
+            with self._resource_slot("rmbg"):
+                return materialize_approved_assets(case.run_root, rmbg_config=rmbg_config, rmbg_client=rmbg_client)
         return materialize_approved_assets(case.run_root, rmbg_config=rmbg_config, rmbg_client=rmbg_client)
 
     def _register_standard_artifacts(self, case_id: str) -> None:
