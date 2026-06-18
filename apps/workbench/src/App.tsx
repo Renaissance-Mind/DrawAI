@@ -138,6 +138,7 @@ const ASSET_PROCESSING_MODES: Array<{ mode: AssetProcessingMode; label: string; 
   { mode: "crop_nobg", label: "去背景" },
   { mode: "gen", label: "生成", disabled: true }
 ];
+const V2_PROCESSABLE_PROCESSORS: V2ProcessorType[] = ["crop", "crop_nobg", "image_generate", "image_edit"];
 const SUPPORTED_UPLOAD_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".zip"];
 const WORKBENCH_PROCESSING_APPLIED_REASON = "工作台处理结果为";
 const WORKBENCH_PROCESSING_MODE_REASON = "工作台处理模式设为";
@@ -535,18 +536,19 @@ export default function App() {
     return detail;
   }
 
-  async function processSelectedV2Asset(processor: V2ProcessorType) {
-    if (!activeCase || !selectedV2ElementId || processor === "chart_rebuild_reserved") return;
+  async function processSelectedV2Asset(processor: V2ProcessorType, elementId = selectedV2ElementId) {
+    if (!activeCase || !elementId || processor === "chart_rebuild_reserved") return;
     const caseId = activeCase.case.case_id;
-    setV2ActionPending(`process:${processor}`);
+    setSelectedV2ElementId(elementId);
+    setV2ActionPending(`process:${elementId}:${processor}`);
     setV2PackageError("");
     try {
-      const response = await processV2Asset(caseId, selectedV2ElementId, processor);
+      const response = await processV2Asset(caseId, elementId, processor);
       setSelectedAssetPackage(response.asset_package);
       mergeCaseStatus(response.case);
-      await refreshCaseAfterV2Mutation(caseId, selectedV2ElementId);
+      await refreshCaseAfterV2Mutation(caseId, elementId);
     } catch (err) {
-      await loadV2PackageForCase(caseId, selectedV2ElementId, { quiet: true });
+      await loadV2PackageForCase(caseId, elementId, { quiet: true });
       const message = err instanceof Error ? err.message : String(err);
       setV2PackageError(message);
       throw err;
@@ -961,7 +963,7 @@ export default function App() {
           onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
           onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onProcessV2Asset={(processor) => processSelectedV2Asset(processor).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onComposeV2={() => composeActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onExportV2={() => exportActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
@@ -982,7 +984,7 @@ export default function App() {
           runInProgress={activeCaseRunning}
           onBackToBoard={() => setActiveView("board")}
           onSelectElement={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onProcessAsset={(processor) => processSelectedV2Asset(processor).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+          onProcessAsset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onSetActiveResult={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onCompose={() => composeActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
           onExport={() => exportActiveV2Case().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
@@ -1138,7 +1140,7 @@ function BoardWorkspace({
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
   onSelectV2Element: (elementId: string) => void;
-  onProcessV2Asset: (processor: V2ProcessorType) => void;
+  onProcessV2Asset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveV2Result: (resultId: string) => void;
   onComposeV2: () => void;
   onExportV2: () => void;
@@ -1455,7 +1457,7 @@ function TaskDetailPanel({
   v2ActionPending: string;
   canForkV2FromSource: boolean;
   onSelectV2Element: (elementId: string) => void;
-  onProcessV2Asset: (processor: V2ProcessorType) => void;
+  onProcessV2Asset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveV2Result: (resultId: string) => void;
   onComposeV2: () => void;
   onExportV2: () => void;
@@ -1480,6 +1482,7 @@ function TaskDetailPanel({
       )}
       {runCompatibility === "v2" && (
         <V2AssetPackagePanel
+          activeCase={caseDetail}
           runPackage={runPackage}
           elements={v2Elements}
           selectedElementId={selectedV2ElementId}
@@ -1527,6 +1530,7 @@ function LegacyReadOnlyBanner({
 }
 
 function V2AssetPackagePanel({
+  activeCase,
   runPackage,
   elements,
   selectedElementId,
@@ -1540,6 +1544,7 @@ function V2AssetPackagePanel({
   onCompose,
   onExport
 }: {
+  activeCase: CaseDetail | null;
   runPackage: V2RunPackage | null;
   elements: V2ElementPlan[];
   selectedElementId: string;
@@ -1548,60 +1553,131 @@ function V2AssetPackagePanel({
   packageError: string;
   actionPending: string;
   onSelectElement: (elementId: string) => void;
-  onProcessAsset: (processor: V2ProcessorType) => void;
+  onProcessAsset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveResult: (resultId: string) => void;
   onCompose: () => void;
   onExport: () => void;
 }) {
   const selectedElement = elements.find((element) => element.element_id === selectedElementId) || null;
-  const packageStatus = selectedAssetPackage?.status || "pending";
-  const packageStatusClass = packageStatus === "failed"
-    ? "asset-status-failed"
-    : packageStatus === "unsupported"
-      ? "asset-status-unsupported"
-      : "";
-  const activeResultId = selectedAssetPackage?.active_result?.result_id || "";
+  const packageByElementId = useMemo(() => {
+    const items = new Map<string, V2AssetPackage>();
+    (runPackage?.asset_packages || []).forEach((assetPackage) => {
+      items.set(assetPackage.element_id, assetPackage);
+    });
+    if (selectedAssetPackage) {
+      items.set(selectedAssetPackage.element_id, selectedAssetPackage);
+    }
+    return items;
+  }, [runPackage, selectedAssetPackage]);
+  const selectedPackage = selectedElement ? packageByElementId.get(selectedElement.element_id) || null : null;
+  const packageStatus = selectedPackage?.status || "pending";
+  const packageStatusClass = v2AssetStatusClass(packageStatus);
+  const activeResultId = selectedPackage?.active_result?.result_id || "";
+  const activeResultUrl = v2AssetResultUrl(activeCase, selectedPackage?.active_result || null);
+  const processedCount = elements.filter((element) => packageByElementId.get(element.element_id)?.status === "ok").length;
+  const pendingCount = elements.filter((element) => {
+    const status = packageByElementId.get(element.element_id)?.status || "pending";
+    return status === "pending" || status === "running";
+  }).length;
   const canProcess = Boolean(selectedElement && !actionPending);
   const canCompose = Boolean(runPackage && !actionPending && !hasBlockingAssetPackage(runPackage));
   const canExport = Boolean(runPackage && !actionPending && !hasBlockingAssetPackage(runPackage) && runPackage.compose_outputs);
+  const activeProcessAction = (elementId: string, processor: V2ProcessorType) => actionPending === `process:${elementId}:${processor}`;
   const activeAction = (prefix: string) => actionPending.startsWith(prefix);
 
   return (
     <section className="v2-package-panel">
       <header className="v2-package-head">
         <div>
-          <span>Assets</span>
-          <strong>{runPackage?.metadata?.last_stage ? humanize(String(runPackage.metadata.last_stage)) : "资产记录"}</strong>
+          <span>Assets 处理</span>
+          <strong>{elements.length} 个元素 · {processedCount} 已处理 · {pendingCount} 待处理</strong>
         </div>
         <div className="v2-package-actions">
           <button type="button" className={actionPending === "compose" ? "running" : ""} disabled={!canCompose} onClick={onCompose}>
             {actionPending === "compose" && <ButtonSpinner />}
-            Compose
+            处理并组合
           </button>
           <button type="button" className={actionPending === "export" ? "running primary" : "primary"} disabled={!canExport} onClick={onExport}>
             {actionPending === "export" && <ButtonSpinner />}
-            Export
+            导出
           </button>
         </div>
       </header>
 
       {packageError && <p className="detail-error">{shortenError(packageError)}</p>}
 
-      <div className="v2-element-list" aria-label="v2 元素列表">
-        {elements.map((element) => (
-          <button
-            type="button"
-            key={element.element_id}
-            className={element.element_id === selectedElementId ? "active" : ""}
-            disabled={loadingElementId === element.element_id}
-            onClick={() => onSelectElement(element.element_id)}
-          >
-            <strong>{element.element_id}</strong>
-            <span>{humanize(element.element_type)}</span>
-            <em>{humanize(element.processing_intent.processing_type)}</em>
-          </button>
-        ))}
-        {elements.length === 0 && <EmptyState label="还没有 v2 元素" />}
+      <div className="v2-asset-table-wrap" aria-label="v2 assets 表格">
+        {elements.length > 0 ? (
+          <table className="v2-asset-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>类型</th>
+                <th>处理</th>
+                <th>状态</th>
+                <th>结果</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {elements.map((element) => {
+                const assetPackage = packageByElementId.get(element.element_id) || null;
+                const status = assetPackage?.status || "pending";
+                const plannedProcessor = v2PlannedProcessor(element);
+                const activeResult = assetPackage?.active_result || null;
+                const rowPending = plannedProcessor ? activeProcessAction(element.element_id, plannedProcessor) : false;
+                const rowSelected = element.element_id === selectedElementId;
+                const rowLoading = loadingElementId === element.element_id;
+                return (
+                  <tr
+                    key={element.element_id}
+                    className={rowSelected ? "active" : ""}
+                    onClick={() => onSelectElement(element.element_id)}
+                  >
+                    <td>
+                      <strong>{element.element_id}</strong>
+                      <span>{bboxText(element.bbox)}</span>
+                    </td>
+                    <td>{humanize(element.element_type)}</td>
+                    <td>{humanize(element.processing_intent.processing_type)}</td>
+                    <td>
+                      <span className={`v2-asset-status-pill ${v2AssetStatusClass(status)}`}>{rowLoading ? "加载中" : humanize(status)}</span>
+                    </td>
+                    <td>
+                      <span>{activeResult ? v2ResultLabel(activeResult) : "未生成"}</span>
+                    </td>
+                    <td>
+                      {plannedProcessor ? (
+                        <button
+                          type="button"
+                          className={rowPending ? "running" : ""}
+                          disabled={Boolean(actionPending)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onProcessAsset(plannedProcessor, element.element_id);
+                          }}
+                        >
+                          {rowPending && <ButtonSpinner />}
+                          处理
+                        </button>
+                      ) : element.processing_intent.processing_type === "chart_rebuild_reserved" ? (
+                        <button type="button" disabled title="图表 Agent 接口已预留，当前版本不执行">
+                          预留
+                        </button>
+                      ) : (
+                        <button type="button" disabled>
+                          自绘
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState label="还没有 v2 元素" />
+        )}
       </div>
 
       <div className="v2-asset-drawer">
@@ -1625,67 +1701,77 @@ function V2AssetPackagePanel({
                 <strong>{humanize(packageStatus)}</strong>
               </div>
             </div>
+            <div className={activeResultUrl ? "v2-result-preview" : "v2-result-preview is-empty"}>
+              {activeResultUrl ? (
+                <a href={activeResultUrl} target="_blank" rel="noreferrer">
+                  <img src={activeResultUrl} alt="" />
+                </a>
+              ) : (
+                <span>还没有 active result</span>
+              )}
+            </div>
             <div className="v2-asset-intent">
               <span>{selectedElement.processing_intent.object_type}</span>
               <code>{compactJson(selectedElement.processing_intent.parameters)}</code>
             </div>
 
             <div className="v2-processor-toolbar" aria-label="v2 资产处理器">
-              <button type="button" disabled={!canProcess || activeAction("process:")} onClick={() => onProcessAsset("crop")}>
-                {actionPending === "process:crop" && <ButtonSpinner />}
-                Crop
-              </button>
-              <button type="button" disabled={!canProcess || activeAction("process:")} onClick={() => onProcessAsset("crop_nobg")}>
-                {actionPending === "process:crop_nobg" && <ButtonSpinner />}
-                No BG
-              </button>
-              <button type="button" disabled={!canProcess || activeAction("process:")} onClick={() => onProcessAsset("image_generate")}>
-                {actionPending === "process:image_generate" && <ButtonSpinner />}
-                Generate
-              </button>
-              <button type="button" disabled={!canProcess || activeAction("process:")} onClick={() => onProcessAsset("image_edit")}>
-                {actionPending === "process:image_edit" && <ButtonSpinner />}
-                Edit
-              </button>
+              {V2_PROCESSABLE_PROCESSORS.map((processor) => (
+                <button
+                  type="button"
+                  key={processor}
+                  disabled={!canProcess || activeAction("process:")}
+                  onClick={() => onProcessAsset(processor, selectedElement.element_id)}
+                >
+                  {activeProcessAction(selectedElement.element_id, processor) && <ButtonSpinner />}
+                  {v2ProcessorLabel(processor)}
+                </button>
+              ))}
               <button type="button" className="asset-status-unsupported" disabled title="图表 Agent 接口已预留，当前版本不执行">
                 Chart Agent
               </button>
             </div>
 
-            {selectedAssetPackage?.failure && (
-              <p className="asset-status-failed">{shortenError(selectedAssetPackage.failure)}</p>
+            {selectedPackage?.failure && (
+              <p className="asset-status-failed">{shortenError(selectedPackage.failure)}</p>
             )}
 
             <div className="v2-result-list">
               <div className="v2-subhead">
-                <span>Active result</span>
+                <span>处理结果</span>
                 <strong>{activeResultId || "未设置"}</strong>
               </div>
-              {(selectedAssetPackage?.all_results || []).map((result) => (
-                <div className="v2-result-row" key={result.result_id}>
-                  <div>
-                    <strong>{result.result_id}</strong>
-                    <span>{humanize(result.processor_type)} · {humanize(result.kind)}{result.path ? ` · ${result.path}` : ""}</span>
+              {(selectedPackage?.all_results || []).map((result) => {
+                const resultUrl = v2AssetResultUrl(activeCase, result);
+                return (
+                  <div className="v2-result-row" key={result.result_id}>
+                    <div>
+                      <strong>{result.result_id}</strong>
+                      <span>{humanize(result.processor_type)} · {humanize(result.kind)}{result.path ? ` · ${result.path}` : ""}</span>
+                    </div>
+                    <div className="v2-result-actions">
+                      {resultUrl && <a href={resultUrl} target="_blank" rel="noreferrer">查看</a>}
+                      {result.result_id === activeResultId ? (
+                        <em>Active</em>
+                      ) : (
+                        <button type="button" disabled={Boolean(actionPending)} onClick={() => onSetActiveResult(result.result_id)}>
+                          {actionPending === `active:${result.result_id}` && <ButtonSpinner />}
+                          设为 Active
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {result.result_id === activeResultId ? (
-                    <em>Active</em>
-                  ) : (
-                    <button type="button" disabled={Boolean(actionPending)} onClick={() => onSetActiveResult(result.result_id)}>
-                      {actionPending === `active:${result.result_id}` && <ButtonSpinner />}
-                      Set active
-                    </button>
-                  )}
-                </div>
-              ))}
-              {(!selectedAssetPackage || selectedAssetPackage.all_results.length === 0) && <EmptyState label="还没有处理结果" />}
+                );
+              })}
+              {(!selectedPackage || selectedPackage.all_results.length === 0) && <EmptyState label="还没有处理结果" />}
             </div>
 
             <div className="v2-processor-history">
               <div className="v2-subhead">
-                <span>Processor history</span>
-                <strong>{selectedAssetPackage?.processor_runs.length || 0}</strong>
+                <span>处理历史</span>
+                <strong>{selectedPackage?.processor_runs.length || 0}</strong>
               </div>
-              {(selectedAssetPackage?.processor_runs || []).slice().reverse().map((run, index) => (
+              {(selectedPackage?.processor_runs || []).slice().reverse().map((run, index) => (
                 <div className="v2-history-row" key={`${run.processor_type}-${run.started_at}-${index}`}>
                   <div>
                     <strong>{humanize(run.processor_type)}</strong>
@@ -1696,7 +1782,7 @@ function V2AssetPackagePanel({
                   </em>
                 </div>
               ))}
-              {(!selectedAssetPackage || selectedAssetPackage.processor_runs.length === 0) && <EmptyState label="还没有处理历史" />}
+              {(!selectedPackage || selectedPackage.processor_runs.length === 0) && <EmptyState label="还没有处理历史" />}
             </div>
           </>
         ) : (
@@ -1737,7 +1823,7 @@ function V2AssetsWorkspace({
   runInProgress: boolean;
   onBackToBoard: () => void;
   onSelectElement: (elementId: string) => void;
-  onProcessAsset: (processor: V2ProcessorType) => void;
+  onProcessAsset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveResult: (resultId: string) => void;
   onCompose: () => void;
   onExport: () => void;
@@ -1793,11 +1879,11 @@ function V2AssetsWorkspace({
           <div className="editor-actions">
             <button type="button" className={actionPending === "compose" ? "running" : ""} disabled={!canCompose} onClick={onCompose}>
               {actionPending === "compose" && <ButtonSpinner />}
-              Compose
+              处理并组合
             </button>
             <button type="button" className={actionPending === "export" ? "primary running" : "primary"} disabled={!canExport} onClick={onExport}>
               {actionPending === "export" && <ButtonSpinner />}
-              Export
+              导出
             </button>
           </div>
         </div>,
@@ -1823,6 +1909,7 @@ function V2AssetsWorkspace({
             />
             <aside className="v2-assets-workspace-panel">
               <V2AssetPackagePanel
+                activeCase={activeCase}
                 runPackage={runPackage}
                 elements={elements}
                 selectedElementId={selectedElementId}
@@ -4663,6 +4750,45 @@ function assetPackageFromRunPackage(runPackage: V2RunPackage | null, elementId: 
 
 function hasBlockingAssetPackage(runPackage: V2RunPackage): boolean {
   return (runPackage.asset_packages || []).some((assetPackage) => assetPackage.status === "failed" || assetPackage.status === "unsupported");
+}
+
+function v2PlannedProcessor(element: V2ElementPlan): V2ProcessorType | null {
+  const processor = element.processing_intent.processing_type as V2ProcessorType;
+  return V2_PROCESSABLE_PROCESSORS.includes(processor) ? processor : null;
+}
+
+function v2ProcessorLabel(processor: V2ProcessorType): string {
+  const labels: Record<V2ProcessorType, string> = {
+    crop: "Crop",
+    crop_nobg: "No BG",
+    image_generate: "Generate",
+    image_edit: "Edit",
+    chart_rebuild_reserved: "Chart Agent"
+  };
+  return labels[processor];
+}
+
+function v2AssetStatusClass(status: string): string {
+  if (status === "failed") return "asset-status-failed";
+  if (status === "unsupported") return "asset-status-unsupported";
+  if (status === "ok") return "asset-status-ok";
+  if (status === "running") return "asset-status-running";
+  return "";
+}
+
+function v2AssetResultUrl(activeCase: CaseDetail | null, result: V2AssetResult | null): string {
+  if (!result?.path) return "";
+  if (/^https?:\/\//i.test(result.path)) return result.path;
+  if (!activeCase) return "";
+  return caseFileUrl(activeCase.case.case_id, result.path, result.created_at || result.result_id);
+}
+
+function v2ResultLabel(result: V2AssetResult): string {
+  if (result.path) {
+    const parts = result.path.split("/");
+    return parts[parts.length - 1] || result.result_id;
+  }
+  return result.result_id;
 }
 
 function v2ElementProcessingClass(element: V2ElementPlan): string {

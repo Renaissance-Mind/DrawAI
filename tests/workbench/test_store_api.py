@@ -441,7 +441,7 @@ def test_runner_svg_rerun_executes_export_by_default(tmp_path: Path) -> None:
     stages = [stage.stage_name for stage in store.list_stage_runs(case.case_id)]
     assert updated.status == "failed"
     assert "RuntimeError: export unavailable" in (updated.error_message or "")
-    assert stages == ["compose_svg", "export"]
+    assert stages == ["process_assets", "compose_svg", "export"]
     assert "semantic_svg" in labels
     assert "rendered_png" in labels
     assert "pptx" not in labels

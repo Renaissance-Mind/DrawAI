@@ -495,6 +495,42 @@ def test_compose_svg_uses_svg_generation_loop(tmp_path: Path) -> None:
     assert package["compose_outputs"]["validation_report"] == "reports/svg_validation_report.json"
 
 
+def test_direct_compose_refuses_pending_raster_assets(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    plan_summary = run_drawai_pipeline_from_stage(config, "prepare", to_stage="plan_assets")
+    assert plan_summary["status"] == "ok"
+
+    root = Path(plan_summary["output_dir"])
+    package_path = root / "drawai_package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["elements"][0]["element_type"] = "picture"
+    package["elements"][0]["processing_intent"]["object_type"] = "picture"
+    package["elements"][0]["processing_intent"]["processing_type"] = "crop"
+    package["asset_packages"][0]["processor_type"] = "crop"
+    package["asset_packages"][0]["status"] = "pending"
+    package["asset_packages"][0]["active_result"] = None
+    package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    asset_package_path = root / "elements" / "E001" / "asset_package.json"
+    asset_package = json.loads(asset_package_path.read_text(encoding="utf-8"))
+    asset_package["processor_type"] = "crop"
+    asset_package["status"] = "pending"
+    asset_package["active_result"] = None
+    asset_package_path.write_text(json.dumps(asset_package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    compose_summary = run_drawai_pipeline_from_stage(
+        config,
+        "compose_svg",
+        to_stage="compose_svg",
+        svg_invoker=_fake_svg_invoker(),
+    )
+
+    assert compose_summary["status"] == "failed"
+    assert compose_summary["failed_stage"] == "compose_svg"
+    assert "process_assets" in compose_summary["exception"]["message"]
+    assert "E001:crop:pending" in compose_summary["exception"]["message"]
+
+
 def test_compose_disabled_packages_run_without_svg_generation(tmp_path: Path) -> None:
     config = _config(tmp_path, compose_enabled=False)
 

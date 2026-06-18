@@ -42,6 +42,8 @@ V2_STAGE_ORDER = (
     "package_run",
 )
 
+_COMPOSE_ACTIVE_RESULT_PROCESSORS = {"crop", "crop_nobg", "image_generate", "image_edit"}
+
 _CHAIN_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "prepare": (),
     "parse_elements": ("prepare",),
@@ -296,9 +298,9 @@ def _run_v2_stage(
     if stage == "compose_svg":
         plans = _read_element_plans(paths)
         asset_packages = _read_asset_packages(paths, plans)
-        asset_manifest = write_asset_manifest_compat(paths.root, asset_packages)
         _write_compat_outputs(paths, plans)
         if not cfg.v2.compose.enabled:
+            asset_manifest = write_asset_manifest_compat(paths.root, asset_packages)
             write_json(paths.svg_validation_report_json, _compose_skipped_report(paths))
             _write_v2_package(
                 paths,
@@ -309,6 +311,8 @@ def _run_v2_stage(
                 compose_outputs=_compose_skipped_outputs(paths),
             )
             return
+        _require_compose_asset_packages_ready(plans, asset_packages)
+        asset_manifest = write_asset_manifest_compat(paths.root, asset_packages)
         _run_svg_generation_from_v2_package(cfg, paths, asset_manifest, options)
         _write_v2_package(
             paths,
@@ -905,6 +909,32 @@ def _read_asset_packages(
         if package_path.is_file():
             packages.append(_asset_package_from_payload(_read_json_file(package_path, "v2 asset package")))
     return tuple(packages)
+
+
+def _require_compose_asset_packages_ready(
+    plans: Sequence[ElementPlan],
+    asset_packages: Sequence[AssetPackage],
+) -> None:
+    packages_by_element_id = {package.element_id: package for package in asset_packages}
+    not_ready: list[str] = []
+    for plan in plans:
+        processor_type = plan.processing_intent.processing_type
+        if processor_type not in _COMPOSE_ACTIVE_RESULT_PROCESSORS:
+            continue
+        package = packages_by_element_id.get(plan.element_id)
+        if package is None:
+            not_ready.append(f"{plan.element_id}:{processor_type}:missing_package")
+            continue
+        active_result = package.active_result if isinstance(package.active_result, Mapping) else None
+        active_path = active_result.get("path") if active_result is not None else None
+        if package.status != "ok" or not isinstance(active_path, str) or not active_path:
+            not_ready.append(f"{plan.element_id}:{processor_type}:{package.status}")
+    if not_ready:
+        joined = ", ".join(not_ready)
+        raise RuntimeError(
+            "DrawAI v2 compose_svg requires process_assets to create active results "
+            f"for raster assets before compose: {joined}"
+        )
 
 
 def _failed_asset_export_report(

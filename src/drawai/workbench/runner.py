@@ -329,6 +329,9 @@ class WorkbenchRunner:
             elif canonical_stage == "compose_svg":
                 self._archive_current_svg_outputs(case_id)
                 self._invalidate_from(case_id, "compose_svg")
+                self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="process_assets")
+                self._run_stage(case_id, "process_assets")
+                self._register_standard_artifacts(case_id)
                 self._run_svg_generation(case_id)
             elif canonical_stage == "export":
                 self._invalidate_from(case_id, "export")
