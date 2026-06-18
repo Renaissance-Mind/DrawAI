@@ -225,7 +225,7 @@ def _run_v2_stage(
         _write_element_plans(paths.root, plans)
         write_json(paths.v2_fusion_trace_json, fusion_result.trace)
         _write_v2_package(paths, cfg, elements=plans, stage="fuse_elements")
-        _write_compat_outputs(paths, plans)
+        _write_box_ir_compat_output(paths, plans)
         return
 
     if stage == "refine_elements":
@@ -570,9 +570,13 @@ def _default_rmbg_client_if_enabled(cfg: DrawAiPipelineConfig) -> Any | None:
 
 
 def _write_compat_outputs(paths: DrawAiArtifactPaths, plans: Sequence[ElementPlan]) -> None:
+    _write_box_ir_compat_output(paths, plans)
+    write_element_analysis_compat(paths.root, plans)
+
+
+def _write_box_ir_compat_output(paths: DrawAiArtifactPaths, plans: Sequence[ElementPlan]) -> None:
     source_metadata = _read_json_file(paths.source_metadata, "source metadata")
     write_box_ir_compat(paths.root, plans, source_metadata)
-    write_element_analysis_compat(paths.root, plans)
 
 
 def _refine_with_codex_analysis(

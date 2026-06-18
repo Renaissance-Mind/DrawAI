@@ -11,7 +11,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from PIL import Image
 
@@ -539,7 +539,10 @@ def _run_v2_pipeline(
     *,
     options: V2StageOptions,
 ) -> dict[str, Any]:
-    _reset_run_owned_outputs(paths)
+    _reset_run_owned_outputs(
+        paths,
+        preserve_external_refinement_analysis=cfg.v2.refine.enabled,
+    )
     completed: list[str] = []
     current_stage = "prepare"
 
@@ -674,7 +677,13 @@ def _run_v2_pipeline_from_stage(
 
     try:
         stage_range = _v2_stage_range(from_stage, to_stage)
-        _reset_v2_outputs_from_stage(paths, stage_range[0])
+        _reset_v2_outputs_from_stage(
+            paths,
+            stage_range[0],
+            preserve_external_refinement_analysis=(
+                cfg.v2.refine.enabled and "refine_elements" in stage_range
+            ),
+        )
         runner = DagRunner(build_v2_stage_specs(stage_range, options=options))
         context = build_v2_run_context(cfg, paths, options=options)
 
@@ -3409,7 +3418,11 @@ def _run_repo_script(command: list[str], *, repo_root: Path, label: str) -> None
         )
 
 
-def _reset_run_owned_outputs(paths: DrawAiArtifactPaths) -> None:
+def _reset_run_owned_outputs(
+    paths: DrawAiArtifactPaths,
+    *,
+    preserve_external_refinement_analysis: bool = False,
+) -> None:
     files = [
         paths.stage_status_json,
         paths.pipeline_summary_json,
@@ -3429,7 +3442,6 @@ def _reset_run_owned_outputs(paths: DrawAiArtifactPaths) -> None:
         paths.svg_validation_report_json,
         paths.svg_to_ppt_export_report_json,
         paths.svg_dir / "svg_validation_report.json",
-        paths.element_analysis_json,
         paths.element_analysis_request_json,
         paths.element_analysis_validation_json,
         paths.element_analysis_status_json,
@@ -3455,6 +3467,8 @@ def _reset_run_owned_outputs(paths: DrawAiArtifactPaths) -> None:
         paths.template_svg,
         paths.template_rendered_png,
     ]
+    if not preserve_external_refinement_analysis:
+        files.append(paths.element_analysis_json)
     files.extend(paths.box_ir_dir.glob("*.json"))
     files.extend(paths.box_ir_dir.glob("*.png"))
     for path in files:
@@ -3467,13 +3481,16 @@ def _reset_run_owned_outputs(paths: DrawAiArtifactPaths) -> None:
         paths.template_iterations_dir,
         paths.trace_dir,
         paths.root / "svg_to_ppt",
-        paths.element_analysis_dir,
         paths.reports_dir / "assemble_debug",
         paths.v2_elements_dir,
         paths.v2_parser_outputs_dir,
         paths.exports_dir,
     ):
         _clear_run_owned_directory_contents(directory, paths.root)
+    _clear_refinement_analysis_dir(
+        paths,
+        preserve_external_refinement_analysis=preserve_external_refinement_analysis,
+    )
 
 
 def _reset_outputs_from_stage(paths: DrawAiArtifactPaths, from_stage: str) -> None:
@@ -3574,9 +3591,17 @@ def _clear_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
     raise ValueError(f"Unsupported stage for reset: {stage}")
 
 
-def _reset_v2_outputs_from_stage(paths: DrawAiArtifactPaths, from_stage: str) -> None:
+def _reset_v2_outputs_from_stage(
+    paths: DrawAiArtifactPaths,
+    from_stage: str,
+    *,
+    preserve_external_refinement_analysis: bool = False,
+) -> None:
     if from_stage == "prepare":
-        _reset_run_owned_outputs(paths)
+        _reset_run_owned_outputs(
+            paths,
+            preserve_external_refinement_analysis=preserve_external_refinement_analysis,
+        )
         return
 
     for report_path in (paths.stage_status_json, paths.pipeline_summary_json):
@@ -3584,10 +3609,19 @@ def _reset_v2_outputs_from_stage(paths: DrawAiArtifactPaths, from_stage: str) ->
 
     start_index = V2_RERUNNABLE_STAGE_ORDER.index(from_stage)
     for stage in V2_RERUNNABLE_STAGE_ORDER[start_index:]:
-        _clear_v2_stage_outputs(paths, stage)
+        _clear_v2_stage_outputs(
+            paths,
+            stage,
+            preserve_external_refinement_analysis=preserve_external_refinement_analysis,
+        )
 
 
-def _clear_v2_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
+def _clear_v2_stage_outputs(
+    paths: DrawAiArtifactPaths,
+    stage: str,
+    *,
+    preserve_external_refinement_analysis: bool = False,
+) -> None:
     if stage == "prepare":
         for path in (paths.original_image, paths.figure_image, paths.source_metadata):
             _unlink_run_owned_path(path, paths.root)
@@ -3608,9 +3642,6 @@ def _clear_v2_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
             paths.v2_processor_trace_jsonl,
             paths.v2_processor_trace_jsonl.with_suffix(".plan.json"),
             paths.asset_manifest_json,
-            paths.element_analysis_json,
-            paths.element_analysis_validation_json,
-            paths.element_analysis_status_json,
             paths.box_ir_raw_json,
             paths.box_ir_merged_json,
             paths.box_ir_json,
@@ -3619,6 +3650,10 @@ def _clear_v2_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
             paths.svg_template_ir_json,
         ):
             _unlink_run_owned_path(path, paths.root)
+        _clear_refinement_analysis_dir(
+            paths,
+            preserve_external_refinement_analysis=preserve_external_refinement_analysis,
+        )
         _clear_run_owned_directory_contents(paths.v2_elements_dir, paths.root)
         return
 
@@ -3628,11 +3663,12 @@ def _clear_v2_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
             paths.v2_processor_trace_jsonl,
             paths.v2_processor_trace_jsonl.with_suffix(".plan.json"),
             paths.asset_manifest_json,
-            paths.element_analysis_json,
-            paths.element_analysis_validation_json,
-            paths.element_analysis_status_json,
         ):
             _unlink_run_owned_path(path, paths.root)
+        _clear_refinement_analysis_dir(
+            paths,
+            preserve_external_refinement_analysis=preserve_external_refinement_analysis,
+        )
         return
 
     if stage == "plan_assets":
@@ -3672,7 +3708,8 @@ def _clear_v2_stage_outputs(paths: DrawAiArtifactPaths, stage: str) -> None:
         return
 
     if stage == "package_run":
-        _unlink_run_owned_path(paths.run_package_json, paths.root)
+        # The v2 run package is a rolling state file read and rewritten by
+        # late stages, so downstream resets must not remove it.
         return
 
     raise ValueError(f"Unsupported v2 stage for reset: {stage}")
@@ -3697,6 +3734,38 @@ def _clear_run_owned_directory_contents(directory: Path, root: Path) -> None:
         raise RuntimeError(f"Refusing to clear directory outside DrawAI output root: {directory}")
     directory.mkdir(parents=True, exist_ok=True)
     for child in directory.iterdir():
+        _unlink_run_owned_path(child, root)
+
+
+def _clear_refinement_analysis_dir(
+    paths: DrawAiArtifactPaths,
+    *,
+    preserve_external_refinement_analysis: bool,
+) -> None:
+    if preserve_external_refinement_analysis:
+        _clear_run_owned_directory_contents_preserving(
+            paths.element_analysis_dir,
+            paths.root,
+            preserved_paths=(paths.element_analysis_json,),
+        )
+        return
+    _clear_run_owned_directory_contents(paths.element_analysis_dir, paths.root)
+
+
+def _clear_run_owned_directory_contents_preserving(
+    directory: Path,
+    root: Path,
+    *,
+    preserved_paths: Sequence[Path],
+) -> None:
+    directory = Path(directory)
+    if not _is_relative_to(directory, root):
+        raise RuntimeError(f"Refusing to clear directory outside DrawAI output root: {directory}")
+    preserved = {Path(path).resolve() for path in preserved_paths}
+    directory.mkdir(parents=True, exist_ok=True)
+    for child in directory.iterdir():
+        if child.resolve() in preserved:
+            continue
         _unlink_run_owned_path(child, root)
 
 
