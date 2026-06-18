@@ -1,0 +1,289 @@
+from __future__ import annotations
+
+from collections.abc import Mapping as MappingABC
+from collections.abc import Sequence as SequenceABC
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Literal, Mapping, Sequence, get_args
+
+from .registry import DrawAiRegistry, default_registry
+
+ELEMENT_CANDIDATE_SCHEMA = "drawai.element_candidate.v1"
+ELEMENT_PLAN_SCHEMA = "drawai.element_plan.v1"
+ASSET_PACKAGE_SCHEMA = "drawai.asset_package.v1"
+RUN_PACKAGE_SCHEMA = "drawai.run_package.v1"
+
+AssetStatus = Literal["pending", "running", "ok", "failed", "unsupported"]
+ReviewStatus = Literal["deterministic", "agent_refined", "user_edited"]
+_PLAN_CONFIDENCES = ("low", "medium", "high")
+
+BBox = tuple[float, float, float, float]
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+@dataclass(frozen=True)
+class ProcessingIntent:
+    object_type: str
+    processing_type: str
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "object_type": self.object_type,
+            "processing_type": self.processing_type,
+            "parameters": _json_normalize(self.parameters),
+        }
+
+
+@dataclass(frozen=True)
+class ElementCandidate:
+    candidate_id: str
+    source_parser: str
+    source_parser_version: str
+    element_type: str
+    bbox: BBox
+    geometry: Mapping[str, Any]
+    confidence: float
+    z_hint: int | None
+    text: str
+    evidence_files: Sequence[str]
+    provenance: Mapping[str, Any]
+    raw_ref: Mapping[str, Any]
+    schema: str = field(init=False, default=ELEMENT_CANDIDATE_SCHEMA)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "candidate_id": self.candidate_id,
+            "source_parser": self.source_parser,
+            "source_parser_version": self.source_parser_version,
+            "element_type": self.element_type,
+            "bbox": _json_normalize(self.bbox),
+            "geometry": _json_normalize(self.geometry),
+            "confidence": self.confidence,
+            "z_hint": self.z_hint,
+            "text": self.text,
+            "evidence_files": _json_normalize(self.evidence_files),
+            "provenance": _json_normalize(self.provenance),
+            "raw_ref": _json_normalize(self.raw_ref),
+        }
+
+
+@dataclass(frozen=True)
+class ElementPlan:
+    element_id: str
+    source_candidate_ids: Sequence[str]
+    element_type: str
+    bbox: BBox
+    geometry: Mapping[str, Any]
+    z_order: int
+    confidence: Literal["low", "medium", "high"]
+    processing_intent: ProcessingIntent
+    review_status: ReviewStatus
+    created_by_stage: str
+    change_reason: str
+    schema: str = field(init=False, default=ELEMENT_PLAN_SCHEMA)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "element_id": self.element_id,
+            "source_candidate_ids": _json_normalize(self.source_candidate_ids),
+            "element_type": self.element_type,
+            "bbox": _json_normalize(self.bbox),
+            "geometry": _json_normalize(self.geometry),
+            "z_order": self.z_order,
+            "confidence": self.confidence,
+            "processing_intent": self.processing_intent.to_dict(),
+            "review_status": self.review_status,
+            "created_by_stage": self.created_by_stage,
+            "change_reason": self.change_reason,
+        }
+
+
+@dataclass(frozen=True)
+class AssetPackage:
+    asset_id: str
+    element_id: str
+    processor_type: str
+    status: AssetStatus = "pending"
+    files: Sequence[str] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now)
+    schema: str = field(init=False, default=ASSET_PACKAGE_SCHEMA)
+
+    @classmethod
+    def empty(
+        cls,
+        *,
+        asset_id: str,
+        element_id: str,
+        processor_type: str,
+    ) -> AssetPackage:
+        return cls(
+            asset_id=asset_id,
+            element_id=element_id,
+            processor_type=processor_type,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "asset_id": self.asset_id,
+            "element_id": self.element_id,
+            "processor_type": self.processor_type,
+            "status": self.status,
+            "files": _json_normalize(self.files),
+            "metadata": _json_normalize(self.metadata),
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class RunPackage:
+    run_id: str
+    root: Path
+    source_image: str
+    canvas: Mapping[str, Any]
+    created_at: str = field(default_factory=utc_now)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    schema: str = field(init=False, default=RUN_PACKAGE_SCHEMA)
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        run_id: str,
+        root: str | Path,
+        source_image: str,
+        canvas: Mapping[str, Any],
+    ) -> RunPackage:
+        return cls(
+            run_id=run_id,
+            root=Path(root),
+            source_image=source_image,
+            canvas=canvas,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "run_id": self.run_id,
+            "root": str(self.root),
+            "source_image": self.source_image,
+            "canvas": _json_normalize(self.canvas),
+            "created_at": self.created_at,
+            "metadata": _json_normalize(self.metadata),
+        }
+
+
+def _json_normalize(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return {str(key): _json_normalize(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_normalize(item) for item in value]
+    return value
+
+
+def validate_bbox(bbox: Sequence[float]) -> BBox:
+    if len(bbox) != 4:
+        raise ValueError("bbox must contain exactly four numbers")
+    left, top, width, height = (float(value) for value in bbox)
+    if width <= 0 or height <= 0:
+        raise ValueError("bbox must have positive area")
+    return (left, top, width, height)
+
+
+def validate_element_candidate(
+    candidate: ElementCandidate,
+    *,
+    registry: DrawAiRegistry | None = None,
+) -> None:
+    registry = registry or default_registry()
+    if candidate.schema != ELEMENT_CANDIDATE_SCHEMA:
+        raise ValueError(f"invalid element candidate schema: {candidate.schema}")
+    if not candidate.candidate_id:
+        raise ValueError("candidate_id is required")
+    if not registry.has_element_type(candidate.element_type):
+        raise ValueError(f"unregistered element_type: {candidate.element_type}")
+    validate_bbox(candidate.bbox)
+    if candidate.confidence < 0 or candidate.confidence > 1:
+        raise ValueError("candidate confidence must be between 0 and 1")
+
+
+def validate_element_plan(
+    plan: ElementPlan,
+    *,
+    registry: DrawAiRegistry | None = None,
+) -> None:
+    registry = registry or default_registry()
+    if plan.schema != ELEMENT_PLAN_SCHEMA:
+        raise ValueError(f"invalid element plan schema: {plan.schema}")
+    _require_non_empty_string(plan.element_id, "element_id")
+    _require_non_empty_string(plan.created_by_stage, "created_by_stage")
+    _require_non_empty_string(plan.change_reason, "change_reason")
+    _require_non_empty_string(
+        plan.processing_intent.object_type,
+        "processing_intent.object_type",
+    )
+    _require_non_empty_string(
+        plan.processing_intent.processing_type,
+        "processing_intent.processing_type",
+    )
+    _validate_source_candidate_ids(plan.source_candidate_ids)
+    _validate_literal(plan.confidence, _PLAN_CONFIDENCES, "confidence")
+    _validate_literal(plan.review_status, get_args(ReviewStatus), "review_status")
+    if not registry.has_element_type(plan.element_type):
+        raise ValueError(f"unregistered element_type: {plan.element_type}")
+    if not registry.has_processing_type(plan.processing_intent.processing_type):
+        raise ValueError(
+            f"unregistered processing_type: {plan.processing_intent.processing_type}"
+        )
+    validate_bbox(plan.bbox)
+
+
+def validate_asset_package(package: AssetPackage) -> None:
+    if package.schema != ASSET_PACKAGE_SCHEMA:
+        raise ValueError(f"invalid asset package schema: {package.schema}")
+    _require_non_empty_string(package.asset_id, "asset_id")
+    _require_non_empty_string(package.element_id, "element_id")
+    _require_non_empty_string(package.processor_type, "processor_type")
+    _validate_literal(package.status, get_args(AssetStatus), "status")
+
+
+def validate_run_package(package: RunPackage) -> None:
+    validate_run_package_payload(package.to_dict())
+
+
+def validate_run_package_payload(payload: Mapping[str, Any]) -> None:
+    if not isinstance(payload, MappingABC):
+        raise ValueError("run package must be a mapping")
+    if payload.get("schema") != RUN_PACKAGE_SCHEMA:
+        raise ValueError(f"invalid run package schema: {payload.get('schema')}")
+    _require_non_empty_string(payload.get("run_id"), "run_id")
+    _require_non_empty_string(payload.get("root"), "root")
+    _require_non_empty_string(payload.get("source_image"), "source_image")
+    if not isinstance(payload.get("canvas"), MappingABC):
+        raise ValueError("canvas must be a mapping")
+
+
+def _validate_source_candidate_ids(value: object) -> None:
+    if isinstance(value, str) or not isinstance(value, SequenceABC) or not value:
+        raise ValueError("source_candidate_ids must be a non-string sequence")
+    for candidate_id in value:
+        if not isinstance(candidate_id, str) or not candidate_id:
+            raise ValueError("source_candidate_ids must contain non-empty strings")
+
+
+def _require_non_empty_string(value: str, field_name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} is required")
+
+
+def _validate_literal(value: str, allowed: tuple[str, ...], field_name: str) -> None:
+    if value not in allowed:
+        raise ValueError(f"invalid {field_name}: {value}")

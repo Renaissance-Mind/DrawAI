@@ -9,6 +9,13 @@ from typing import Any
 @dataclass(frozen=True)
 class DrawAiArtifactPaths:
     root: Path
+    run_package_json: Path
+    v2_elements_dir: Path
+    v2_parser_outputs_dir: Path
+    v2_fusion_trace_json: Path
+    v2_refine_trace_json: Path
+    v2_processor_trace_jsonl: Path
+    exports_dir: Path
     inputs_dir: Path
     original_image: Path
     figure_image: Path
@@ -84,9 +91,13 @@ def prepare_artifact_paths(root: str | Path) -> DrawAiArtifactPaths:
     reports_dir = root_path / "reports"
     element_analysis_dir = reports_dir / "element_analysis_codex"
     trace_dir = root_path / "trace"
+    v2_elements_dir = root_path / "elements"
+    v2_parser_outputs_dir = reports_dir / "parser_outputs"
+    exports_dir = root_path / "exports"
 
     for directory in (
         root_path,
+        v2_elements_dir,
         inputs_dir,
         sam3_dir,
         sam_masks_dir,
@@ -100,12 +111,21 @@ def prepare_artifact_paths(root: str | Path) -> DrawAiArtifactPaths:
         attempts_dir,
         template_iterations_dir,
         reports_dir,
+        v2_parser_outputs_dir,
         trace_dir,
+        exports_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
     return DrawAiArtifactPaths(
         root=root_path,
+        run_package_json=root_path / "drawai_package.json",
+        v2_elements_dir=v2_elements_dir,
+        v2_parser_outputs_dir=v2_parser_outputs_dir,
+        v2_fusion_trace_json=trace_dir / "v2_fusion_trace.json",
+        v2_refine_trace_json=trace_dir / "v2_refine_trace.json",
+        v2_processor_trace_jsonl=trace_dir / "v2_processor_trace.jsonl",
+        exports_dir=exports_dir,
         inputs_dir=inputs_dir,
         original_image=inputs_dir / "original.png",
         figure_image=inputs_dir / "figure.png",
