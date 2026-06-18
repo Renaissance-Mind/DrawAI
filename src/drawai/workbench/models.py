@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+from drawai.workflow.templates import DEFAULT_WORKFLOW_TEMPLATE_ID
+
 BatchStatus = Literal["queued", "running", "waiting_review", "completed", "failed", "canceled"]
 CaseStatus = Literal[
     "queued",
@@ -51,6 +53,7 @@ class BatchRecord:
     created_at: str
     updated_at: str
     config_path: str
+    workflow_template_id: str = DEFAULT_WORKFLOW_TEMPLATE_ID
     error_message: str = ""
 
     def to_api(self, *, case_counts: Mapping[str, int] | None = None) -> dict[str, Any]:

@@ -47,6 +47,20 @@ from ..v2.workbench import (
 from .models import CaseRecord, WorkbenchSettings
 from .runner import WorkbenchRunner, create_case_config
 from .store import WorkbenchStore
+from drawai.workflow.agents import (
+    agent_preset_by_id,
+    default_agent_provider_registry,
+    render_agent_prompt,
+)
+from drawai.workflow.templates import (
+    DEFAULT_WORKFLOW_TEMPLATE_ID,
+    copy_builtin_template_to_workspace,
+    list_workflow_templates,
+    load_workflow_template_by_id,
+    save_workflow_template,
+    workflow_template_from_dict,
+)
+from drawai.workflow.validation import validate_workflow_template
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ARCHIVE_EXTENSIONS = {".zip"}
@@ -122,6 +136,104 @@ def create_app(
             "runtime_activity": resolved_runner.resource_activity(),
         }
 
+    @app.get("/api/workflow/templates")
+    def list_workflow_template_api() -> dict[str, Any]:
+        return {
+            "templates": [
+                template.to_dict()
+                for template in list_workflow_templates(resolved_store.workspace)
+            ]
+        }
+
+    @app.post("/api/workflow/templates/copy")
+    async def copy_workflow_template_api(request: Request) -> dict[str, Any]:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="workflow template copy payload must be an object")
+        template_id = str(payload.get("template_id") or "")
+        name = str(payload.get("name") or "").strip()
+        if not template_id:
+            raise HTTPException(status_code=400, detail="template_id is required")
+        if not name:
+            raise HTTPException(status_code=400, detail="template name is required")
+        try:
+            template = copy_builtin_template_to_workspace(
+                resolved_store.workspace,
+                template_id,
+                name=name,
+                overwrite=_as_bool(payload.get("overwrite", True)),
+            )
+        except (FileExistsError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"template": template.to_dict()}
+
+    @app.post("/api/workflow/templates/validate")
+    async def validate_workflow_template_api(request: Request) -> dict[str, Any]:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="workflow template payload must be an object")
+        try:
+            template = workflow_template_from_dict(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        result = validate_workflow_template(template)
+        return {"validation": result.to_dict(), "template": template.to_dict()}
+
+    @app.get("/api/workflow/templates/{template_id}")
+    def get_workflow_template_api(template_id: str) -> dict[str, Any]:
+        try:
+            template = load_workflow_template_by_id(resolved_store.workspace, template_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"template": template.to_dict()}
+
+    @app.put("/api/workflow/templates/{template_id}")
+    async def save_workflow_template_api(template_id: str, request: Request) -> dict[str, Any]:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="workflow template payload must be an object")
+        try:
+            template = workflow_template_from_dict(payload)
+            if template.template_id != template_id:
+                raise ValueError("template_id path and payload must match")
+            path = save_workflow_template(resolved_store.workspace, template)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"template": template.to_dict(), "path": str(path)}
+
+    @app.get("/api/workflow/providers")
+    def list_workflow_agent_providers_api() -> dict[str, Any]:
+        return {
+            "providers": [
+                provider.to_dict()
+                for provider in default_agent_provider_registry().values()
+            ]
+        }
+
+    @app.post("/api/workflow/agent-prompt-preview")
+    async def workflow_agent_prompt_preview_api(request: Request) -> dict[str, Any]:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Agent prompt payload must be an object")
+        preset_id = str(payload.get("preset_id") or "")
+        inputs = payload.get("inputs", [])
+        node_config = payload.get("node_config", {})
+        if not preset_id:
+            raise HTTPException(status_code=400, detail="preset_id is required")
+        if not isinstance(inputs, list):
+            raise HTTPException(status_code=400, detail="inputs must be an array")
+        if not isinstance(node_config, dict):
+            raise HTTPException(status_code=400, detail="node_config must be an object")
+        try:
+            prompt = render_agent_prompt(
+                agent_preset_by_id(preset_id),
+                inputs=tuple(item for item in inputs if isinstance(item, dict)),
+                node_config=node_config,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"prompt": prompt.to_dict()}
+
     @app.post("/api/imagegen/generations")
     async def generate_images(request: Request) -> dict[str, Any]:
         payload = await request.json()
@@ -158,12 +270,18 @@ def create_app(
         base_config = Path(str(payload.get("base_config_path") or resolved_settings.default_config)).expanduser().resolve(strict=False)
         if not base_config.exists():
             raise HTTPException(status_code=400, detail=f"base config does not exist: {base_config}")
+        workflow_template_id = str(payload.get("workflow_template_id") or DEFAULT_WORKFLOW_TEMPLATE_ID)
+        try:
+            load_workflow_template_by_id(resolved_store.workspace, workflow_template_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"workflow template is not available: {workflow_template_id}") from exc
         batch = resolved_store.create_batch(
             name=str(payload.get("name") or "DrawAI batch"),
             input_mode=input_mode,  # type: ignore[arg-type]
             max_concurrent_cases=max_cases,
             auto_run_svg_after_analysis=_as_bool(payload.get("auto_run_svg_after_analysis")),
             config_path=base_config,
+            workflow_template_id=workflow_template_id,
         )
         try:
             sources = await _collect_sources(

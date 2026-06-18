@@ -19,6 +19,7 @@ from .models import (
     new_id,
     utc_now,
 )
+from drawai.workflow.templates import DEFAULT_WORKFLOW_TEMPLATE_ID
 
 
 class WorkbenchStore:
@@ -40,6 +41,7 @@ class WorkbenchStore:
         max_concurrent_cases: int,
         auto_run_svg_after_analysis: bool,
         config_path: str | Path,
+        workflow_template_id: str = DEFAULT_WORKFLOW_TEMPLATE_ID,
     ) -> BatchRecord:
         now = utc_now()
         record = BatchRecord(
@@ -52,6 +54,7 @@ class WorkbenchStore:
             created_at=now,
             updated_at=now,
             config_path=str(Path(config_path).expanduser().resolve(strict=False)),
+            workflow_template_id=workflow_template_id,
         )
         with self._connect() as db:
             db.execute(
@@ -59,8 +62,8 @@ class WorkbenchStore:
                 INSERT INTO batches (
                   batch_id, name, input_mode, status, max_concurrent_cases,
                   auto_run_svg_after_analysis, created_at, updated_at, config_path,
-                  error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  workflow_template_id, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.batch_id,
@@ -72,6 +75,7 @@ class WorkbenchStore:
                     record.created_at,
                     record.updated_at,
                     record.config_path,
+                    record.workflow_template_id,
                     record.error_message,
                 ),
             )
@@ -116,6 +120,16 @@ class WorkbenchStore:
                 "UPDATE batches SET status = ?, error_message = ?, updated_at = ? WHERE batch_id = ?",
                 (status, error_message, utc_now(), batch_id),
             )
+
+    def update_batch_workflow_template(self, batch_id: str, workflow_template_id: str) -> BatchRecord:
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE batches SET workflow_template_id = ?, updated_at = ? WHERE batch_id = ?",
+                (workflow_template_id, utc_now(), batch_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown batch_id: {batch_id}")
+        return self.get_batch(batch_id)
 
     def create_case(
         self,
@@ -371,6 +385,7 @@ class WorkbenchStore:
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL,
                   config_path TEXT NOT NULL,
+                  workflow_template_id TEXT NOT NULL DEFAULT 'default_drawai_dag',
                   error_message TEXT NOT NULL DEFAULT ''
                 );
 
@@ -412,6 +427,12 @@ class WorkbenchStore:
                 );
                 """
             )
+            _ensure_column(
+                db,
+                "batches",
+                "workflow_template_id",
+                "TEXT NOT NULL DEFAULT 'default_drawai_dag'",
+            )
 
 
 def _resolve_inside(root: Path, path: str | Path) -> Path:
@@ -436,8 +457,23 @@ def _batch_from_row(row: Mapping[str, Any]) -> BatchRecord:
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
         config_path=str(row["config_path"]),
+        workflow_template_id=str(row["workflow_template_id"] or DEFAULT_WORKFLOW_TEMPLATE_ID),
         error_message=str(row["error_message"]),
     )
+
+
+def _ensure_column(
+    db: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    columns = {
+        str(row["name"])
+        for row in db.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
 def _case_from_row(row: Mapping[str, Any]) -> CaseRecord:
