@@ -199,3 +199,95 @@ def test_agent_cli_svg_runner_builds_codex_preset_with_images(monkeypatch, tmp_p
         "-",
     ]
     assert "Internal DrawAI Codex CLI SVG generation task" in calls[0]["input"]
+
+
+def test_agent_cli_svg_runner_builds_openclaw_preset_with_prompt_argument(monkeypatch, tmp_path: Path):
+    image_path = tmp_path / "input.png"
+    output_svg = tmp_path / "semantic.svg"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    trace_path = tmp_path / "trace.jsonl"
+    calls = []
+
+    def fake_run(command, *, input, cwd, text, capture_output, timeout, check):
+        calls.append({"command": list(command), "input": input, "cwd": str(cwd)})
+        output_svg.write_text(VALID_SVG, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout='{"status":"ok"}\n', stderr="")
+
+    monkeypatch.setattr("drawai.agent_cli_svg.subprocess.run", fake_run)
+
+    svg = invoke_agent_cli_svg_text(
+        image_paths=image_path,
+        prompt="Write the requested SVG.",
+        task_name="unit_test_agent_cli_openclaw",
+        runtime_config={
+            "provider": "agent-cli",
+            "reasoning_effort": "high",
+            "cli": {"agent": "openclaw", "command": ["openclaw"]},
+            "timeout_seconds": 5,
+        },
+        trace_path=trace_path,
+        isolated_cwd=tmp_path,
+        output_svg_path=output_svg,
+    )
+
+    assert svg == VALID_SVG
+    command = calls[0]["command"]
+    assert calls[0]["input"] is None
+    assert command[:2] == ["openclaw", "agent"]
+    assert "--local" in command
+    assert "--json" in command
+    assert command[command.index("--agent") + 1] == "main"
+    assert command[command.index("--timeout") + 1] == "5"
+    assert command[command.index("--thinking") + 1] == "high"
+    message = command[command.index("--message") + 1]
+    assert "Internal DrawAI OpenClaw CLI SVG generation task" in message
+    assert str(output_svg) in message
+    trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+    assert "<prompt:" in " ".join(trace_events[0]["command"])
+    assert message not in trace_events[0]["command"]
+
+
+def test_agent_cli_svg_runner_builds_hermes_preset_with_prompt_argument(monkeypatch, tmp_path: Path):
+    image_path = tmp_path / "input.png"
+    output_svg = tmp_path / "semantic.svg"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    trace_path = tmp_path / "trace.jsonl"
+    calls = []
+
+    def fake_run(command, *, input, cwd, text, capture_output, timeout, check):
+        calls.append({"command": list(command), "input": input, "cwd": str(cwd)})
+        output_svg.write_text(VALID_SVG, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="done\n", stderr="")
+
+    monkeypatch.setattr("drawai.agent_cli_svg.subprocess.run", fake_run)
+
+    svg = invoke_agent_cli_svg_text(
+        image_paths=image_path,
+        prompt="Write the requested SVG.",
+        task_name="unit_test_agent_cli_hermes",
+        runtime_config={
+            "provider": "agent-cli",
+            "model_name": "moonshot/kimi-k2-thinking",
+            "cli": {"agent": "hermes", "command": ["hermes"]},
+            "timeout_seconds": 5,
+        },
+        trace_path=trace_path,
+        isolated_cwd=tmp_path,
+        output_svg_path=output_svg,
+    )
+
+    assert svg == VALID_SVG
+    command = calls[0]["command"]
+    assert calls[0]["input"] is None
+    assert command[:2] == ["hermes", "chat"]
+    assert command[command.index("--model") + 1] == "moonshot/kimi-k2-thinking"
+    assert "--quiet" in command
+    assert "--yolo" in command
+    assert command[command.index("--source") + 1] == "drawai"
+    assert command[command.index("--image") + 1] == str(image_path)
+    query = command[command.index("--query") + 1]
+    assert "Internal DrawAI Hermes CLI SVG generation task" in query
+    assert str(output_svg) in query
+    trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+    assert "<prompt:" in " ".join(trace_events[0]["command"])
+    assert query not in trace_events[0]["command"]

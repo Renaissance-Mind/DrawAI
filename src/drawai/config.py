@@ -18,7 +18,7 @@ RECOGNIZED_SVG_TEXT_RENDERING = frozenset({"model_text"})
 RECOGNIZED_VISUAL_REVIEW_ROUNDS = frozenset({"text_style", "layout"})
 RECOGNIZED_RMBG_PROVIDERS = frozenset({"service"})
 RECOGNIZED_CODEX_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
-RECOGNIZED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "custom"})
+RECOGNIZED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "openclaw", "hermes", "custom"})
 
 
 @dataclass(frozen=True)

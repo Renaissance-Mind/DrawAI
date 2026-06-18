@@ -93,7 +93,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--agent-cli-agent",
-        choices=("kimi", "claude", "codex", "custom"),
+        choices=("kimi", "claude", "codex", "openclaw", "hermes", "custom"),
         default="kimi",
         help="Agent CLI preset used when --invoker agent_cli is selected.",
     )

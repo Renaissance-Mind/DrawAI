@@ -152,6 +152,46 @@ uv run drawai run examples/demo_figure.png --local
 
 注意：这个单图快捷命令是本机 in-process 模式。如果要让 CLI 调远程模型服务，请使用配置文件分阶段运行，并把配置里的 SAM3、OCR、RMBG 地址改成远程模型服务地址。
 
+## Agent CLI 后端
+
+默认配置使用 Codex Python SDK。要把 run0 资产分析和 SVG 生成都切到外部 Agent CLI，配置里需要同时设置：
+
+```yaml
+svg:
+  generation_backend: agent_cli
+model_runtime:
+  provider: agent-cli
+  connection_id: hermes
+  cli:
+    agent: hermes
+```
+
+`model_runtime.cli.agent` 支持 `kimi`、`claude`、`codex`、`openclaw`、`hermes` 和 `custom`。内置 preset 会在未写 `command` 时使用默认命令：
+
+| agent | 默认命令 | 说明 |
+| --- | --- | --- |
+| `kimi` | `kimi` | 通过 stdin 接收 prompt，并自动补 `--work-dir`、`--print`、`--yolo` 等参数 |
+| `claude` | `claude` | 通过 stdin 接收 prompt，并自动补 `--print`、`--permission-mode bypassPermissions` |
+| `codex` | `codex exec` | 通过 stdin 接收 prompt，并自动补工作目录、图片参数和 sandbox/approval 参数 |
+| `openclaw` | `openclaw agent` | 使用 `openclaw agent --local --agent main --message ... --json` 运行本地 agent |
+| `hermes` | `hermes chat` | 使用 `hermes chat --query ... --quiet --yolo` 运行单轮 agent |
+| `custom` | 无 | 必须显式写 `model_runtime.cli.command` |
+
+如果想覆盖默认命令，可以写完整命令数组：
+
+```yaml
+model_runtime:
+  provider: agent-cli
+  connection_id: openclaw
+  cli:
+    agent: openclaw
+    command:
+      - openclaw
+      - agent
+```
+
+OpenClaw 和 Hermes 的 prompt 会作为 CLI 参数传入；DrawAI 的 trace 只记录 `<prompt:... chars>` 占位，不会把完整 prompt 写进命令日志。
+
 ## Workbench
 
 完整本机 Workbench：

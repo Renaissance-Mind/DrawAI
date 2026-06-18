@@ -4,7 +4,7 @@ All notable public updates are grouped by date. Each date lists user-facing feat
 
 ## 2026-06-18
 
-- Added the Agent CLI backend for asset analysis and SVG generation, with support for `codex cli`, `claude`, `kimi-code`, and custom agent commands.
+- Added the Agent CLI backend for asset analysis and SVG generation, with support for `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`, and custom agent commands.
 - Added Codex SDK image generation and editing support, and exposed those image-generation flows in the Workbench.
 - Added native Windows deployment support, including packaged Codex CLI detection, launcher output flushing, platform-safe launcher tests, and README documentation.
 - Added Workbench runtime and queue visibility so users can see backend runtime status while tasks are running.

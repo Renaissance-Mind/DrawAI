@@ -325,6 +325,42 @@ model_runtime:
     }
 
 
+def test_config_accepts_openclaw_and_hermes_agent_cli_presets(tmp_path: Path):
+    image = tmp_path / "input.png"
+    image.write_bytes(b"not-used-by-config")
+
+    for agent, command in {
+        "openclaw": ["openclaw", "agent"],
+        "hermes": ["hermes", "chat"],
+    }.items():
+        config_path = tmp_path / f"{agent}.yaml"
+        config_path.write_text(
+            f"""
+input:
+  image: input.png
+  output_dir: out-{agent}
+svg:
+  generation_backend: agent_cli
+model_runtime:
+  provider: agent-cli
+  connection_id: {agent}
+  cli:
+    agent: {agent}
+    command:
+{chr(10).join(f"      - {part}" for part in command)}
+  timeout_seconds: 120
+""",
+            encoding="utf-8",
+        )
+
+        cfg = load_drawai_config(config_path)
+
+        assert cfg.svg.generation_backend == "agent_cli"
+        assert cfg.model_runtime.connection_id == agent
+        assert cfg.model_runtime.cli.agent == agent
+        assert cfg.model_runtime.cli.command == tuple(command)
+
+
 def test_config_rejects_removed_kimi_command(tmp_path: Path):
     image = tmp_path / "input.png"
     image.write_bytes(b"not-used-by-config")

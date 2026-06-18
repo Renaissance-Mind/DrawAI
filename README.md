@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/59a81ac2-cdbe-49b6-a4fa-8db897afc6bb
 
 ### 2026-06-18
 
-- 支持 Agent CLI 后端，可用于资产分析和 SVG 生成，已支持 `codex cli`、`claude`、`kimi-code` 和自定义 agent 命令。
+- 支持 Agent CLI 后端，可用于资产分析和 SVG 生成，已支持 `codex cli`、`claude`、`kimi-code`、`OpenClaw`、`Hermes` 和自定义 agent 命令。
 - 支持 Codex SDK 图像生成和编辑，并在 Workbench 中开放相关图像生成流程。
 - 支持 Windows 原生部署，包括 packaged Codex CLI 检测、启动器输出刷新、跨平台路径测试和 README 说明。
 - 增加 Workbench 运行时和队列状态展示，便于任务运行时查看后端状态。
@@ -48,7 +48,7 @@ https://github.com/user-attachments/assets/59a81ac2-cdbe-49b6-a4fa-8db897afc6bb
 - [ ] 支持用 GPT-Image-2 重绘素材
 - [ ] 支持更复杂的生成模式（各种图像生成 Skill 等）
 - [ ] 支持以 Skills 方式使用
-- [ ] 支持其他 Agent 和模型（已支持 `codex cli`、`claude`、`kimi-code`）
+- [ ] 支持其他 Agent 和模型（已支持 `codex cli`、`claude`、`kimi-code`、`OpenClaw`、`Hermes`）
 
 > 备注：由于目前删减了 Mask 和重绘能力，对于全图复杂背景的鲁棒性有下降，目前正在火速支持中。
 
@@ -118,7 +118,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
 - Node.js 20.19+ 或 22.12+，仅 Workbench 前端需要
-- 可用的 Codex/OpenAI 认证，或已登录的 Kimi CLI（`kimi`），用于 run0 资产分析和 SVG 生成阶段
+- 可用的 Codex/OpenAI 认证，或已登录/配置的 Agent CLI，例如 Kimi（`kimi`）、Claude（`claude`）、Codex（`codex exec`）、OpenClaw（`openclaw agent`）或 Hermes（`hermes chat`），用于 run0 资产分析和 SVG 生成阶段
 - >8GB 磁盘空间以保存模型和安装环境
 
 模型和运行时默认放在：
@@ -131,7 +131,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 
 ### 选择 Codex SDK 或 Agent CLI
 
-默认配置继续使用 Codex Python SDK。要改用直接 CLI，把配置中的 SVG backend 和 runtime provider 切到 `agent_cli`，再在 `model_runtime.cli` 里选择 `kimi`、`claude`、`codex` 或自定义命令：
+默认配置继续使用 Codex Python SDK。要改用直接 CLI，把配置中的 SVG backend 和 runtime provider 切到 `agent_cli`，再在 `model_runtime.cli` 里选择 `kimi`、`claude`、`codex`、`openclaw`、`hermes` 或自定义命令：
 
 ```yaml
 svg:
@@ -145,7 +145,7 @@ model_runtime:
       - kimi
 ```
 
-Agent CLI 路径会同时用于 run0 资产分析和 SVG 生成；继续使用 Codex SDK 时无需改动默认配置。Claude/Codex CLI 只需要把 `agent` 和 `command` 换成对应命令，例如 `claude` 或 `codex exec`。
+Agent CLI 路径会同时用于 run0 资产分析和 SVG 生成；继续使用 Codex SDK 时无需改动默认配置。Claude/Codex/OpenClaw/Hermes CLI 只需要把 `agent` 和 `command` 换成对应命令，例如 `claude`、`codex exec`、`openclaw agent` 或 `hermes chat`。
 
 <a id="outputs"></a>
 ## 📦 输出结果在哪里

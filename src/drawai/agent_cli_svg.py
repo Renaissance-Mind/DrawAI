@@ -12,7 +12,7 @@ from . import model_runtime
 
 
 AGENT_CLI_RUNNER = "agent_cli"
-SUPPORTED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "custom"})
+SUPPORTED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "openclaw", "hermes", "custom"})
 
 
 class AgentCliSvgError(RuntimeError):
@@ -149,10 +149,11 @@ class AgentCliSvgSession:
         prompt: str,
         task_name: str,
     ) -> "_AgentCliResult":
-        command = _agent_cli_command(
+        invocation = _agent_cli_invocation(
             self.runtime_config,
             work_dir=self.isolated_cwd,
             image_paths=image_paths,
+            prompt=prompt,
         )
         model_runtime._append_trace(
             self.trace_path,
@@ -161,18 +162,19 @@ class AgentCliSvgSession:
                 "runner": AGENT_CLI_RUNNER,
                 "agent": self.agent,
                 "task_name": task_name,
-                "command": command,
+                "command": _trace_command(invocation.command, prompt),
                 "cwd": str(self.isolated_cwd),
                 "timeout_seconds": self.timeout_seconds,
                 "prompt_chars": len(prompt),
+                "stdin_chars": len(invocation.stdin or ""),
                 "image_paths": [str(path) for path in image_paths],
             },
         )
         started_at = time.monotonic()
         try:
             completed = subprocess.run(
-                command,
-                input=prompt,
+                invocation.command,
+                input=invocation.stdin,
                 cwd=self.isolated_cwd,
                 text=True,
                 capture_output=True,
@@ -233,6 +235,12 @@ class _AgentCliResult:
         self.duration_ms = duration_ms
 
 
+class _AgentCliInvocation:
+    def __init__(self, *, command: list[str], stdin: str | None) -> None:
+        self.command = command
+        self.stdin = stdin
+
+
 def invoke_agent_cli_svg_text(
     *,
     image_paths: str | Path | Sequence[str | Path],
@@ -285,17 +293,48 @@ def _agent_cli_command(
     work_dir: Path,
     image_paths: Sequence[Path] = (),
 ) -> list[str]:
+    return _agent_cli_invocation(
+        runtime_config,
+        work_dir=work_dir,
+        image_paths=image_paths,
+        prompt="",
+    ).command
+
+
+def _agent_cli_invocation(
+    runtime_config: Mapping[str, Any],
+    *,
+    work_dir: Path,
+    image_paths: Sequence[Path] = (),
+    prompt: str,
+) -> _AgentCliInvocation:
     agent = _agent_cli_agent(runtime_config)
     raw = _agent_cli_command_raw(runtime_config, agent)
     command = _parse_command(raw)
     model_name = str(runtime_config.get("model_name") or "").strip()
     if agent == "kimi":
-        return _kimi_preset_command(command, model_name=model_name, work_dir=work_dir)
+        return _AgentCliInvocation(
+            command=_kimi_preset_command(command, model_name=model_name, work_dir=work_dir),
+            stdin=prompt,
+        )
     if agent == "claude":
-        return _claude_command(command, model_name=model_name)
+        return _AgentCliInvocation(command=_claude_command(command, model_name=model_name), stdin=prompt)
     if agent == "codex":
-        return _codex_command(command, model_name=model_name, work_dir=work_dir, image_paths=image_paths)
-    return command
+        return _AgentCliInvocation(
+            command=_codex_command(command, model_name=model_name, work_dir=work_dir, image_paths=image_paths),
+            stdin=prompt,
+        )
+    if agent == "openclaw":
+        return _AgentCliInvocation(
+            command=_openclaw_command(command, runtime_config=runtime_config, prompt=prompt),
+            stdin=None,
+        )
+    if agent == "hermes":
+        return _AgentCliInvocation(
+            command=_hermes_command(command, model_name=model_name, image_paths=image_paths, prompt=prompt),
+            stdin=None,
+        )
+    return _AgentCliInvocation(command=command, stdin=prompt)
 
 
 def _agent_cli_agent(runtime_config: Mapping[str, Any]) -> str:
@@ -312,6 +351,10 @@ def _agent_cli_agent(runtime_config: Mapping[str, Any]) -> str:
             agent = "claude"
         elif provider in {"codex-cli"} or connection_id in {"codex", "codex-cli"}:
             agent = "codex"
+        elif provider in {"openclaw-cli"} or connection_id in {"openclaw", "openclaw-cli"}:
+            agent = "openclaw"
+        elif provider in {"hermes-cli"} or connection_id in {"hermes", "hermes-cli"}:
+            agent = "hermes"
         else:
             agent = "kimi"
     if agent not in SUPPORTED_AGENT_CLI_AGENTS:
@@ -333,6 +376,10 @@ def _agent_cli_command_raw(runtime_config: Mapping[str, Any], agent: str) -> Any
         return ("claude",)
     if agent == "codex":
         return ("codex", "exec")
+    if agent == "openclaw":
+        return ("openclaw", "agent")
+    if agent == "hermes":
+        return ("hermes", "chat")
     raise AgentCliSvgError("model_runtime.cli.command is required for custom agent CLI")
 
 
@@ -393,6 +440,73 @@ def _codex_command(command: list[str], *, model_name: str, work_dir: Path, image
     return command
 
 
+def _openclaw_command(command: list[str], *, runtime_config: Mapping[str, Any], prompt: str) -> list[str]:
+    _ensure_subcommand(command, "agent")
+    if "--local" not in command:
+        command.append("--local")
+    if not _has_any_flag(command, ("--agent", "--session-id", "--to", "-t")):
+        command.extend(["--agent", "main"])
+    if not _has_any_flag(command, ("--message", "-m")):
+        command.extend(["--message", prompt])
+    if "--json" not in command:
+        command.append("--json")
+    if "--timeout" not in command:
+        timeout_seconds = model_runtime._runtime_timeout_seconds(runtime_config)
+        command.extend(["--timeout", _format_timeout_seconds(timeout_seconds)])
+    if "--thinking" not in command:
+        thinking = _openclaw_thinking_level(runtime_config.get("reasoning_effort"))
+        if thinking:
+            command.extend(["--thinking", thinking])
+    return command
+
+
+def _hermes_command(
+    command: list[str],
+    *,
+    model_name: str,
+    image_paths: Sequence[Path],
+    prompt: str,
+) -> list[str]:
+    _ensure_subcommand(command, "chat")
+    if model_name and not _has_any_flag(command, ("--model", "-m")):
+        command.extend(["--model", model_name])
+    if not _has_any_flag(command, ("--query", "-q")):
+        command.extend(["--query", prompt])
+    if not _has_any_flag(command, ("--quiet", "-Q")):
+        command.append("--quiet")
+    if "--yolo" not in command:
+        command.append("--yolo")
+    if "--source" not in command:
+        command.extend(["--source", "drawai"])
+    if image_paths and "--image" not in command:
+        command.extend(["--image", str(image_paths[0])])
+    return command
+
+
+def _ensure_subcommand(command: list[str], subcommand: str) -> None:
+    if subcommand not in command[1:]:
+        command.append(subcommand)
+
+
+def _has_any_flag(command: Sequence[str], flags: Sequence[str]) -> bool:
+    return any(flag in command for flag in flags)
+
+
+def _format_timeout_seconds(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _openclaw_thinking_level(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    if value == "none":
+        return "off"
+    if value in {"minimal", "low", "medium", "high", "xhigh"}:
+        return value
+    return ""
+
+
 def _controlled_prompt(
     prompt: str,
     *,
@@ -444,7 +558,19 @@ def _agent_label(agent: str) -> str:
         return "Claude CLI"
     if agent == "codex":
         return "Codex CLI"
+    if agent == "openclaw":
+        return "OpenClaw CLI"
+    if agent == "hermes":
+        return "Hermes CLI"
     return "Agent CLI"
+
+
+def _trace_command(command: Sequence[str], prompt: str) -> list[str]:
+    redacted = []
+    replacement = f"<prompt:{len(prompt)} chars>"
+    for item in command:
+        redacted.append(replacement if item == prompt else item)
+    return redacted
 
 
 def _normalize_workspace_output_path(path_value: str | Path, workspace_dir: Path) -> Path:

@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/59a81ac2-cdbe-49b6-a4fa-8db897afc6bb
 
 ### 2026-06-18
 
-- Added the Agent CLI backend for asset analysis and SVG generation, with support for `codex cli`, `claude`, `kimi-code`, and custom agent commands.
+- Added the Agent CLI backend for asset analysis and SVG generation, with support for `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`, and custom agent commands.
 - Added Codex SDK image generation and editing support, and exposed those image-generation flows in the Workbench.
 - Added native Windows deployment support, including packaged Codex CLI detection, launcher output flushing, platform-safe launcher tests, and README documentation.
 - Added Workbench runtime and queue visibility so users can see backend runtime status while tasks are running.
@@ -48,7 +48,7 @@ For open-source stability, DrawAI currently keeps some still-under-validation ca
 - [ ] Support asset redrawing with GPT-Image-2
 - [ ] Support more complex generation modes, including image-generation skills
 - [ ] Support skill-based usage
-- [ ] Support other agents and models (already supports `codex cli`, `claude`, `kimi-code`)
+- [ ] Support other agents and models (already supports `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`)
 
 > Note: Because mask and redraw capabilities are currently reduced in the open-source path, robustness on full-image complex backgrounds is lower than the internal target. Support is being added rapidly.
 
@@ -118,7 +118,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
 - Node.js 20.19+ or 22.12+ for the Workbench frontend
-- Working Codex/OpenAI authentication, or a logged-in agent CLI such as Kimi (`kimi`), Claude (`claude`), or Codex (`codex exec`), for run0 asset analysis and SVG generation
+- Working Codex/OpenAI authentication, or a configured agent CLI such as Kimi (`kimi`), Claude (`claude`), Codex (`codex exec`), OpenClaw (`openclaw agent`), or Hermes (`hermes chat`), for run0 asset analysis and SVG generation
 - >8 GB disk space for model weights and the installed runtime environment
 
 The default local runtime directory is:
@@ -131,7 +131,7 @@ It is not tracked by git. Model downloads use ModelScope by default. See [runtim
 
 ### Choose Codex SDK Or Agent CLI
 
-The default config continues to use the Codex Python SDK. To use a direct CLI instead, switch the SVG backend and runtime provider to `agent_cli`, then choose `kimi`, `claude`, `codex`, or a custom command under `model_runtime.cli`:
+The default config continues to use the Codex Python SDK. To use a direct CLI instead, switch the SVG backend and runtime provider to `agent_cli`, then choose `kimi`, `claude`, `codex`, `openclaw`, `hermes`, or a custom command under `model_runtime.cli`:
 
 ```yaml
 svg:
@@ -145,7 +145,7 @@ model_runtime:
       - kimi
 ```
 
-The Agent CLI path is used for both run0 asset analysis and SVG generation. No config change is needed when staying on the Codex SDK. For Claude or Codex CLI, change `agent` and `command` to the corresponding command, for example `claude` or `codex exec`.
+The Agent CLI path is used for both run0 asset analysis and SVG generation. No config change is needed when staying on the Codex SDK. For Claude, Codex, OpenClaw, or Hermes CLI, change `agent` and `command` to the corresponding command, for example `claude`, `codex exec`, `openclaw agent`, or `hermes chat`.
 
 <a id="outputs"></a>
 ## 📦 Output Locations

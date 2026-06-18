@@ -11,21 +11,26 @@ from scripts.run_codex_element_analysis import (
 
 
 def test_parse_args_accepts_agent_cli_invoker_and_command():
-    args = parse_args(
-        [
-            "case",
-            "--invoker",
-            "agent_cli",
-            "--agent-cli-agent",
-            "kimi",
-            "--agent-cli-command",
-            "kimi",
-        ]
-    )
+    for agent, command in {
+        "kimi": ["kimi"],
+        "openclaw": ["openclaw", "agent"],
+        "hermes": ["hermes", "chat"],
+    }.items():
+        args = parse_args(
+            [
+                "case",
+                "--invoker",
+                "agent_cli",
+                "--agent-cli-agent",
+                agent,
+                "--agent-cli-command",
+                *command,
+            ]
+        )
 
-    assert args.invoker == "agent_cli"
-    assert args.agent_cli_agent == "kimi"
-    assert args.agent_cli_command == ["kimi"]
+        assert args.invoker == "agent_cli"
+        assert args.agent_cli_agent == agent
+        assert args.agent_cli_command == command
 
 
 def test_invoke_agent_cli_element_analysis_writes_output_via_cli(monkeypatch, tmp_path: Path):
