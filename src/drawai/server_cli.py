@@ -341,15 +341,15 @@ def _run_workbench_native(args: argparse.Namespace) -> int:
             accept="text/html,*/*",
         )
 
-        print(f"Frontend: http://{connect_host}:{args.port}/")
-        print(f"API: http://{connect_host}:{api_port}/api/health")
-        print(f"Model API: {model_api}")
-        print("Logs:")
-        print("  .local/drawai-local-services.log")
-        print("  .local/workbench-api.log")
-        print("  .local/workbench-frontend.log")
-        print("")
-        print("Press Ctrl+C to stop DrawAI Workbench.")
+        print(f"Frontend: http://{connect_host}:{args.port}/", flush=True)
+        print(f"API: http://{connect_host}:{api_port}/api/health", flush=True)
+        print(f"Model API: {model_api}", flush=True)
+        print("Logs:", flush=True)
+        print("  .local/drawai-local-services.log", flush=True)
+        print("  .local/workbench-api.log", flush=True)
+        print("  .local/workbench-frontend.log", flush=True)
+        print("", flush=True)
+        print("Press Ctrl+C to stop DrawAI Workbench.", flush=True)
         return _wait_for_process_exit(processes)
     finally:
         _terminate_processes(processes)
@@ -448,7 +448,7 @@ def _start_logged_process(
     env: dict[str, str],
     log_handle,
 ) -> subprocess.Popen[str]:
-    print(f"[drawai-workbench] starting {label}: {' '.join(command)}")
+    print(f"[drawai-workbench] starting {label}: {' '.join(command)}", flush=True)
     return subprocess.Popen(
         list(command),
         cwd=cwd,
@@ -467,12 +467,12 @@ def _wait_for_http(name: str, url: str, log_path: Path, *, attempts: int = 600, 
                 return
         except Exception:
             time.sleep(1)
-    print(f"[drawai-workbench] {name} did not become ready: {url}", file=sys.stderr)
+    print(f"[drawai-workbench] {name} did not become ready: {url}", file=sys.stderr, flush=True)
     if log_path.is_file():
-        print(f"[drawai-workbench] last lines from {log_path}:", file=sys.stderr)
+        print(f"[drawai-workbench] last lines from {log_path}:", file=sys.stderr, flush=True)
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
         for line in lines[-80:]:
-            print(line, file=sys.stderr)
+            print(line, file=sys.stderr, flush=True)
     raise RuntimeError(f"{name} did not become ready: {url}")
 
 
@@ -485,7 +485,7 @@ def _wait_for_process_exit(processes: Sequence[subprocess.Popen[str]]) -> int:
                     return int(returncode)
             time.sleep(1)
     except KeyboardInterrupt:
-        print("[drawai-workbench] stopping...")
+        print("[drawai-workbench] stopping...", flush=True)
         return 130
 
 
