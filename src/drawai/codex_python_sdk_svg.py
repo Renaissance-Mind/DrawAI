@@ -256,7 +256,7 @@ def _codex_sdk_env(codex_home: Path) -> dict[str, str]:
 
 def check_codex_python_sdk_connectivity(
     *,
-    timeout_seconds: float = 45.0,
+    timeout_seconds: float = 600.0,
     model_name: str = "",
 ) -> str:
     """Run a lightweight Codex SDK turn to validate auth and network connectivity."""

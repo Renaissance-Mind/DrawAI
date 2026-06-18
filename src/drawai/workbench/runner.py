@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import threading
 from collections.abc import Callable
@@ -335,7 +336,7 @@ class WorkbenchRunner:
         else:
             raise ValueError(f"unsupported stage: {stage}")
         if summary.get("status") != "ok":
-            message = summary.get("error", {}).get("message") if isinstance(summary.get("error"), dict) else ""
+            message = _pipeline_failure_message(summary)
             failed_stage = summary.get("failed_stage") or stage
             raise RuntimeError(f"DrawAI stage {failed_stage} failed: {message or summary.get('status')}")
 
@@ -396,11 +397,10 @@ class WorkbenchRunner:
         for source in existing_sources:
             target = archive_dir / source.relative_to(root)
             if source.is_dir():
-                shutil.copytree(source, target)
-                copied.extend(str(path.relative_to(archive_dir)) for path in sorted(target.rglob("*")) if path.is_file())
+                copied.extend(_copy_svg_archive_dir(source, target, archive_dir))
             else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                _make_archive_dir(target.parent)
+                shutil.copy2(_archive_fs_path(source), _archive_fs_path(target))
                 copied.append(str(target.relative_to(archive_dir)))
         manifest_path = archive_dir / "archive_manifest.json"
         manifest_path.write_text(
@@ -446,6 +446,63 @@ def _next_svg_archive_dir(root: Path) -> Path:
             candidate.mkdir(parents=True)
             return candidate
     raise RuntimeError(f"could not allocate SVG archive directory under {archive_root}")
+
+
+def _copy_svg_archive_dir(source: Path, target: Path, archive_dir: Path) -> list[str]:
+    copied: list[str] = []
+    for current_root, dir_names, file_names in os.walk(source):
+        dir_names[:] = [name for name in dir_names if not _is_svg_archive_transient_name(name)]
+        current_path = Path(current_root)
+        relative_dir = current_path.relative_to(source)
+        target_dir = target / relative_dir
+        _make_archive_dir(target_dir)
+        for file_name in file_names:
+            if _is_svg_archive_transient_name(file_name):
+                continue
+            source_file = current_path / file_name
+            target_file = target_dir / file_name
+            _make_archive_dir(target_file.parent)
+            shutil.copy2(_archive_fs_path(source_file), _archive_fs_path(target_file))
+            copied.append(str(target_file.relative_to(archive_dir)))
+    return sorted(copied)
+
+
+def _is_svg_archive_transient_name(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in {
+        ".playwright",
+        "chrome-profile",
+        "chrome-profile-test",
+        "playwright-report",
+        "test-results",
+    } or lowered.startswith("chrome-profile-")
+
+
+def _make_archive_dir(path: Path) -> None:
+    os.makedirs(_archive_fs_path(path), exist_ok=True)
+
+
+def _archive_fs_path(path: Path) -> str:
+    resolved = str(path.resolve(strict=False))
+    if os.name != "nt" or resolved.startswith("\\\\?\\"):
+        return resolved
+    if resolved.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + resolved.lstrip("\\")
+    return "\\\\?\\" + resolved
+
+
+def _pipeline_failure_message(summary: dict[str, Any]) -> str:
+    exception = summary.get("exception")
+    if isinstance(exception, dict):
+        message = exception.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    error = summary.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return ""
 
 
 def create_case_config(

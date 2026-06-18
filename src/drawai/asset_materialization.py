@@ -400,13 +400,13 @@ def _rmbg_settings(config: Any) -> dict[str, Any]:
     if config is None:
         return {
             "enabled": False,
-            "timeout_seconds": 60.0,
+            "timeout_seconds": 600.0,
             "model_path": "",
         }
     raw = config.get("rmbg", config) if isinstance(config, Mapping) else config
     return {
         "enabled": bool(_setting(raw, "enabled", False)),
-        "timeout_seconds": float(_setting(raw, "timeout_seconds", 60.0)),
+        "timeout_seconds": float(_setting(raw, "timeout_seconds", 600.0)),
         "model_path": str(_setting(raw, "model_path", "")),
     }
 

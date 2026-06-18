@@ -1608,13 +1608,25 @@ class _DefaultSvgInvoker:
         kwargs: Mapping[str, Any],
     ) -> str:
         session = self._ensure_codex_session(kwargs)
-        return session.invoke(
-            image_paths=[Path(kwargs["figure_path"]), Path(kwargs["reference_image_path"])],
-            prompt=prompt,
-            task_name=f"box_ir_semantic_svg.{phase}.v1",
-            output_svg_path=Path(kwargs["output_svg_path"]),
-            output_response_path=Path(kwargs["output_response_path"]),
-        )
+        try:
+            return session.invoke(
+                image_paths=[Path(kwargs["figure_path"]), Path(kwargs["reference_image_path"])],
+                prompt=prompt,
+                task_name=f"box_ir_semantic_svg.{phase}.v1",
+                output_svg_path=Path(kwargs["output_svg_path"]),
+                output_response_path=Path(kwargs["output_response_path"]),
+            )
+        except Exception as exc:
+            recovered_svg = _recover_latest_valid_codex_partial_svg(
+                output_svg_path=Path(kwargs["output_svg_path"]),
+                output_response_path=Path(kwargs["output_response_path"]),
+                trace_path=self.trace_path,
+                error=exc,
+            )
+            self.close()
+            if recovered_svg is not None:
+                return recovered_svg
+            raise
 
     def _ensure_codex_session(self, kwargs: Mapping[str, Any]) -> Any:
         if self._codex_session is not None:
@@ -1646,6 +1658,56 @@ class _DefaultSvgInvoker:
         session.__enter__()
         self._codex_session = session
         return session
+
+
+def _recover_latest_valid_codex_partial_svg(
+    *,
+    output_svg_path: Path,
+    output_response_path: Path,
+    trace_path: Path,
+    error: Exception,
+) -> str | None:
+    attempt_dir = output_svg_path.parent
+    candidates: list[tuple[int, Path, Path]] = []
+    for candidate in attempt_dir.glob("semantic_*.svg"):
+        match = re.fullmatch(r"semantic_(\d+)\.svg", candidate.name)
+        if match is None:
+            continue
+        report_path = attempt_dir / f"validation_report_{match.group(1)}.json"
+        candidates.append((int(match.group(1)), candidate, report_path))
+    for index, candidate, report_path in sorted(candidates, reverse=True):
+        if not report_path.exists():
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if report.get("status") != "ok":
+            continue
+        svg_text = candidate.read_text(encoding="utf-8", errors="replace")
+        if not svg_text.lstrip().startswith("<svg"):
+            continue
+        output_svg_path.parent.mkdir(parents=True, exist_ok=True)
+        output_svg_path.write_text(svg_text, encoding="utf-8")
+        rendered_candidate = attempt_dir / f"rendered_{index}.png"
+        rendered_output = attempt_dir / "rendered.png"
+        if rendered_candidate.exists():
+            shutil.copy2(rendered_candidate, rendered_output)
+        output_response_path.parent.mkdir(parents=True, exist_ok=True)
+        output_response_path.write_text(svg_text, encoding="utf-8")
+        model_runtime._append_trace(
+            trace_path,
+            {
+                "type": "codex_python_sdk_partial_svg_recovered",
+                "runner": "codex_python_sdk_controlled",
+                "candidate": str(candidate),
+                "validation_report": str(report_path),
+                "output_svg_path": str(output_svg_path),
+                "error": repr(error),
+            },
+        )
+        return svg_text
+    return None
 
 
 def _svg_generation_prompt(kwargs: Mapping[str, Any]) -> str:

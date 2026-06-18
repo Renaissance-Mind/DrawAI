@@ -312,7 +312,7 @@ def test_default_config_loads_ocr_nested_settings():
 
     assert cfg.ocr.provider == "remote_paddleocr"
     assert cfg.ocr.remote_paddleocr.base_url == "http://127.0.0.1:18080"
-    assert cfg.ocr.remote_paddleocr.timeout_seconds == 240
+    assert cfg.ocr.remote_paddleocr.timeout_seconds == 600
 
 
 def test_model_stub_is_not_a_supported_ocr_provider():

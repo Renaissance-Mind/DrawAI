@@ -19,7 +19,7 @@ from drawai.rmbg_client import RmbgResult
 import drawai.workbench.api as workbench_api
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
-from drawai.workbench.runner import WorkbenchRunner, create_case_config
+from drawai.workbench.runner import WorkbenchRunner, _archive_fs_path, _pipeline_failure_message, create_case_config
 from drawai.workbench.store import WorkbenchStore
 
 
@@ -61,6 +61,16 @@ def test_store_creates_batch_case_stage_and_artifact(tmp_path: Path) -> None:
     resolved = store.resolve_artifact(artifact.artifact_token)
     assert resolved.path == str(artifact_path)
     assert resolved.to_api()["url"].startswith("/api/artifacts/")
+
+
+def test_pipeline_failure_message_prefers_exception_message() -> None:
+    summary = {
+        "status": "failed",
+        "exception": {"message": "detailed pipeline failure"},
+        "error": {"message": "legacy error"},
+    }
+
+    assert _pipeline_failure_message(summary) == "detailed pipeline failure"
 
 
 def test_store_rejects_artifacts_outside_case_root(tmp_path: Path) -> None:
@@ -244,6 +254,14 @@ def test_runner_archives_existing_svg_outputs_before_rerun(tmp_path: Path) -> No
     root = Path(case.run_root)
     (root / "svg").mkdir(parents=True, exist_ok=True)
     (root / "svg" / "semantic.svg").write_text("<svg>old</svg>\n", encoding="utf-8")
+    (root / "svg" / "attempts" / "codex_merged" / "001").mkdir(parents=True, exist_ok=True)
+    (root / "svg" / "attempts" / "codex_merged" / "001" / "model_response.txt").write_text(
+        "old response\n",
+        encoding="utf-8",
+    )
+    transient_browser_dir = root / "svg" / "attempts" / "codex_merged" / "001" / "chrome-profile-test"
+    transient_browser_dir.mkdir(parents=True, exist_ok=True)
+    (transient_browser_dir / "lock").write_text("volatile browser cache\n", encoding="utf-8")
     Image.new("RGB", (24, 24), "white").save(root / "svg" / "rendered.png")
     _write_json(root / "reports" / "svg_validation_report.json", {"status": "old"})
 
@@ -265,8 +283,13 @@ def test_runner_archives_existing_svg_outputs_before_rerun(tmp_path: Path) -> No
     archives = sorted((root / "archives" / "svg_runs").glob("*_before_svg_rerun*"))
     assert len(archives) == 1
     assert (archives[0] / "svg" / "semantic.svg").read_text(encoding="utf-8") == "<svg>old</svg>\n"
+    archived_response = archives[0] / "svg" / "attempts" / "codex_merged" / "001" / "model_response.txt"
+    archived_transient = archives[0] / "svg" / "attempts" / "codex_merged" / "001" / "chrome-profile-test"
+    assert Path(_archive_fs_path(archived_response)).exists()
+    assert not Path(_archive_fs_path(archived_transient)).exists()
     assert (root / "svg" / "semantic.svg").read_text(encoding="utf-8") == "<svg>new</svg>\n"
-    assert (archives[0] / "archive_manifest.json").exists()
+    archive_manifest = json.loads((archives[0] / "archive_manifest.json").read_text(encoding="utf-8"))
+    assert all("chrome-profile" not in path for path in archive_manifest["files"])
     labels = {artifact.label for artifact in store.list_artifacts(case.case_id)}
     assert "svg_rerun_archive" in labels
 
@@ -818,7 +841,7 @@ def test_api_writes_model_runtime_urls_into_case_config(tmp_path: Path) -> None:
         sam3_base_url="http://model-a:18080",
         ocr_base_url="http://model-a:18080",
         rmbg_base_url="http://model-a:18080",
-        ocr_timeout_seconds=240,
+        ocr_timeout_seconds=600,
     )
     runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
     app = create_app(settings, store=store, runner=runner)
@@ -842,7 +865,7 @@ def test_api_writes_model_runtime_urls_into_case_config(tmp_path: Path) -> None:
     payload = yaml.safe_load(Path(case.config_path).read_text(encoding="utf-8"))
     assert payload["sam3"]["base_url"] == "http://model-a:18080"
     assert payload["ocr"]["remote_paddleocr"]["base_url"] == "http://model-a:18080"
-    assert payload["ocr"]["remote_paddleocr"]["timeout_seconds"] == 240
+    assert payload["ocr"]["remote_paddleocr"]["timeout_seconds"] == 600
     assert payload["asset_materialization"]["rmbg"]["base_url"] == "http://model-a:18080"
 
 
@@ -893,7 +916,7 @@ def test_rerun_refreshes_case_runtime_config(tmp_path: Path) -> None:
         workspace=tmp_path / "workspace",
         default_config=base_config,
         ocr_base_url="http://model-a:18080",
-        ocr_timeout_seconds=240,
+        ocr_timeout_seconds=600,
     )
     runner = WorkbenchRunner(store, settings, stage_executor=_deterministic_stage_executor)
 
@@ -902,7 +925,7 @@ def test_rerun_refreshes_case_runtime_config(tmp_path: Path) -> None:
 
     payload = yaml.safe_load(Path(store.get_case(case.case_id).config_path).read_text(encoding="utf-8"))
     assert payload["ocr"]["remote_paddleocr"]["base_url"] == "http://model-a:18080"
-    assert payload["ocr"]["remote_paddleocr"]["timeout_seconds"] == 240
+    assert payload["ocr"]["remote_paddleocr"]["timeout_seconds"] == 600
 
 
 def test_api_case_list_uses_source_image_preview_before_artifacts(tmp_path: Path) -> None:
@@ -1290,7 +1313,7 @@ def test_image_generation_endpoint_proxies_upstream_request(tmp_path: Path, monk
     assert response.json()["data"][0]["url"] == "https://cdn.example.test/image.png"
     assert captured["url"] == "https://image.example.test/v1/images/generations"
     assert captured["authorization"] == "Bearer secret-test-key"
-    assert captured["timeout"] == 120.0
+    assert captured["timeout"] == 600.0
     payload = captured["payload"]
     assert isinstance(payload, dict)
     assert payload["model"] == "gpt-image-2"

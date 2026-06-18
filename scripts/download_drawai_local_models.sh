@@ -316,7 +316,7 @@ import httpx
 url = sys.argv[1]
 target = Path(sys.argv[2])
 target.parent.mkdir(parents=True, exist_ok=True)
-with httpx.stream("GET", url, follow_redirects=True, timeout=120) as response:
+with httpx.stream("GET", url, follow_redirects=True, timeout=600) as response:
     response.raise_for_status()
     with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as handle:
         for chunk in response.iter_bytes():

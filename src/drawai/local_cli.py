@@ -20,6 +20,7 @@ from .device_profiles import (
     normalize_local_device,
     resolve_local_model_devices,
 )
+from .local_setup import bootstrap_local_runtime, download_local_models, runtime_venv_python
 
 
 DEFAULT_RUNTIME_ROOT = ".local/drawai_runtime"
@@ -163,36 +164,35 @@ def setup_local(args: argparse.Namespace) -> int:
         raise ValueError("--download-only and --bootstrap-only cannot be used together")
     manual_sam3 = _configure_manual_sam3_sources(args, env)
 
-    commands: list[list[str]] = []
+    print("[drawai-setup] setup implementation: python-native")
+    _print_setup_environment(env)
     if not args.bootstrap_only:
         if model_source == "huggingface" and not manual_sam3 and not args.accept_sam3_license:
             raise ValueError("SAM3 Hugging Face download requires --accept-sam3-license.")
         if not args.accept_rmbg_license:
             raise ValueError("RMBG-2.0 is enabled by default; rerun without --no-accept-rmbg-license to download it.")
-        download_command = [
-            str(_script("download_drawai_local_models.sh")),
-            "--source",
-            model_source,
-            "--paddle",
-            "--rmbg",
-            "--runtime-root",
-            str(runtime_root),
-            "--accept-rmbg-license",
-        ]
         if manual_sam3:
             print("manual_sam3: using provided SAM3 source/checkpoint/BPE; skipping SAM3 download")
-        else:
-            download_command.append("--sam3")
-            if args.accept_sam3_license:
-                download_command.append("--accept-sam3-license")
-        commands.append(download_command)
+        download_local_models(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            model_source=model_source,
+            include_paddle=True,
+            include_sam3=not manual_sam3,
+            include_rmbg=True,
+            accept_sam3_license=args.accept_sam3_license,
+            accept_rmbg_license=args.accept_rmbg_license,
+            dry_run=args.dry_run,
+            env=env,
+        )
     if not args.download_only:
-        commands.append([str(_script("bootstrap_drawai_local_runtime.sh"))])
+        bootstrap_local_runtime(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            env=env,
+            dry_run=args.dry_run,
+        )
 
-    for command in commands:
-        _print_command(command, env=env, dry_run=args.dry_run)
-        if not args.dry_run:
-            subprocess.run(command, cwd=repo_root, env=env, check=True)
     if args.dry_run:
         print("dry_run: no files were downloaded or modified")
     else:
@@ -340,7 +340,7 @@ def doctor_local(args: argparse.Namespace) -> int:
 
 
 def local_runtime_checks(*, runtime_root: Path, repo_root: Path) -> list[DoctorCheck]:
-    runtime_python = runtime_root / ".venv" / "bin" / "python"
+    runtime_python = runtime_venv_python(runtime_root)
     checks = [
         _check_path("runtime root", runtime_root, "directory", "Run: uv run drawai setup local"),
         _check_path(
@@ -570,7 +570,7 @@ def _check_codex_sdk_auth_connectivity(runtime_python: Path) -> DoctorCheck:
             command,
             capture_output=True,
             text=True,
-            timeout=timeout + 15,
+            timeout=timeout,
             env=env,
         )
     except subprocess.TimeoutExpired as exc:
@@ -609,8 +609,8 @@ def _codex_auth_credentials_present() -> bool:
 
 
 def _doctor_codex_connectivity_timeout() -> float:
-    raw = os.environ.get("DRAWAI_DOCTOR_CODEX_TIMEOUT_SECONDS", "45").strip()
-    return float(raw or "45")
+    raw = os.environ.get("DRAWAI_DOCTOR_CODEX_TIMEOUT_SECONDS", "600").strip()
+    return float(raw or "600")
 
 
 def _safe_doctor_error_excerpt(text: str, *, max_chars: int = 1200) -> str:
@@ -670,7 +670,7 @@ def _check_runtime_python_import(
             fix,
         )
     command = [str(runtime_python), "-c", import_code]
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=600)
     if completed.returncode == 0:
         return DoctorCheck(name, "ok", str(runtime_python))
     output = (completed.stderr or completed.stdout).strip()
@@ -685,12 +685,20 @@ def _check_runtime_python_import(
 
 def _codex_auth_candidate_paths() -> list[Path]:
     paths: list[Path] = []
-    codex_home = os.environ.get("CODEX_HOME")
+
+    def append_candidate(path: Path) -> None:
+        resolved = path.expanduser().resolve(strict=False)
+        if resolved not in paths:
+            paths.append(resolved)
+
+    codex_home = os.environ.get("DRAWAI_HOST_CODEX_HOME") or os.environ.get("CODEX_HOME")
     if codex_home:
-        paths.append(Path(codex_home).expanduser().resolve(strict=False) / "auth.json")
-    host_home = os.environ.get("DRAWAI_HOST_HOME") or os.environ.get("HOME")
-    if host_home:
-        paths.append(Path(host_home).expanduser().resolve(strict=False) / ".codex" / "auth.json")
+        append_candidate(Path(codex_home) / "auth.json")
+    for home_var in ("DRAWAI_HOST_HOME", "HOME", "USERPROFILE"):
+        host_home = os.environ.get(home_var)
+        if host_home:
+            append_candidate(Path(host_home) / ".codex" / "auth.json")
+    append_candidate(Path.home() / ".codex" / "auth.json")
     return paths
 
 
@@ -881,8 +889,7 @@ def _doctor_wrapped_label_lines(labels: Sequence[str], *, line_width: int = 64) 
     return lines
 
 
-def _print_command(command: Sequence[str], *, env: dict[str, str], dry_run: bool) -> None:
-    prefix = "would run" if dry_run else "running"
+def _print_setup_environment(env: dict[str, str]) -> None:
     for key in (
         "DRAWAI_LOCAL_RUNTIME_ROOT",
         "DRAWAI_DEVICE",
@@ -895,7 +902,6 @@ def _print_command(command: Sequence[str], *, env: dict[str, str], dry_run: bool
         value = env.get(key)
         if value:
             print(f"{key}={value}")
-    print(f"{prefix}: {' '.join(command)}")
 
 
 def _runtime_root_path(value: str | Path, repo_root: Path) -> Path:

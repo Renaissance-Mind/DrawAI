@@ -35,7 +35,7 @@ class DrawAiInputConfig:
 @dataclass(frozen=True)
 class Sam3Config:
     base_url: str = "http://127.0.0.1:18080"
-    timeout_seconds: float = 60
+    timeout_seconds: float = 600
     return_overlay: bool = True
     return_masks: bool = False
     service_merge_threshold: float = 0.0
@@ -51,7 +51,7 @@ class Sam3PromptConfig(Sam3Prompt):
 @dataclass(frozen=True)
 class RemotePaddleOcrConfig:
     base_url: str = "http://127.0.0.1:18080"
-    timeout_seconds: float = 240
+    timeout_seconds: float = 600
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ class RmbgConfig:
     enabled: bool = False
     provider: str = "service"
     base_url: str = "http://127.0.0.1:18080"
-    timeout_seconds: float = 60
+    timeout_seconds: float = 600
     model_path: str = ""
 
 
@@ -112,13 +112,13 @@ class DrawAiSvgToPptConfig:
 class ModelRuntimeConfig:
     provider: str = "codex-python-sdk"
     connection_id: str = "codex-python-sdk-controlled"
-    model_name: str = ""
+    model_name: str = "gpt-5.5"
     reasoning_effort: str = "xhigh"
     image_model_name: str = ""
     base_url: str = ""
     api_key: str = ""
     extra_headers: dict[str, str] | None = None
-    timeout_seconds: float = 1500
+    timeout_seconds: float = 600
     concurrency_mode: str = "auto"
     max_concurrent: int = 20
     max_critic_rounds: int = 3

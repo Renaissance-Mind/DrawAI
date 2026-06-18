@@ -244,7 +244,7 @@ def _runtime_timeout_seconds(runtime_config: RuntimeSettings | dict[str, Any]) -
     else:
         raw_timeout = getattr(runtime_config, "timeout_seconds", None)
     if raw_timeout in (None, ""):
-        return 1500.0
+        return 600.0
     try:
         timeout = float(raw_timeout)
     except (TypeError, ValueError) as exc:

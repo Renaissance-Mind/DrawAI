@@ -105,7 +105,7 @@ def process_asset_plan_elements(
     *,
     figure_image_path: str | Path | None = None,
     rmbg_client: Any = None,
-    rmbg_timeout_s: float = 60,
+    rmbg_timeout_s: float = 600,
     rmbg_model_path: str = "",
 ) -> dict[str, Any]:
     root = Path(case_dir).expanduser().resolve()

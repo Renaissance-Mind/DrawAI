@@ -9,6 +9,7 @@ from drawai.local_cli import (
     _check_codex_executable,
     _check_codex_sdk_auth_connectivity,
     _check_runtime_python_import,
+    _codex_auth_candidate_paths,
     _torch_backend_from_cuda_version,
 )
 
@@ -83,7 +84,7 @@ def test_workbench_script_waits_for_local_model_runtime():
     script_text = (repo_root / "scripts" / "start_drawai_workbench_local.sh").read_text(encoding="utf-8")
 
     assert "is_loopback_model_api()" in script_text
-    assert 'OCR_TIMEOUT_SECONDS="${DRAWAI_WORKBENCH_OCR_TIMEOUT_SECONDS:-240}"' in script_text
+    assert 'OCR_TIMEOUT_SECONDS="${DRAWAI_WORKBENCH_OCR_TIMEOUT_SECONDS:-600}"' in script_text
     assert "--ocr-timeout-seconds '$OCR_TIMEOUT_SECONDS'" in script_text
     assert "RUNTIME_BIN=" in script_text
     assert "env PATH='$RUNTIME_BIN:$PATH'" in script_text
@@ -214,6 +215,57 @@ def test_doctor_reports_codex_auth_file_before_sdk_connectivity_check(tmp_path: 
     assert "SDK connectivity check follows" in check.detail
 
 
+def test_doctor_reports_codex_auth_file_from_explicit_host_codex_home(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("DRAWAI_HOST_CODEX_HOME", str(tmp_path / "host-codex-home"))
+    auth = tmp_path / "host-codex-home" / "auth.json"
+    auth.parent.mkdir()
+    auth.write_text("{}", encoding="utf-8")
+
+    check = _check_codex_auth()
+
+    assert check.status == "ok"
+    assert str(auth) in check.detail
+
+
+def test_doctor_reports_codex_auth_file_from_windows_userprofile(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DRAWAI_HOST_CODEX_HOME", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.delenv("DRAWAI_HOST_HOME", raising=False)
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "windows-user"))
+    auth = tmp_path / "windows-user" / ".codex" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text("{}", encoding="utf-8")
+
+    check = _check_codex_auth()
+
+    assert check.status == "ok"
+    assert str(auth) in check.detail
+
+
+def test_doctor_codex_auth_candidates_include_path_home_fallback(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DRAWAI_HOST_CODEX_HOME", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.delenv("DRAWAI_HOST_HOME", raising=False)
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    fallback_home = tmp_path / "path-home"
+    auth = fallback_home / ".codex" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fallback_home))
+
+    candidates = _codex_auth_candidate_paths()
+    check = _check_codex_auth()
+
+    assert auth.resolve(strict=False) in candidates
+    assert check.status == "ok"
+    assert str(auth) in check.detail
+
+
 def test_doctor_codex_sdk_connectivity_requires_runtime_python(tmp_path: Path):
     check = _check_codex_sdk_auth_connectivity(tmp_path / "runtime" / ".venv" / "bin" / "python")
 
@@ -224,9 +276,12 @@ def test_doctor_codex_sdk_connectivity_requires_runtime_python(tmp_path: Path):
 
 def test_doctor_codex_sdk_connectivity_requires_credentials(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DRAWAI_HOST_CODEX_HOME", raising=False)
     monkeypatch.delenv("DRAWAI_HOST_HOME", raising=False)
+    monkeypatch.delenv("USERPROFILE", raising=False)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "path-home"))
     runtime_python = tmp_path / "runtime" / ".venv" / "bin" / "python"
     runtime_python.parent.mkdir(parents=True)
     runtime_python.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -237,7 +292,7 @@ def test_doctor_codex_sdk_connectivity_requires_credentials(tmp_path: Path, monk
     assert "No OPENAI_API_KEY or Codex auth file" in check.detail
 
 
-def test_doctor_codex_sdk_connectivity_runs_minimal_sdk_probe(tmp_path: Path, monkeypatch):
+def test_doctor_codex_sdk_connectivity_runs_low_effort_sdk_probe(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     runtime_python = tmp_path / "runtime" / ".venv" / "bin" / "python"
     runtime_python.parent.mkdir(parents=True)
@@ -257,7 +312,7 @@ def test_doctor_codex_sdk_connectivity_runs_minimal_sdk_probe(tmp_path: Path, mo
     command, kwargs = calls[0]
     assert command[0] == str(runtime_python)
     assert "check_codex_python_sdk_connectivity" in command[2]
-    assert kwargs["timeout"] == 60.0
+    assert kwargs["timeout"] == 600.0
 
 
 def test_doctor_codex_sdk_connectivity_redacts_failed_probe_output(tmp_path: Path, monkeypatch):

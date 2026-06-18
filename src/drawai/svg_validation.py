@@ -41,7 +41,7 @@ _IMPORT_RE = re.compile(r"@import\s+(?:url\(\s*)?(?:'([^']*)'|\"([^\"]*)\"|([^;\
 _AF_PLACEHOLDER_RE = re.compile(r"\bAF\d{2,}\b")
 _DIMENSION_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:px)?\s*$", re.IGNORECASE)
 _BROWSER_RENDERER_ENV = "DRAWAI_SVG_RENDERER_BROWSER"
-_BROWSER_RENDER_TIMEOUT_SECONDS = 20
+_BROWSER_RENDER_TIMEOUT_SECONDS = 600
 _BROWSER_RENDERER_PATHS = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -441,7 +441,7 @@ def _browser_renderer_path() -> Path | None:
         if path.exists() and os.access(path, os.X_OK):
             return path
 
-    for candidate in _BROWSER_RENDERER_PATHS:
+    for candidate in _browser_renderer_candidate_paths():
         path = Path(candidate)
         if path.exists() and os.access(path, os.X_OK):
             return path
@@ -452,6 +452,24 @@ def _browser_renderer_path() -> Path | None:
             return Path(found)
 
     return None
+
+
+def _browser_renderer_candidate_paths() -> list[str]:
+    candidates = list(_BROWSER_RENDERER_PATHS)
+    if os.name != "nt":
+        return candidates
+
+    browser_parts = [
+        ("Google", "Chrome", "Application", "chrome.exe"),
+        ("Microsoft", "Edge", "Application", "msedge.exe"),
+    ]
+    for root_name in ("ProgramFiles", "ProgramFiles(x86)", "LocalAppData"):
+        root = os.environ.get(root_name)
+        if not root:
+            continue
+        for parts in browser_parts:
+            candidates.append(str(Path(root, *parts)))
+    return candidates
 
 
 def _render_svg_with_browser(root: etree._Element, svg_dir: Path, rendered_path: Path, browser_path: Path) -> str | None:

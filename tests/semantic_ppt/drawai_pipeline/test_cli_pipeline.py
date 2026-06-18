@@ -8,7 +8,9 @@ import pytest
 from PIL import Image
 
 from drawai.artifacts import prepare_artifact_paths
+from drawai.config import DrawAiInputConfig, DrawAiPipelineConfig
 from drawai.pipeline import (
+    _DefaultSvgInvoker,
     _box_merge_diagnostics,
     _svg_to_ppt_validation_asset_manifest,
     run_drawai_pipeline,
@@ -548,10 +550,10 @@ def test_cli_dry_run_config_prints_default_summary():
     assert payload["asset_materialization"]["rmbg"]["provider"] == "service"
     assert payload["model_runtime"]["provider"] == "codex-python-sdk"
     assert payload["model_runtime"]["connection_id"] == "codex-python-sdk-controlled"
-    assert payload["model_runtime"]["model_name"] == ""
+    assert payload["model_runtime"]["model_name"] == "gpt-5.5"
     assert payload["model_runtime"]["reasoning_effort"] == "xhigh"
     assert payload["model_runtime"]["base_url"] == ""
-    assert payload["model_runtime"]["timeout_seconds"] == 1500
+    assert payload["model_runtime"]["timeout_seconds"] == 600
 
 
 def test_cli_setup_local_dry_run_prints_single_setup_flow(tmp_path: Path, capsys):
@@ -571,11 +573,11 @@ def test_cli_setup_local_dry_run_prints_single_setup_flow(tmp_path: Path, capsys
 
     captured = capsys.readouterr()
     assert result == 0
-    assert "download_drawai_local_models.sh" in captured.out
-    assert "--source modelscope" in captured.out
+    assert "setup implementation: python-native" in captured.out
+    assert "download models: source=modelscope components=paddle,sam3,rmbg" in captured.out
     assert "--accept-sam3-license" not in captured.out
-    assert "--accept-rmbg-license" in captured.out
-    assert "bootstrap_drawai_local_runtime.sh" in captured.out
+    assert "would accept RMBG license: yes" in captured.out
+    assert "bootstrap runtime venv" in captured.out
     assert "DRAWAI_TORCH_SPEC=torch>=2.4,<2.12" in captured.out
     assert "DRAWAI_TORCHVISION_SPEC=torchvision>=0.19,<0.27" in captured.out
     assert "DRAWAI_DEVICE=cpu" in captured.out
@@ -677,8 +679,8 @@ def test_cli_setup_local_rmbg_acceptance_is_default(tmp_path: Path, capsys):
 
     captured = capsys.readouterr()
     assert result == 0
-    assert "--rmbg" in captured.out
-    assert "--accept-rmbg-license" in captured.out
+    assert "components=paddle,sam3,rmbg" in captured.out
+    assert "would accept RMBG license: yes" in captured.out
 
 
 def test_cli_setup_local_allows_unchecking_rmbg_license(tmp_path: Path):
@@ -782,12 +784,53 @@ def test_cli_exposes_workbench_command(capsys):
     assert "--api" in captured.out
 
 
+def test_workbench_uses_linux_shell_launcher_when_not_windows(monkeypatch):
+    from drawai.server_cli import workbench_cli
+
+    calls = []
+
+    def fake_call(command, *, cwd, env):
+        calls.append((command, cwd, env))
+        return 0
+
+    monkeypatch.setattr("drawai.server_cli._is_windows", lambda: False)
+    monkeypatch.setattr(subprocess, "call", fake_call)
+
+    assert (
+        workbench_cli(
+            [
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "5175",
+                "--device",
+                "cpu",
+                "--model-api",
+                "http://model.example:18080",
+            ]
+        )
+        == 0
+    )
+    command, cwd, env = calls[0]
+    assert Path(command[0]).name == "start_drawai_workbench_local.sh"
+    assert Path(command[0]).parent.name == "scripts"
+    assert (cwd / "scripts" / "start_drawai_workbench_local.sh").exists()
+    assert env["DRAWAI_MODEL_API"] == "http://model.example:18080"
+    assert env["DRAWAI_DEVICE"] == "cpu"
+    assert env["DRAWAI_WORKBENCH_HOST"] == "0.0.0.0"
+    assert env["DRAWAI_WORKBENCH_FRONTEND_PORT"] == "5175"
+
+
 def test_workbench_frontend_install_command_prefers_lockfile(tmp_path: Path):
     from drawai.server_cli import _workbench_frontend_install_command
 
-    assert _workbench_frontend_install_command(tmp_path) == ["npm", "install"]
+    command = _workbench_frontend_install_command(tmp_path)
+    assert Path(command[0]).name in {"npm", "npm.cmd"}
+    assert command[1:] == ["install"]
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
-    assert _workbench_frontend_install_command(tmp_path) == ["npm", "ci"]
+    command = _workbench_frontend_install_command(tmp_path)
+    assert Path(command[0]).name in {"npm", "npm.cmd"}
+    assert command[1:] == ["ci"]
 
 
 def test_workbench_frontend_only_uses_shared_launcher(monkeypatch):
@@ -799,15 +842,87 @@ def test_workbench_frontend_only_uses_shared_launcher(monkeypatch):
         calls.append((command, cwd, env))
         return 0
 
+    monkeypatch.setattr("drawai.server_cli._is_windows", lambda: False)
     monkeypatch.setattr(subprocess, "call", fake_call)
 
     assert _run_frontend_only(api_url="http://127.0.0.1:8890/", host="0.0.0.0", port=5174) == 0
     command, cwd, env = calls[0]
-    assert command[0].endswith("scripts/run_drawai_workbench_frontend.sh")
+    assert Path(command[0]).name == "run_drawai_workbench_frontend.sh"
+    assert Path(command[0]).parent.name == "scripts"
     assert (cwd / "scripts" / "run_drawai_workbench_frontend.sh").exists()
     assert env["DRAWAI_WORKBENCH_API_URL"] == "http://127.0.0.1:8890"
     assert env["DRAWAI_WORKBENCH_HOST"] == "0.0.0.0"
     assert env["DRAWAI_WORKBENCH_FRONTEND_PORT"] == "5174"
+
+
+def test_workbench_frontend_only_uses_native_npm_on_windows(monkeypatch):
+    from drawai.server_cli import _run_frontend_only
+
+    calls = []
+    ensured = []
+
+    def fake_call(command, *, cwd, env):
+        calls.append((command, cwd, env))
+        return 0
+
+    monkeypatch.setattr("drawai.server_cli._is_windows", lambda: True)
+    monkeypatch.setattr("drawai.server_cli._npm_executable", lambda: "npm.cmd")
+    monkeypatch.setattr("drawai.server_cli._ensure_workbench_frontend_deps", lambda app_dir: ensured.append(app_dir))
+    monkeypatch.setattr(subprocess, "call", fake_call)
+
+    assert _run_frontend_only(api_url="http://127.0.0.1:8890/", host="127.0.0.1", port=5174) == 0
+    command, cwd, env = calls[0]
+    assert command == ["npm.cmd", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5174"]
+    assert cwd.name == "workbench"
+    assert ensured[0] == cwd
+    assert env["DRAWAI_WORKBENCH_API_URL"] == "http://127.0.0.1:8890"
+
+
+def test_workbench_native_uses_runtime_python_for_api(monkeypatch, tmp_path: Path):
+    from drawai.server_cli import _run_workbench_native
+
+    commands = []
+
+    class FakeProcess:
+        def poll(self):
+            return 0
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            return None
+
+    def fake_start_logged_process(command, *, label, cwd, env, log_handle):
+        commands.append((label, list(command), cwd, env))
+        return FakeProcess()
+
+    repo_root = tmp_path / "repo"
+    (repo_root / "apps" / "workbench").mkdir(parents=True)
+    runtime_python = repo_root / ".local" / "drawai_runtime" / ".venv" / "Scripts" / "python.exe"
+    args = argparse.Namespace(
+        host="127.0.0.1",
+        port=5174,
+        model_api="http://model.example:18080",
+        device="cpu",
+    )
+
+    monkeypatch.setattr("drawai.server_cli._repo_root", lambda: repo_root)
+    monkeypatch.setattr("drawai.server_cli._npm_executable", lambda: "npm.cmd")
+    monkeypatch.setattr("drawai.server_cli._ensure_workbench_frontend_deps", lambda app_dir: None)
+    monkeypatch.setattr("drawai.server_cli._wait_for_http", lambda *args, **kwargs: None)
+    monkeypatch.setattr("drawai.server_cli._wait_for_process_exit", lambda processes: 0)
+    monkeypatch.setattr("drawai.server_cli._start_logged_process", fake_start_logged_process)
+
+    assert _run_workbench_native(args) == 0
+
+    api_command = next(command for label, command, _cwd, _env in commands if label == "workbench API")
+    assert api_command[:3] == [str(runtime_python), "-m", "drawai.cli"]
+    assert "server" in api_command
+    assert "api" in api_command
 
 
 def test_cli_setup_local_huggingface_requires_sam3_acceptance(tmp_path: Path):
@@ -830,17 +945,21 @@ def test_cli_setup_local_huggingface_requires_sam3_acceptance(tmp_path: Path):
 
 def test_cli_setup_local_success_message_uses_uv_run(tmp_path: Path, monkeypatch, capsys):
     from drawai.cli import main
+    from drawai import local_cli
 
-    def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0)
+    calls = []
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    def fake_bootstrap(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(local_cli, "bootstrap_local_runtime", fake_bootstrap)
     runtime_root = tmp_path / "runtime"
 
     result = main(["setup", "local", "--bootstrap-only", "--runtime-root", str(runtime_root)])
 
     captured = capsys.readouterr()
     assert result == 0
+    assert calls[0]["runtime_root"] == runtime_root.resolve(strict=False)
     assert "next: uv run drawai doctor local" in captured.out
     assert "next: drawai doctor local" not in captured.out
 
@@ -925,10 +1044,9 @@ def test_cli_setup_local_accepts_manual_sam3_sources(tmp_path: Path, capsys):
     captured = capsys.readouterr()
     assert result == 0
     assert "manual_sam3" in captured.out
-    assert "--source modelscope" in captured.out
-    assert "--rmbg" in captured.out
-    assert "--sam3 " not in captured.out
-    assert "bootstrap_drawai_local_runtime.sh" in captured.out
+    assert "download models: source=modelscope components=paddle,rmbg" in captured.out
+    assert "would download SAM3" not in captured.out
+    assert "bootstrap runtime venv" in captured.out
 
 
 def test_cli_doctor_local_json_reports_missing_runtime(tmp_path: Path, capsys):
@@ -1318,6 +1436,23 @@ svg_to_ppt:
                 return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="100" height="50"><rect width="100" height="50" fill="white"/><circle cx="80" cy="40" r="8" fill="red"/></svg>'
             raise AssertionError(task_name)
 
+    def fake_codex_run0_asset_analysis(_cfg, paths):
+        paths.element_analysis_json.parent.mkdir(parents=True, exist_ok=True)
+        paths.element_analysis_json.write_text(
+            json.dumps(
+                {
+                    "schema": "drawai.codex_element_analysis.v1",
+                    "case_dir": str(paths.root),
+                    "elements": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        "drawai.pipeline._run_codex_run0_asset_analysis",
+        fake_codex_run0_asset_analysis,
+    )
     monkeypatch.setattr(
         "drawai.codex_python_sdk_svg.CodexPythonSdkSvgSession",
         FakeCodexPythonSdkSvgSession,
@@ -1331,15 +1466,19 @@ svg_to_ppt:
     assert [call["task_name"] for call in calls] == ["box_ir_semantic_svg.codex_merged_stages.v1"]
     assert sessions[0].runtime_config["provider"] == "codex-python-sdk"
     assert sessions[0].runtime_config["connection_id"] == "codex-python-sdk-controlled"
-    assert sessions[0].runtime_config["model_name"] == ""
+    assert sessions[0].runtime_config["model_name"] == "gpt-5.5"
     assert sessions[0].runtime_config["base_url"] == ""
-    assert sessions[0].runtime_config["timeout_seconds"] == 1500
-    assert sessions[0].isolated_cwd.endswith("/out")
-    assert calls[0]["output_svg_path"].endswith("/svg/attempts/codex_merged/001/semantic.svg")
-    assert calls[0]["output_response_path"].endswith("/svg/attempts/codex_merged/001/model_response.txt")
+    assert sessions[0].runtime_config["timeout_seconds"] == 600
+    isolated_cwd = sessions[0].isolated_cwd.replace("\\", "/")
+    output_svg_path = calls[0]["output_svg_path"].replace("\\", "/")
+    output_response_path = calls[0]["output_response_path"].replace("\\", "/")
+    image_paths = [path.replace("\\", "/") for path in calls[0]["image_paths"]]
+    assert isolated_cwd.endswith("/out")
+    assert output_svg_path.endswith("/svg/attempts/codex_merged/001/semantic.svg")
+    assert output_response_path.endswith("/svg/attempts/codex_merged/001/model_response.txt")
     assert len(calls[0]["image_paths"]) == 2
-    assert calls[0]["image_paths"][0].endswith("/inputs/figure.png")
-    assert calls[0]["image_paths"][1].endswith("/svg/template_reference.png")
+    assert image_paths[0].endswith("/inputs/figure.png")
+    assert image_paths[1].endswith("/svg/template_reference.png")
     shared_prompt_file = tmp_path / "out" / "svg" / "codex_thread_shared_prompt.txt"
     assert shared_prompt_file.exists()
     shared_prompt_text = shared_prompt_file.read_text(encoding="utf-8")
@@ -1372,9 +1511,12 @@ svg_to_ppt:
     context = json.loads(context_file.read_text(encoding="utf-8"))
     assert context["phase"] == "codex_merged_stages"
     assert context["visual_review_rounds"] == ["text_style"]
-    assert context["iteration_log"].endswith("/svg/attempts/codex_merged/001/iteration_log.md")
-    assert context["iteration_log_jsonl"].endswith("/svg/attempts/codex_merged/001/iteration_log.jsonl")
-    assert context["reference_image_path"].endswith("/svg/template_reference.png")
+    iteration_log = context["iteration_log"].replace("\\", "/")
+    iteration_log_jsonl = context["iteration_log_jsonl"].replace("\\", "/")
+    reference_image_path = context["reference_image_path"].replace("\\", "/")
+    assert iteration_log.endswith("/svg/attempts/codex_merged/001/iteration_log.md")
+    assert iteration_log_jsonl.endswith("/svg/attempts/codex_merged/001/iteration_log.jsonl")
+    assert reference_image_path.endswith("/svg/template_reference.png")
     assert "IMAGE VECTORIZATION TASK" in prompt_text
     assert "AVAILABLE FILES AND READING LOGIC" in prompt_text
     assert "OVERALL DRAWAI PIPELINE" in prompt_text
@@ -1405,6 +1547,145 @@ svg_to_ppt:
     assert "Asset Placeholder Plan JSON" not in calls[0]["prompt"]
     assert (tmp_path / "out" / "svg" / "attempts" / "codex_merged" / "001" / "iteration_log.md").exists()
     assert (tmp_path / "out" / "svg" / "attempts" / "codex_merged" / "001" / "iteration_log.jsonl").exists()
+
+
+def test_default_svg_invoker_recreates_codex_session_after_failure(monkeypatch, tmp_path: Path):
+    image = tmp_path / "input.png"
+    reference = tmp_path / "reference.png"
+    Image.new("RGB", (100, 50), "white").save(image)
+    Image.new("RGB", (100, 50), "white").save(reference)
+    paths = prepare_artifact_paths(tmp_path / "out")
+    cfg = DrawAiPipelineConfig(input=DrawAiInputConfig(image=image, output_dir=paths.root))
+    sessions = []
+
+    class FakeCodexPythonSdkSvgSession:
+        def __init__(
+            self,
+            *,
+            runtime_config,
+            trace_path,
+            isolated_cwd=None,
+            config_overrides=None,
+            shared_prompt=None,
+        ):
+            self.runtime_config = runtime_config
+            self.trace_path = str(trace_path)
+            self.isolated_cwd = str(isolated_cwd) if isolated_cwd is not None else None
+            self.config_overrides = list(config_overrides or ())
+            self.shared_prompt = shared_prompt or ""
+            self.closed = False
+            sessions.append(self)
+
+        def __enter__(self):
+            return self
+
+        def close(self):
+            self.closed = True
+
+        def invoke(self, **kwargs):
+            if len(sessions) == 1:
+                raise RuntimeError("transient codex transport failure")
+            return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="100" height="50"/>'
+
+    monkeypatch.setattr(
+        "drawai.codex_python_sdk_svg.CodexPythonSdkSvgSession",
+        FakeCodexPythonSdkSvgSession,
+    )
+
+    invoker = _DefaultSvgInvoker(cfg, paths)
+    kwargs = {
+        "phase": "codex_merged_stages",
+        "figure_path": str(image),
+        "reference_image_path": str(reference),
+        "output_svg_path": str(tmp_path / "attempt1" / "semantic.svg"),
+        "output_response_path": str(tmp_path / "attempt1" / "model_response.txt"),
+    }
+    with pytest.raises(RuntimeError, match="transient codex transport failure"):
+        invoker(**kwargs)
+
+    assert len(sessions) == 1
+    assert sessions[0].closed is True
+    assert invoker._codex_session is None
+
+    kwargs["output_svg_path"] = str(tmp_path / "attempt2" / "semantic.svg")
+    kwargs["output_response_path"] = str(tmp_path / "attempt2" / "model_response.txt")
+    svg = invoker(**kwargs)
+
+    assert svg.startswith("<svg")
+    assert len(sessions) == 2
+    assert sessions[1].closed is False
+    assert invoker._codex_session is sessions[1]
+
+    invoker.close()
+    assert sessions[1].closed is True
+    assert invoker._codex_session is None
+
+
+def test_default_svg_invoker_recovers_valid_partial_codex_svg_after_timeout(monkeypatch, tmp_path: Path):
+    image = tmp_path / "input.png"
+    reference = tmp_path / "reference.png"
+    Image.new("RGB", (100, 50), "white").save(image)
+    Image.new("RGB", (100, 50), "white").save(reference)
+    paths = prepare_artifact_paths(tmp_path / "out")
+    cfg = DrawAiPipelineConfig(input=DrawAiInputConfig(image=image, output_dir=paths.root))
+    sessions = []
+
+    class FakeCodexPythonSdkSvgSession:
+        def __init__(
+            self,
+            *,
+            runtime_config,
+            trace_path,
+            isolated_cwd=None,
+            config_overrides=None,
+            shared_prompt=None,
+        ):
+            self.closed = False
+            sessions.append(self)
+
+        def __enter__(self):
+            return self
+
+        def close(self):
+            self.closed = True
+
+        def invoke(self, **kwargs):
+            output_svg_path = Path(kwargs["output_svg_path"])
+            attempt_dir = output_svg_path.parent
+            attempt_dir.mkdir(parents=True, exist_ok=True)
+            (attempt_dir / "semantic_1.svg").write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="100" height="50"/>',
+                encoding="utf-8",
+            )
+            (attempt_dir / "validation_report_1.json").write_text('{"status":"ok","issues":[]}', encoding="utf-8")
+            (attempt_dir / "rendered_1.png").write_bytes(b"png")
+            raise RuntimeError("Codex Python SDK run exceeded timeout_seconds=600")
+
+    monkeypatch.setattr(
+        "drawai.codex_python_sdk_svg.CodexPythonSdkSvgSession",
+        FakeCodexPythonSdkSvgSession,
+    )
+
+    invoker = _DefaultSvgInvoker(cfg, paths)
+    output_svg_path = tmp_path / "attempt" / "semantic.svg"
+    output_response_path = tmp_path / "attempt" / "model_response.txt"
+    svg = invoker(
+        phase="codex_merged_stages",
+        figure_path=str(image),
+        reference_image_path=str(reference),
+        output_svg_path=str(output_svg_path),
+        output_response_path=str(output_response_path),
+    )
+
+    assert svg.startswith("<svg")
+    assert output_svg_path.read_text(encoding="utf-8") == svg
+    assert output_response_path.read_text(encoding="utf-8") == svg
+    assert (tmp_path / "attempt" / "rendered.png").read_bytes() == b"png"
+    assert len(sessions) == 1
+    assert sessions[0].closed is True
+    assert invoker._codex_session is None
+    trace_text = paths.trace_dir.joinpath("svg_generation_model.jsonl").read_text(encoding="utf-8")
+    assert "codex_python_sdk_partial_svg_recovered" in trace_text
 
 
 def test_failed_rerun_clears_stale_later_stage_status_and_artifacts(tmp_path: Path):

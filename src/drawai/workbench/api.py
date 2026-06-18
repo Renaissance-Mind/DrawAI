@@ -611,7 +611,7 @@ def _download_generated_image_url(value: str) -> tuple[bytes, str]:
         raise HTTPException(status_code=400, detail="generated image URL must use http, https, or data")
     request = urllib.request.Request(value, headers={"User-Agent": "DrawAI Workbench"})
     try:
-        with urlopen_external(request, timeout=60) as response:
+        with urlopen_external(request, timeout=600) as response:
             image_bytes = response.read(MAX_GENERATED_IMAGE_BYTES + 1)
             content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
     except (urllib.error.URLError, TimeoutError) as exc:
@@ -1356,7 +1356,7 @@ def _call_image_generation_upstream(payload: Mapping[str, Any], *, api_url: str,
         },
         method="POST",
     )
-    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 120.0
+    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
     try:
         with urlopen_external(request, timeout=timeout) as response:
             raw = response.read()
@@ -1379,7 +1379,7 @@ def _call_image_generation_upstream(payload: Mapping[str, Any], *, api_url: str,
 
 def _poll_image_generation_task(api_url: str, api_key: str, task_id: str) -> dict[str, Any]:
     task_url = _image_generation_task_url(api_url, task_id)
-    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TASK_TIMEOUT_SECONDS") or 300.0
+    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TASK_TIMEOUT_SECONDS") or 600.0
     interval = _optional_positive_float_env("DRAWAI_IMAGEGEN_POLL_INTERVAL_SECONDS") or 2.0
     deadline = time.monotonic() + timeout
     last_payload: dict[str, Any] | None = None
@@ -1409,7 +1409,7 @@ def _get_image_generation_task(task_url: str, api_key: str) -> dict[str, Any]:
         },
         method="GET",
     )
-    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 120.0
+    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
     try:
         with urlopen_external(request, timeout=timeout) as response:
             raw = response.read()

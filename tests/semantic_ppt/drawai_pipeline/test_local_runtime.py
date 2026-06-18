@@ -1,10 +1,12 @@
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import torch
 
+import drawai.local_runtime as local_runtime
 from drawai.local_runtime import (
     LocalPaddleOcrProvider,
     LocalRuntimePaths,
@@ -197,6 +199,8 @@ def test_local_paddle_ocr_restores_home_after_model_initialization(monkeypatch, 
     original_home.mkdir()
     monkeypatch.setenv("HOME", str(original_home))
     paths = LocalRuntimePaths(runtime_root=tmp_path / "runtime")
+    (paths.paddlex_official_models / "PP-OCRv5_server_det").mkdir(parents=True)
+    (paths.paddlex_official_models / "PP-OCRv5_server_rec").mkdir(parents=True)
 
     class FakePaddle:
         def set_device(self, device):
@@ -222,3 +226,32 @@ def test_local_paddle_ocr_restores_home_after_model_initialization(monkeypatch, 
     provider._ocr_runtime()
 
     assert os.environ["HOME"] == str(original_home)
+
+
+def test_local_paddle_ocr_uses_windows_junction_when_symlink_is_not_allowed(monkeypatch, tmp_path):
+    paths = LocalRuntimePaths(runtime_root=tmp_path / "runtime")
+    paths.paddlex_official_models.mkdir(parents=True)
+    provider = LocalPaddleOcrProvider(paths=paths, device="cpu")
+    model_root = paths.paddle_home / ".paddlex" / "official_models"
+    calls = []
+
+    def fake_symlink_to(self: Path, target: Path, *, target_is_directory: bool = False):
+        calls.append(("symlink", self, target, target_is_directory))
+        raise OSError(1314, "A required privilege is not held by the client")
+
+    def fake_create_junction(link_path: Path, target_path: Path) -> bool:
+        calls.append(("junction", link_path, target_path))
+        link_path.mkdir(parents=True)
+        return True
+
+    monkeypatch.setattr(Path, "symlink_to", fake_symlink_to)
+    monkeypatch.setattr(local_runtime.os, "name", "nt")
+    monkeypatch.setattr(local_runtime, "_create_windows_junction", fake_create_junction)
+
+    provider._prepare_paddle_model_home()
+
+    assert model_root.exists()
+    assert calls == [
+        ("symlink", model_root, paths.paddlex_official_models, True),
+        ("junction", model_root, paths.paddlex_official_models),
+    ]

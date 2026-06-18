@@ -7,6 +7,7 @@ import io
 import json
 import math
 import os
+import shutil
 import sys
 import time
 import types
@@ -18,6 +19,7 @@ from typing import Any, Mapping
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ._local_runtime_fs import create_windows_junction as _create_windows_junction
 from .ocr_provider import normalize_ocr_boxes_payload
 from .rmbg_client import RmbgResult
 
@@ -337,6 +339,8 @@ class LocalPaddleOcrProvider:
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
         try:
+            if importlib.util.find_spec("torch") is not None:
+                import torch  # noqa: F401 - preload Torch DLLs before Paddle on Windows.
             import paddle
             from paddleocr import PaddleOCR
 
@@ -373,10 +377,22 @@ class LocalPaddleOcrProvider:
         previous_home = os.environ.get("HOME")
         model_root = self.paths.paddle_home / ".paddlex" / "official_models"
         model_root.parent.mkdir(parents=True, exist_ok=True)
-        if not model_root.exists():
-            model_root.symlink_to(self.paths.paddlex_official_models, target_is_directory=True)
+        self._ensure_paddlex_official_models(model_root)
         os.environ["HOME"] = str(self.paths.paddle_home)
         return previous_home
+
+    def _ensure_paddlex_official_models(self, model_root: Path) -> None:
+        if model_root.exists():
+            return
+        try:
+            model_root.symlink_to(self.paths.paddlex_official_models, target_is_directory=True)
+            return
+        except OSError:
+            if os.name == "nt" and _create_windows_junction(model_root, self.paths.paddlex_official_models):
+                return
+            if model_root.exists():
+                return
+            shutil.copytree(self.paths.paddlex_official_models, model_root)
 
 
 class LocalRmbgClient:

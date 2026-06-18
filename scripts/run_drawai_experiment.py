@@ -234,12 +234,7 @@ def _validate_codex_python_sdk_auth_if_needed(base_config: Mapping[str, Any]) ->
             return
 
     searched = ", ".join(str(path) for path in auth_paths) or "<none>"
-    model_note = (
-        f" The configured model_runtime.model_name={model_name!r} requires OpenAI API credentials; "
-        "clear model_runtime.model_name to use the local Codex default ChatGPT model."
-        if model_name
-        else " ChatGPT Codex login is allowed only when model_runtime.model_name is empty/default."
-    )
+    model_note = " ChatGPT Codex login or OpenAI API credentials are accepted."
     raise RuntimeError(
         "Codex Python SDK SVG generation requires Codex/OpenAI authentication before running local inference. "
         "Set OPENAI_API_KEY or run `printenv OPENAI_API_KEY | codex login --with-api-key`. "
@@ -279,7 +274,7 @@ def _codex_auth_payload_supports_model(payload: Mapping[str, Any], *, model_name
     auth_mode = str(payload.get("auth_mode") or "").strip().lower()
     tokens = payload.get("tokens")
     if auth_mode == "chatgpt":
-        return not model_name and bool(tokens)
+        return bool(tokens)
     return auth_mode in {"api_key", "apikey", "openai", "access_token"} and bool(tokens)
 
 
@@ -332,7 +327,7 @@ def _ensure_local_codex_gateway_if_needed(
             sys.executable,
             str(repo_root / "scripts" / "ensure_local_codex_gateway.py"),
             "--wait-seconds",
-            "60",
+            "600",
             "--quiet",
         ],
         cwd=repo_root,

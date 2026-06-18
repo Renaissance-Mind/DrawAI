@@ -11,7 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from drawai.local_services import LocalServiceSettings, _maybe_reexec_into_runtime_venv, _parse_args, create_local_services_app
+from drawai.local_services import (
+    LocalServiceSettings,
+    _maybe_reexec_into_runtime_venv,
+    _parse_args,
+    _runtime_venv_python,
+    create_local_services_app,
+)
 from drawai.rmbg_client import RmbgResult
 
 
@@ -52,7 +58,7 @@ def test_local_services_can_enable_only_selected_models(tmp_path: Path) -> None:
 
 def test_local_services_reexecs_into_runtime_venv(monkeypatch, tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
-    runtime_python = runtime_root / ".venv" / "bin" / "python"
+    runtime_python = _runtime_venv_python(runtime_root)
     runtime_python.parent.mkdir(parents=True)
     runtime_python.write_text("#!/usr/bin/env python\n", encoding="utf-8")
     runtime_python.chmod(0o755)

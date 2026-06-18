@@ -29,13 +29,13 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.input.normalization.upscale_only is False
     assert cfg.input.normalization.flatten_transparency_background == "#ffffff"
     assert cfg.sam3.base_url == "http://127.0.0.1:18080"
-    assert cfg.sam3.timeout_seconds == 60
+    assert cfg.sam3.timeout_seconds == 600
     assert cfg.sam3.return_overlay is True
     assert cfg.sam3.return_masks is False
     assert cfg.sam3.service_merge_threshold == 0.0
     assert cfg.sam3.prompts == DEFAULT_SAM3_PROMPTS
     assert cfg.ocr.provider == "remote_paddleocr"
-    assert cfg.ocr.remote_paddleocr.timeout_seconds == 240
+    assert cfg.ocr.remote_paddleocr.timeout_seconds == 600
     assert cfg.asset_selection.provider == "deterministic"
     assert cfg.asset_selection.max_attempts == 3
     assert cfg.asset_selection.disallow_crop_roles == ("arrow", "border", "grid", "text", "content_box")
@@ -43,7 +43,7 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.asset_materialization.rmbg.enabled is True
     assert cfg.asset_materialization.rmbg.provider == "service"
     assert cfg.asset_materialization.rmbg.base_url == "http://127.0.0.1:18080"
-    assert cfg.asset_materialization.rmbg.timeout_seconds == 60
+    assert cfg.asset_materialization.rmbg.timeout_seconds == 600
     assert cfg.asset_materialization.rmbg.model_path == ""
     assert cfg.asset_policy.enabled is True
     assert cfg.svg.max_attempts == 8
@@ -55,11 +55,11 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.svg_to_ppt.export_pptx is True
     assert cfg.model_runtime.provider == "codex-python-sdk"
     assert cfg.model_runtime.connection_id == "codex-python-sdk-controlled"
-    assert cfg.model_runtime.model_name == ""
+    assert cfg.model_runtime.model_name == "gpt-5.5"
     assert cfg.model_runtime.reasoning_effort == "xhigh"
     assert cfg.model_runtime.base_url == ""
     assert cfg.model_runtime.api_key == ""
-    assert cfg.model_runtime.timeout_seconds == 1500
+    assert cfg.model_runtime.timeout_seconds == 600
 
 
 def test_template_config_preserves_current_baseline_defaults():
@@ -73,7 +73,7 @@ def test_template_config_preserves_current_baseline_defaults():
     assert cfg.svg_to_ppt.export_pptx is True
     assert cfg.model_runtime.provider == "codex-python-sdk"
     assert cfg.model_runtime.connection_id == "codex-python-sdk-controlled"
-    assert cfg.model_runtime.model_name == ""
+    assert cfg.model_runtime.model_name == "gpt-5.5"
     assert cfg.model_runtime.reasoning_effort == "xhigh"
     assert cfg.model_runtime.base_url == ""
 

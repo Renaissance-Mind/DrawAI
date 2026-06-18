@@ -230,7 +230,7 @@ def test_ensure_host_home_env_records_home_without_overwriting_existing_value(mo
     assert os.environ["DRAWAI_HOST_HOME"] == str(host_home)
 
 
-def test_codex_python_sdk_auth_preflight_rejects_chatgpt_only_auth(monkeypatch, tmp_path: Path):
+def test_codex_python_sdk_auth_preflight_accepts_chatgpt_auth_with_configured_model(monkeypatch, tmp_path: Path):
     host_home = tmp_path / "host_home"
     auth_dir = host_home / ".codex"
     auth_dir.mkdir(parents=True)
@@ -241,8 +241,7 @@ def test_codex_python_sdk_auth_preflight_rejects_chatgpt_only_auth(monkeypatch, 
     monkeypatch.setenv("DRAWAI_HOST_HOME", str(host_home))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
-        _validate_codex_python_sdk_auth_if_needed(_codex_python_sdk_base_config(model_name="gpt-5.5"))
+    _validate_codex_python_sdk_auth_if_needed(_codex_python_sdk_base_config(model_name="gpt-5.5"))
 
 
 def test_codex_python_sdk_auth_preflight_accepts_chatgpt_auth_with_default_model(monkeypatch, tmp_path: Path):

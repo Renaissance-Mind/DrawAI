@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         choices=("read-only", "workspace-write", "danger-full-access"),
         default=os.getenv("DRAWAI_LOCAL_CODEX_SANDBOX", "read-only"),
     )
-    parser.add_argument("--wait-seconds", type=int, default=int(os.getenv("DRAWAI_LOCAL_CODEX_WAIT_SECONDS", "20")))
+    parser.add_argument("--wait-seconds", type=int, default=int(os.getenv("DRAWAI_LOCAL_CODEX_WAIT_SECONDS", "600")))
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args()

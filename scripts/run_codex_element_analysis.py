@@ -83,7 +83,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         choices=("none", "minimal", "low", "medium", "high", "xhigh"),
         help="Codex reasoning effort for this analysis pass.",
     )
-    parser.add_argument("--timeout-seconds", type=float, default=900.0)
+    parser.add_argument("--timeout-seconds", type=float, default=600.0)
     parser.add_argument(
         "--invoker",
         choices=("cli", "sdk"),
@@ -770,6 +770,7 @@ def invoke_codex_element_analysis_cli(
     duration_ms = int((time.monotonic() - started_at) * 1000)
     stderr_text = stderr_path.read_text(encoding="utf-8") if stderr_path.exists() else ""
     last_message = last_message_path.read_text(encoding="utf-8") if last_message_path.exists() else ""
+    cli_error = codex_cli_error_excerpt(events_path)
     trace = {
         "schema": "drawai.codex_element_analysis_cli_trace.v1",
         "case_dir": str(case_dir),
@@ -785,13 +786,15 @@ def invoke_codex_element_analysis_cli(
         "last_message_path": str(last_message_path),
         "last_message_excerpt": last_message[:2000],
         "stderr_excerpt": stderr_text[:2000],
+        "cli_error_excerpt": cli_error,
         "session_log_archive": archive,
     }
     with trace_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(trace, ensure_ascii=False, sort_keys=True) + "\n")
     if completed.returncode != 0:
+        error_detail = cli_error or stderr_text[-2000:]
         raise RuntimeError(
-            f"codex exec failed with returncode={completed.returncode}. stderr tail: {stderr_text[-2000:]}"
+            f"codex exec failed with returncode={completed.returncode}. error: {error_detail}"
         )
     return {
         "invoker": "cli",
@@ -833,6 +836,38 @@ def redact_command(command: Sequence[str]) -> list[str]:
         if item in {"-i", "-C", "-o", "-m", "-s", "-c"}:
             skip_next = True
     return redacted
+
+
+def codex_cli_error_excerpt(events_path: Path, *, max_chars: int = 2000) -> str:
+    if not events_path.exists():
+        return ""
+    messages: list[str] = []
+    try:
+        lines = events_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, Mapping):
+            continue
+        if event.get("type") == "error":
+            message = event.get("message")
+            if isinstance(message, str) and message.strip():
+                messages.append(message.strip())
+        turn_error = event.get("error")
+        if isinstance(turn_error, Mapping):
+            message = turn_error.get("message")
+            if isinstance(message, str) and message.strip():
+                messages.append(message.strip())
+    if not messages:
+        return ""
+    text = messages[-1]
+    return text if len(text) <= max_chars else f"{text[:max_chars]}..."
 
 
 def invoke_codex_element_analysis_sdk(
