@@ -1680,7 +1680,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                     const included = override.include !== false;
                     return (
                       <div className="workflow-agent-input" key={inputOverrideKey(input)}>
-                        <label>
+                        <label className="workflow-agent-input-source">
                           <input
                             type="checkbox"
                             checked={included}
