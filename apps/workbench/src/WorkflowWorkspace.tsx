@@ -45,6 +45,9 @@ type HandleDragState = {
 type NodePickerState = {
   sourceNodeId: string;
   sourcePortId: string;
+  insertEdgeId?: string;
+  targetNodeId?: string;
+  targetPortId?: string;
   x: number;
   y: number;
   query: string;
@@ -457,6 +460,25 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     setSelectedEdgeId("");
   }
 
+  function openEdgePicker(edgeId: string, point: { x: number; y: number }) {
+    if (!draft || readOnly) return;
+    const edge = draft.edges.find((item) => item.edge_id === edgeId);
+    if (!edge) return;
+    setNodePicker({
+      sourceNodeId: edge.source_node_id,
+      sourcePortId: edge.source_port_id,
+      targetNodeId: edge.target_node_id,
+      targetPortId: edge.target_port_id,
+      insertEdgeId: edge.edge_id,
+      x: Math.max(0, Math.min(canvasSize.width - 236, Math.round(point.x - 118))),
+      y: Math.max(0, Math.min(canvasSize.height - 420, Math.round(point.y + 18))),
+      query: ""
+    });
+    setConnecting({ nodeId: edge.source_node_id, portId: edge.source_port_id });
+    setSelectedNodeId("");
+    setSelectedEdgeId(edge.edge_id);
+  }
+
   function closeNodePicker() {
     setNodePicker(null);
     setConnecting(null);
@@ -573,7 +595,17 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     if (!source || !sourcePort) return;
     const targetPort = bestInputForPreset(sourcePort, preset);
     if (!targetPort) return;
-    const node = buildWorkflowNode(draft, preset, suggestedConnectedNodePosition(draft, source));
+    const insertTargetNode = draft.nodes.find((node) => node.node_id === nodePicker.targetNodeId);
+    const insertTargetPort = insertTargetNode?.inputs.find((portItem) => portItem.port_id === nodePicker.targetPortId);
+    const sourceOutput = bestOutputForTarget(preset, insertTargetPort);
+    if (nodePicker.insertEdgeId && (!insertTargetNode || !insertTargetPort || !sourceOutput)) return;
+    const node = buildWorkflowNode(
+      draft,
+      preset,
+      nodePicker.insertEdgeId && insertTargetNode
+        ? suggestedInsertedNodePosition(source, insertTargetNode)
+        : suggestedConnectedNodePosition(draft, source)
+    );
     const edge: WorkflowEdge = {
       edge_id: uniqueEdgeId(draft, `${source.node_id}:${sourcePort.port_id}->${node.node_id}:${targetPort.port_id}`),
       source_node_id: source.node_id,
@@ -582,7 +614,21 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
       target_port_id: targetPort.port_id,
       enabled_types: compatibleTypes(sourcePort, targetPort)
     };
-    setDraft({ ...draft, nodes: [...draft.nodes, node], edges: [...draft.edges, edge] });
+    const nextEdges = nodePicker.insertEdgeId && insertTargetNode && insertTargetPort && sourceOutput
+      ? [
+          ...draft.edges.filter((item) => item.edge_id !== nodePicker.insertEdgeId),
+          edge,
+          {
+            edge_id: uniqueEdgeId(draft, `${node.node_id}:${sourceOutput.port_id}->${insertTargetNode.node_id}:${insertTargetPort.port_id}`),
+            source_node_id: node.node_id,
+            source_port_id: sourceOutput.port_id,
+            target_node_id: insertTargetNode.node_id,
+            target_port_id: insertTargetPort.port_id,
+            enabled_types: compatibleTypes(sourceOutput, insertTargetPort)
+          }
+        ]
+      : [...draft.edges, edge];
+    setDraft({ ...draft, nodes: [...draft.nodes, node], edges: nextEdges });
     setSelectedNodeId(node.node_id);
     setSelectedEdgeId("");
     setNodePicker(null);
@@ -743,10 +789,12 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
               <WorkflowEdges
                 template={draft}
                 selectedEdgeId={selectedEdgeId}
+                readOnly={readOnly}
                 onSelectEdge={(edgeId) => {
                   setSelectedEdgeId(edgeId);
                   setSelectedNodeId("");
                 }}
+                onOpenEdgeInsert={openEdgePicker}
               />
             )}
             {handleDrag?.active && <WorkflowConnectionPreview drag={handleDrag} />}
@@ -1083,30 +1131,31 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
 function WorkflowEdges({
   template,
   selectedEdgeId,
-  onSelectEdge
+  readOnly,
+  onSelectEdge,
+  onOpenEdgeInsert
 }: {
   template: WorkflowTemplate;
   selectedEdgeId: string;
+  readOnly: boolean;
   onSelectEdge: (edgeId: string) => void;
+  onOpenEdgeInsert: (edgeId: string, point: { x: number; y: number }) => void;
 }) {
   const nodeById = new Map(template.nodes.map((node) => [node.node_id, node]));
+  const views = template.edges.flatMap((edge) => {
+    const source = nodeById.get(edge.source_node_id);
+    const target = nodeById.get(edge.target_node_id);
+    if (!source || !target) return [];
+    const start = outputAnchorPoint(source);
+    const end = inputAnchorPoint(target);
+    const d = bezierPath(start, end);
+    const midpoint = bezierPoint(start, end, 0.5);
+    return [{ edge, d, midpoint }];
+  });
   return (
-    <svg className="workflow-edges" aria-hidden="true">
-      {template.edges.map((edge) => {
-        const source = nodeById.get(edge.source_node_id);
-        const target = nodeById.get(edge.target_node_id);
-        if (!source || !target) return null;
-        const start = {
-          x: (source.position.x || 0) + NODE_WIDTH,
-          y: (source.position.y || 0) + NODE_HEIGHT / 2
-        };
-        const end = {
-          x: target.position.x || 0,
-          y: (target.position.y || 0) + NODE_HEIGHT / 2
-        };
-        const mid = Math.max(44, Math.abs(end.x - start.x) * 0.42);
-        const d = `M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}`;
-        return (
+    <>
+      <svg className="workflow-edges" aria-hidden="true">
+        {views.map(({ edge, d }) => (
           <path
             key={edge.edge_id}
             className={edge.edge_id === selectedEdgeId ? "selected" : ""}
@@ -1116,15 +1165,31 @@ function WorkflowEdges({
               onSelectEdge(edge.edge_id);
             }}
           />
-        );
-      })}
-    </svg>
+        ))}
+      </svg>
+      {views.map(({ edge, midpoint }) => (
+        <button
+          type="button"
+          key={`${edge.edge_id}:insert`}
+          className={`workflow-edge-insert ${edge.edge_id === selectedEdgeId ? "visible" : ""}`}
+          data-edge-id={edge.edge_id}
+          disabled={readOnly}
+          style={{ left: midpoint.x, top: midpoint.y }}
+          title="插入节点"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenEdgeInsert(edge.edge_id, midpoint);
+          }}
+        >
+          +
+        </button>
+      ))}
+    </>
   );
 }
 
 function WorkflowConnectionPreview({ drag }: { drag: HandleDragState }) {
-  const mid = Math.max(42, Math.abs(drag.current.x - drag.start.x) * 0.4);
-  const d = `M ${drag.start.x} ${drag.start.y} C ${drag.start.x + mid} ${drag.start.y}, ${drag.current.x - mid} ${drag.current.y}, ${drag.current.x} ${drag.current.y}`;
+  const d = bezierPath(drag.start, drag.current);
   return (
     <svg className="workflow-connection-preview" aria-hidden="true">
       <path d={d} />
@@ -1135,6 +1200,8 @@ function WorkflowConnectionPreview({ drag }: { drag: HandleDragState }) {
 function nodePickerItems(template: WorkflowTemplate, picker: NodePickerState): Array<{ preset: NodePreset; compatible: boolean; group: string }> {
   const source = template.nodes.find((node) => node.node_id === picker.sourceNodeId);
   const sourcePort = source?.outputs.find((portItem) => portItem.port_id === picker.sourcePortId);
+  const target = template.nodes.find((node) => node.node_id === picker.targetNodeId);
+  const targetPort = target?.inputs.find((portItem) => portItem.port_id === picker.targetPortId);
   const query = picker.query.trim().toLowerCase();
   return NODE_PRESETS
     .filter((preset) => {
@@ -1143,7 +1210,11 @@ function nodePickerItems(template: WorkflowTemplate, picker: NodePickerState): A
     })
     .map((preset) => ({
       preset,
-      compatible: Boolean(sourcePort && bestInputForPreset(sourcePort, preset)),
+      compatible: Boolean(
+        sourcePort
+        && bestInputForPreset(sourcePort, preset)
+        && (!picker.insertEdgeId || bestOutputForTarget(preset, targetPort))
+      ),
       group: nodePresetGroup(preset)
     }));
 }
@@ -1246,6 +1317,47 @@ function bestInputForPreset(sourcePort: WorkflowPort, preset: NodePreset): Workf
   return preset.inputs.find((input) => compatibleTypes(sourcePort, input).length > 0) || null;
 }
 
+function bestOutputForTarget(preset: NodePreset, targetPort?: WorkflowPort): WorkflowPort | null {
+  if (!targetPort) return null;
+  return preset.outputs.find((output) => compatibleTypes(output, targetPort).length > 0) || null;
+}
+
+function outputAnchorPoint(node: WorkflowNode): { x: number; y: number } {
+  return {
+    x: (node.position.x || 0) + NODE_WIDTH,
+    y: (node.position.y || 0) + NODE_HEIGHT / 2
+  };
+}
+
+function inputAnchorPoint(node: WorkflowNode): { x: number; y: number } {
+  return {
+    x: node.position.x || 0,
+    y: (node.position.y || 0) + NODE_HEIGHT / 2
+  };
+}
+
+function bezierControls(start: { x: number; y: number }, end: { x: number; y: number }) {
+  const offset = Math.max(44, Math.abs(end.x - start.x) * 0.42);
+  return {
+    c1: { x: start.x + offset, y: start.y },
+    c2: { x: end.x - offset, y: end.y }
+  };
+}
+
+function bezierPath(start: { x: number; y: number }, end: { x: number; y: number }): string {
+  const { c1, c2 } = bezierControls(start, end);
+  return `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`;
+}
+
+function bezierPoint(start: { x: number; y: number }, end: { x: number; y: number }, t: number): { x: number; y: number } {
+  const { c1, c2 } = bezierControls(start, end);
+  const inv = 1 - t;
+  return {
+    x: inv ** 3 * start.x + 3 * inv ** 2 * t * c1.x + 3 * inv * t ** 2 * c2.x + t ** 3 * end.x,
+    y: inv ** 3 * start.y + 3 * inv ** 2 * t * c1.y + 3 * inv * t ** 2 * c2.y + t ** 3 * end.y
+  };
+}
+
 function buildWorkflowNode(template: WorkflowTemplate, preset: NodePreset, position?: { x: number; y: number }): WorkflowNode {
   const index = nextNodeIndex(template, preset.node_type);
   const nodeId = uniqueNodeId(template, preset.key.replace(/[^a-zA-Z0-9_-]/g, "_"));
@@ -1272,6 +1384,13 @@ function suggestedConnectedNodePosition(template: WorkflowTemplate, source: Work
     if (!occupied.has(key)) return { x: baseX, y };
   }
   return { x: baseX, y: sourceY + 112 };
+}
+
+function suggestedInsertedNodePosition(source: WorkflowNode, target: WorkflowNode): { x: number; y: number } {
+  return {
+    x: Math.max(0, Math.round(((source.position.x || 0) + (target.position.x || 0)) / 2)),
+    y: Math.max(0, Math.round(((source.position.y || 0) + (target.position.y || 0)) / 2))
+  };
 }
 
 function uniqueNodeId(template: WorkflowTemplate, base: string): string {

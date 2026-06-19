@@ -675,7 +675,6 @@
   }
 }
 
-/* Dify-like workflow editor surface. */
 .workflow-workspace {
   position: relative;
   grid-row: 2;
@@ -876,6 +875,41 @@
 
 .workflow-connection-preview path {
   stroke-dasharray: 7 6;
+}
+
+.workflow-edge-insert {
+  position: absolute;
+  z-index: 11;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%) scale(0.9);
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  box-shadow: 0 2px 5px rgba(22, 119, 255, 0.32);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.workflow-edge-insert.visible,
+.workflow-edge-insert:hover,
+.workflow-canvas:hover .workflow-edge-insert {
+  opacity: 1;
+}
+
+.workflow-edge-insert:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.workflow-edge-insert:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
 }
 
 .workflow-node {
