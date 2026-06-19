@@ -1203,7 +1203,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                       <WorkflowNodeIcon nodeType={node.node_type} />
                     </span>
                     <div>
-                      <em>{node.node_type}</em>
+                      <em>{nodeTypeLabel(node.node_type)}</em>
                       <strong>{node.title}</strong>
                     </div>
                   </div>
@@ -1319,13 +1319,13 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
           <>
             <div className="workflow-panel-head">
               <div>
-                <span>{selectedNode.node_type}</span>
+                <span>{nodeTypeLabel(selectedNode.node_type)}</span>
                 <strong>{selectedNode.title}</strong>
               </div>
               <button type="button" title="关闭详情" onClick={() => setInspectorOpen(false)}>×</button>
             </div>
             <label className="workflow-field">
-              <span>Title</span>
+              <span>标题</span>
               <input
                 value={selectedNode.title}
                 disabled={readOnly}
@@ -1333,7 +1333,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
               />
             </label>
             <label className="workflow-field">
-              <span>Description</span>
+              <span>描述</span>
               <textarea
                 value={selectedNode.description || ""}
                 disabled={readOnly}
@@ -1345,7 +1345,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
             {selectedNode.node_type === "agent" && (
               <div className="workflow-agent-editor">
                 <label className="workflow-field">
-                  <span>Provider</span>
+                  <span>执行提供方</span>
                   <select
                     value={String(selectedNode.config.provider_id || "")}
                     disabled={readOnly}
@@ -1359,20 +1359,20 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                   </select>
                 </label>
                 <label className="workflow-field">
-                  <span>Preset</span>
+                  <span>预设</span>
                   <select
                     value={String(selectedNode.config.preset_id || "run0_element_refine")}
                     disabled={readOnly}
                     onChange={(event) => updateSelectedNodeConfig({ preset_id: event.target.value })}
                   >
-                    <option value="run0_element_refine">Run0 Element Refinement</option>
-                    <option value="svg_generation">SVG Generation</option>
+                    <option value="run0_element_refine">Run0 元素校正</option>
+                    <option value="svg_generation">SVG 生成</option>
                   </select>
                 </label>
 
                 <div className="workflow-inspector-section">
                   <div className="workflow-section-title">
-                    <span>Input files</span>
+                    <span>输入文件</span>
                     <strong>{selectedAgentInputs.length}</strong>
                   </div>
                   {selectedAgentInputs.map((input) => {
@@ -1404,26 +1404,26 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
 
                 <div className="workflow-inspector-section">
                   <div className="workflow-section-title">
-                    <span>Output declarations</span>
+                    <span>输出声明</span>
                     <button type="button" disabled={readOnly} onClick={addAgentOutput}>添加</button>
                   </div>
                   {selectedAgentOutputs.map((output, index) => (
                     <div className="workflow-agent-output" key={`${output.port_id}-${index}`}>
                       <div className="workflow-output-grid">
                         <label>
-                          <span>Port</span>
+                          <span>端口</span>
                           <input value={output.port_id} disabled={readOnly} onChange={(event) => updateAgentOutput(index, { port_id: event.target.value })} />
                         </label>
                         <label>
-                          <span>Type</span>
+                          <span>类型</span>
                           <input value={output.type} disabled={readOnly} onChange={(event) => updateAgentOutput(index, { type: event.target.value })} />
                         </label>
                         <label>
-                          <span>Format</span>
+                          <span>格式</span>
                           <input value={output.format_id} disabled={readOnly} onChange={(event) => updateAgentOutput(index, { format_id: event.target.value })} />
                         </label>
                         <label>
-                          <span>Path</span>
+                          <span>路径</span>
                           <input value={output.path} disabled={readOnly} onChange={(event) => updateAgentOutput(index, { path: event.target.value })} />
                         </label>
                       </div>
@@ -1441,7 +1441,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                 </div>
 
                 <label className="workflow-field">
-                  <span>Task prompt</span>
+                  <span>任务提示词</span>
                   <textarea
                     rows={5}
                     disabled={readOnly}
@@ -1458,21 +1458,21 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
             {selectedNode.node_type === "human_review" && (
               <div className="workflow-inspector-section">
                 <div className="workflow-section-title">
-                  <span>Human review surface</span>
+                  <span>人工确认界面</span>
                 </div>
                 <label className="workflow-field">
-                  <span>Surface</span>
+                  <span>界面</span>
                   <select
                     value={String(selectedNode.config.review_surface || "assets")}
                     disabled={readOnly}
                     onChange={(event) => updateSelectedNodeConfig({ review_surface: event.target.value })}
                   >
-                    <option value="assets">Assets canvas/table</option>
-                    <option value="output">Output visualization</option>
+                    <option value="assets">资产画布/表格</option>
+                    <option value="output">输出可视化</option>
                   </select>
                 </label>
                 <label className="workflow-field">
-                  <span>Result path</span>
+                  <span>结果路径</span>
                   <input
                     value={String(selectedNode.config.result_path || "")}
                     disabled={readOnly}
@@ -1484,7 +1484,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
 
             <div className="workflow-inspector-section">
               <div className="workflow-section-title">
-                <span>Ports</span>
+                <span>端口</span>
               </div>
               {[...selectedNode.inputs, ...selectedNode.outputs].map((portItem) => (
                 <div className="workflow-port-row" key={`${portItem.port_id}-${portItem.required ? "in" : "out"}`}>
@@ -1512,15 +1512,15 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
           <div className="workflow-edge-inspector">
             <div className="workflow-panel-head">
               <div>
-                <span>Edge</span>
+                <span>连线</span>
                 <strong>{selectedEdge.edge_id}</strong>
               </div>
               <button type="button" title="关闭详情" onClick={() => setInspectorOpen(false)}>×</button>
             </div>
             <dl className="workflow-node-meta">
-              <div><dt>Source</dt><dd>{selectedEdge.source_node_id}.{selectedEdge.source_port_id}</dd></div>
-              <div><dt>Target</dt><dd>{selectedEdge.target_node_id}.{selectedEdge.target_port_id}</dd></div>
-              <div><dt>Types</dt><dd>{selectedEdge.enabled_types.join(" / ") || "auto"}</dd></div>
+              <div><dt>来源</dt><dd>{selectedEdge.source_node_id}.{selectedEdge.source_port_id}</dd></div>
+              <div><dt>目标</dt><dd>{selectedEdge.target_node_id}.{selectedEdge.target_port_id}</dd></div>
+              <div><dt>类型</dt><dd>{selectedEdge.enabled_types.join(" / ") || "自动"}</dd></div>
             </dl>
             <button type="button" className="danger" disabled={readOnly} onClick={deleteSelectedEdge}>
               删除连线
@@ -1679,6 +1679,20 @@ function workflowNodeStats(template: WorkflowTemplate | null): Record<string, nu
 
 function defaultSelectedNodeId(template: WorkflowTemplate): string {
   return template.nodes.find((node) => node.node_type === "agent")?.node_id || template.nodes[0]?.node_id || "";
+}
+
+function nodeTypeLabel(nodeType: string): string {
+  const labels: Record<string, string> = {
+    input: "输入",
+    parser: "解析器",
+    fusion: "融合",
+    agent: "智能体",
+    processor: "处理器",
+    human_review: "人工确认",
+    export: "导出",
+    output: "输出"
+  };
+  return labels[nodeType] || nodeType;
 }
 
 function nodeOutputSummary(node: WorkflowNode): string {
