@@ -110,6 +110,9 @@ def _legacy_analysis_with_top_level_removal() -> dict[str, object]:
                 "source_candidate_ids": ["B002"],
                 "refinement_action": "merged",
                 "reason": "Merged into B001 because it is a duplicate mask.",
+                "bbox": [1, 2, 21, 32],
+                "type": "icon",
+                "current_pipeline_method": "crop",
             }
         ],
     }
@@ -316,7 +319,9 @@ def test_refine_validation_rejects_invalid_bbox() -> None:
 
 
 def test_refine_validation_rejects_non_finite_bbox() -> None:
-    invalid = replace(_plan("E001", ("sam3:B001",)), bbox=(1.0, 2.0, float("inf"), 30.0))
+    invalid = replace(
+        _plan("E001", ("sam3:B001",)), bbox=(1.0, 2.0, float("inf"), 30.0)
+    )
 
     with pytest.raises(RefinementValidationError, match="finite"):
         validate_refined_elements(
@@ -413,7 +418,9 @@ def test_codex_analysis_preserves_added_element_empty_sources() -> None:
 
 
 def test_codex_analysis_normalizes_added_asset_meta_type() -> None:
-    plans = codex_analysis_to_v2_element_plans(_legacy_analysis_with_added_asset_meta_type())
+    plans = codex_analysis_to_v2_element_plans(
+        _legacy_analysis_with_added_asset_meta_type()
+    )
 
     assert [(plan.element_id, plan.element_type) for plan in plans] == [
         ("N001", "picture"),
@@ -466,10 +473,24 @@ def test_codex_element_refiner_counts_top_level_removal_records_for_coverage() -
     )
 
     assert [plan.element_id for plan in plans] == ["B001"]
-    assert codex_analysis_to_v2_removal_records(_legacy_analysis_with_top_level_removal()) == (
+    assert codex_analysis_to_v2_removal_records(
+        _legacy_analysis_with_top_level_removal()
+    ) == (
         {
             "action": "merged",
             "source_candidate_ids": ("B002",),
             "reason": "Merged into B001 because it is a duplicate mask.",
         },
     )
+
+
+def test_codex_analysis_rejects_top_level_removal_records_without_removal_action() -> (
+    None
+):
+    analysis = _legacy_analysis_with_top_level_removal()
+    record = analysis["removal_records"][0]
+    assert isinstance(record, dict)
+    record["refinement_action"] = "unchanged"
+
+    with pytest.raises(RefinementValidationError, match="removed or merged"):
+        codex_analysis_to_v2_removal_records(analysis)

@@ -85,7 +85,9 @@ def validate_refined_elements(
         if isinstance(item, ElementPlan):
             _validate_plan(item)
             _validate_locked_geometry(item, locked_geometry)
-            source_ids = tuple(str(source_id) for source_id in item.source_candidate_ids)
+            source_ids = tuple(
+                str(source_id) for source_id in item.source_candidate_ids
+            )
             unexpected = sorted(set(source_ids) - expected)
             if unexpected:
                 raise RefinementValidationError(
@@ -111,7 +113,9 @@ def validate_refined_elements(
         )
 
     duplicates = sorted(
-        element_id for element_id in set(retained_ids) if retained_ids.count(element_id) > 1
+        element_id
+        for element_id in set(retained_ids)
+        if retained_ids.count(element_id) > 1
     )
     if duplicates:
         raise RefinementValidationError(f"duplicate element_ids: {duplicates[:20]}")
@@ -145,13 +149,21 @@ def codex_analysis_to_v2_element_plans(
 def codex_analysis_to_v2_removal_records(
     analysis: Mapping[str, Any],
 ) -> tuple[dict[str, Any], ...]:
+    element_records, top_level_records = _codex_analysis_removal_records(analysis)
     return tuple(
-        _normalized_removal_record(raw_record)
-        for raw_record in _codex_analysis_removal_records(analysis)
+        (
+            *(_normalized_removal_record(raw_record) for raw_record in element_records),
+            *(
+                _normalized_removal_record(raw_record, trust_removal_container=True)
+                for raw_record in top_level_records
+            ),
+        )
     )
 
 
-def _codex_analysis_elements(analysis: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+def _codex_analysis_elements(
+    analysis: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
     if analysis.get("schema") != CODEX_ELEMENT_ANALYSIS_SCHEMA:
         raise ValueError(
             f"unexpected Codex element analysis schema: {analysis.get('schema')!r}"
@@ -168,18 +180,25 @@ def _codex_analysis_elements(analysis: Mapping[str, Any]) -> tuple[Mapping[str, 
     return tuple(elements)
 
 
-def _codex_analysis_removal_records(analysis: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
-    records = [raw_element for raw_element in _codex_analysis_elements(analysis) if _is_removal_record(raw_element)]
+def _codex_analysis_removal_records(
+    analysis: Mapping[str, Any],
+) -> tuple[tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
+    element_records = tuple(
+        raw_element
+        for raw_element in _codex_analysis_elements(analysis)
+        if _is_removal_record(raw_element)
+    )
     raw_removal_records = analysis.get("removal_records", [])
     if raw_removal_records is None:
         raw_removal_records = []
     if not isinstance(raw_removal_records, list):
         raise ValueError("Codex element analysis removal_records must be a list")
+    top_level_records: list[Mapping[str, Any]] = []
     for index, raw_record in enumerate(raw_removal_records):
         if not isinstance(raw_record, Mapping):
             raise ValueError(f"removal_records[{index}] must be a mapping")
-        records.append(raw_record)
-    return tuple(records)
+        top_level_records.append(raw_record)
+    return element_records, tuple(top_level_records)
 
 
 def _codex_element_to_plan(
@@ -192,7 +211,9 @@ def _codex_element_to_plan(
         "element_id",
     )
     bbox_xyxy = _xyxy_bbox(element.get("bbox"), f"{element_id} bbox", allow_line=True)
-    processing_type = _required_string(element.get("category"), f"{element_id} category")
+    processing_type = _required_string(
+        element.get("category"), f"{element_id} category"
+    )
     element_type = normalize_codex_element_type(
         element.get("element_type") or element.get("type"),
         processing_type=processing_type,
@@ -202,7 +223,9 @@ def _codex_element_to_plan(
         element.get("change_reason") or element.get("reason"),
         f"{element_id} reason",
     )
-    confidence = _confidence_string(element.get("confidence"), f"{element_id} confidence")
+    confidence = _confidence_string(
+        element.get("confidence"), f"{element_id} confidence"
+    )
     geometry = element.get("geometry")
     if not isinstance(geometry, Mapping):
         geometry = {"kind": "bbox", "bbox": list(bbox_xyxy)}
@@ -244,7 +267,9 @@ def _plan_source_candidate_ids(
         allow_empty=True,
     )
     if refinement_action == "added" and source_ids:
-        raise ValueError(f"{element_id} added element must not include source_candidate_ids")
+        raise ValueError(
+            f"{element_id} added element must not include source_candidate_ids"
+        )
     return source_ids
 
 
@@ -254,7 +279,14 @@ def normalize_codex_element_type(
     processing_type: str = "",
     visual_role: str = "",
 ) -> str:
-    normalized = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_").strip("_")
+    normalized = (
+        str(raw_type or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+        .strip("_")
+    )
     if normalized == "added_asset":
         return _infer_added_asset_element_type(
             processing_type=processing_type,
@@ -272,7 +304,10 @@ def _infer_added_asset_element_type(*, processing_type: str, visual_role: str) -
     role = visual_role.strip().lower().replace("-", " ").replace("_", " ")
     if processing_type in {"crop", "crop_nobg"}:
         return "picture"
-    if any(token in role for token in ("text", "title", "subtitle", "caption", "label", "word")):
+    if any(
+        token in role
+        for token in ("text", "title", "subtitle", "caption", "label", "word")
+    ):
         return "text"
     if "arrow" in role:
         return "arrow"
@@ -303,7 +338,10 @@ def _validate_locked_geometry(
     plan_xyxy = _xywh_to_xyxy(plan.bbox)
     for source_id in plan.source_candidate_ids:
         locked_geometry = locked_geometry_by_candidate.get(str(source_id))
-        if not locked_geometry or str(locked_geometry.get("kind") or "").lower() != "mask":
+        if (
+            not locked_geometry
+            or str(locked_geometry.get("kind") or "").lower() != "mask"
+        ):
             continue
         source_bbox = _xyxy_bbox(
             locked_geometry.get("bbox"),
@@ -355,12 +393,20 @@ def _removal_source_ids(record: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(_normalized_removal_record(record)["source_candidate_ids"])
 
 
-def _normalized_removal_record(record: Mapping[str, Any]) -> dict[str, Any]:
-    if not _is_removal_record(record):
+def _normalized_removal_record(
+    record: Mapping[str, Any],
+    *,
+    trust_removal_container: bool = False,
+) -> dict[str, Any]:
+    if not trust_removal_container and not _is_removal_record(record):
         raise RefinementValidationError(
             "mapping refinement records must be removal records with action removed/merged"
         )
     action = str(record.get("refinement_action") or record.get("action") or "").strip()
+    if action not in REMOVAL_ACTIONS:
+        raise RefinementValidationError(
+            "removal records must use action/refinement_action removed or merged"
+        )
     reason = str(record.get("removal_reason") or record.get("reason") or "").strip()
     if not reason:
         raise RefinementValidationError("removal records must include a reason")
@@ -370,7 +416,9 @@ def _normalized_removal_record(record: Mapping[str, Any]) -> dict[str, Any]:
     )
     source_ids = _normalize_id_sequence(raw_source_ids, "removed_source_candidate_ids")
     if not source_ids:
-        raise RefinementValidationError("removal records must include source candidate ids")
+        raise RefinementValidationError(
+            "removal records must include source candidate ids"
+        )
     return {
         "action": action,
         "source_candidate_ids": source_ids,
@@ -390,7 +438,10 @@ def _is_removal_record(record: Mapping[str, Any]) -> bool:
 
 
 def _has_retained_element_payload(record: Mapping[str, Any]) -> bool:
-    return any(record.get(key) not in (None, "", []) for key in ("category", "bbox", "element_type", "type", "geometry"))
+    return any(
+        record.get(key) not in (None, "", [])
+        for key in ("category", "bbox", "element_type", "type", "geometry")
+    )
 
 
 def _normalize_id_set(raw_ids: object, field_name: str) -> set[str]:

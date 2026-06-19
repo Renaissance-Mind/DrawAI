@@ -11,7 +11,6 @@ from lxml import etree
 from PIL import Image
 
 from drawai.v2.schema import (
-    AssetPackage,
     ElementCandidate,
     ElementPlan,
     ProcessingIntent,
@@ -19,7 +18,10 @@ from drawai.v2.schema import (
     validate_element_candidate,
     validate_element_plan,
 )
-from drawai.v2.refine import codex_analysis_to_v2_element_plans, codex_analysis_to_v2_removal_records
+from drawai.v2.refine import (
+    codex_analysis_to_v2_element_plans,
+    codex_analysis_to_v2_removal_records,
+)
 
 
 FormatValidator = Callable[[Path], tuple[str, ...]]
@@ -98,7 +100,9 @@ def default_format_registry() -> dict[str, FormatSpec]:
                 "UTF-8 JSON object with schema drawai.codex_element_analysis.v1 and an elements array. Retained "
                 "elements use box_id or element_id, source_candidate_ids, bbox as [x1,y1,x2,y2], category "
                 "svg_self_draw|crop|crop_nobg, type, confidence, reason, evidence, current_pipeline_method, and "
-                "recommended_asset_source. Removed or merged candidates may appear in removal_records."
+                "recommended_asset_source. Top-level removal_records cover removed/merged source candidates and "
+                "must include action or refinement_action removed|merged, source_candidate_ids or "
+                "removed_source_candidate_ids, and reason or removal_reason."
             ),
         ),
         "drawai.asset_package.v1": FormatSpec(
@@ -154,7 +158,10 @@ def default_format_contract_descriptions(
     *,
     registry: Mapping[str, FormatSpec] | None = None,
 ) -> dict[str, str]:
-    return {format_id: spec.description for format_id, spec in (registry or default_format_registry()).items()}
+    return {
+        format_id: spec.description
+        for format_id, spec in (registry or default_format_registry()).items()
+    }
 
 
 def validate_format_file(
@@ -202,7 +209,9 @@ def _validate_element_candidates(path: Path) -> tuple[str, ...]:
     payload, errors = _read_json_object_or_list(path)
     if errors:
         return errors
-    raw_candidates = payload.get("candidates") if isinstance(payload, Mapping) else payload
+    raw_candidates = (
+        payload.get("candidates") if isinstance(payload, Mapping) else payload
+    )
     if isinstance(raw_candidates, str) or not isinstance(raw_candidates, Sequence):
         return ("element candidates payload must contain a candidates list",)
     validation_errors: list[str] = []
@@ -263,7 +272,9 @@ def _validate_asset_packages(path: Path) -> tuple[str, ...]:
     payload, errors = _read_json_object_or_list(path)
     if errors:
         return errors
-    raw_packages = payload.get("asset_packages") if isinstance(payload, Mapping) else payload
+    raw_packages = (
+        payload.get("asset_packages") if isinstance(payload, Mapping) else payload
+    )
     if isinstance(raw_packages, str) or not isinstance(raw_packages, Sequence):
         return ("asset packages payload must contain an asset_packages list",)
     validation_errors: list[str] = []
@@ -299,7 +310,9 @@ def _validate_pptx(path: Path) -> tuple[str, ...]:
         if name not in names
     ]
     if missing:
-        return (f"PPTX package missing required presentation files: {', '.join(missing)}",)
+        return (
+            f"PPTX package missing required presentation files: {', '.join(missing)}",
+        )
     return ()
 
 
@@ -316,7 +329,9 @@ def _validate_final_outputs(path: Path) -> tuple[str, ...]:
             validation_errors.append(f"outputs[{index}] must be a mapping")
             continue
         for field_name in ("path", "format_id"):
-            if not isinstance(output.get(field_name), str) or not output.get(field_name):
+            if not isinstance(output.get(field_name), str) or not output.get(
+                field_name
+            ):
                 validation_errors.append(f"outputs[{index}].{field_name} is required")
     return tuple(validation_errors)
 
@@ -355,7 +370,9 @@ def _candidate_from_payload(payload: Mapping[str, Any]) -> ElementCandidate:
         bbox=_bbox4(payload.get("bbox"), "bbox"),
         geometry=_mapping(payload.get("geometry"), "geometry"),
         confidence=float(payload.get("confidence")),
-        z_hint=payload.get("z_hint") if isinstance(payload.get("z_hint"), int) else None,
+        z_hint=payload.get("z_hint")
+        if isinstance(payload.get("z_hint"), int)
+        else None,
         text=str(payload.get("text") or ""),
         evidence_files=tuple(str(item) for item in payload.get("evidence_files", ())),
         provenance=_mapping(payload.get("provenance"), "provenance"),
@@ -367,7 +384,9 @@ def _element_plan_from_payload(payload: Mapping[str, Any]) -> ElementPlan:
     processing_intent = _mapping(payload.get("processing_intent"), "processing_intent")
     return ElementPlan(
         element_id=_required_string(payload, "element_id"),
-        source_candidate_ids=tuple(str(item) for item in payload.get("source_candidate_ids", ())),
+        source_candidate_ids=tuple(
+            str(item) for item in payload.get("source_candidate_ids", ())
+        ),
         element_type=_required_string(payload, "element_type"),
         bbox=_bbox4(payload.get("bbox"), "bbox"),
         geometry=_mapping(payload.get("geometry"), "geometry"),

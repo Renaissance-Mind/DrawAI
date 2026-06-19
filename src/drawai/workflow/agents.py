@@ -44,7 +44,9 @@ TYPE_CONTRACTS = {
         "source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional "
         "removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, "
         "refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, "
-        "bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source."
+        "bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source. Top-level "
+        "removal_records cover removed/merged source candidates and must include action or refinement_action "
+        "removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason."
     ),
     "asset_packages": (
         "Processed asset package collection. JSON contains asset_packages with asset_id, element_id, processor_type, "
@@ -54,6 +56,7 @@ TYPE_CONTRACTS = {
     "pptx": "PowerPoint Open XML .pptx package.",
     "final_outputs": "Output-node manifest listing collected deliverables and optional mirrored paths.",
 }
+
 
 @dataclass(frozen=True)
 class AgentProviderSpec:
@@ -203,9 +206,7 @@ def run0_agent_preset() -> AgentPreset:
                 description="Run0 refined asset/source analysis in the standard DrawAI Codex element analysis JSON format.",
             ),
         ),
-        constraints=(
-            *RUN0_ELEMENT_REFINE_CONSTRAINTS,
-        ),
+        constraints=(*RUN0_ELEMENT_REFINE_CONSTRAINTS,),
         scripts=(
             AgentScriptSpec(
                 script_id="assets_visualization",
@@ -235,9 +236,7 @@ def svg_agent_preset() -> AgentPreset:
                 description="Editable semantic SVG rooted at an svg element.",
             ),
         ),
-        constraints=(
-            *SVG_GENERATION_CONSTRAINTS,
-        ),
+        constraints=(*SVG_GENERATION_CONSTRAINTS,),
     )
 
 
@@ -256,9 +255,7 @@ def custom_agent_preset() -> AgentPreset:
                 description="Generated or edited image file.",
             ),
         ),
-        constraints=(
-            *CUSTOM_AGENT_CONSTRAINTS,
-        ),
+        constraints=(*CUSTOM_AGENT_CONSTRAINTS,),
     )
 
 
@@ -320,8 +317,13 @@ def _render_prompt_text(
     scripts: tuple[Mapping[str, Any], ...],
     runtime_context: Mapping[str, str],
 ) -> str:
-    workflow_run_root = runtime_context.get("workflow_run_root") or "<workflow_run_root>"
-    node_workdir = runtime_context.get("node_workdir") or f"{workflow_run_root}/nodes/{node_id}/runs/<attempt_id>"
+    workflow_run_root = (
+        runtime_context.get("workflow_run_root") or "<workflow_run_root>"
+    )
+    node_workdir = (
+        runtime_context.get("node_workdir")
+        or f"{workflow_run_root}/nodes/{node_id}/runs/<attempt_id>"
+    )
     repo_root = runtime_context.get("repo_root") or "<repository_root>"
     input_manifest = runtime_context.get("input_manifest") or "input_manifest.json"
     lines = [
@@ -404,7 +406,10 @@ def _render_prompt_text(
             ]
         )
         for script in scripts:
-            usage = str(script.get("usage") or "").replace("{script}", str(script.get("from_agent_cwd") or script.get("path") or ""))
+            usage = str(script.get("usage") or "").replace(
+                "{script}",
+                str(script.get("from_agent_cwd") or script.get("path") or ""),
+            )
             lines.extend(
                 [
                     f"- Script: {script['script_id']}",
@@ -422,7 +427,9 @@ def _render_prompt_text(
         [str(item.get("type") or "") for item in inputs]
         + [str(output.get("type") or "") for output in outputs]
     ):
-        lines.append(f"- Type `{type_name}`: {TYPE_CONTRACTS.get(type_name, 'No built-in type description is registered. Follow the node description and connected file contents.')}")
+        lines.append(
+            f"- Type `{type_name}`: {TYPE_CONTRACTS.get(type_name, 'No built-in type description is registered. Follow the node description and connected file contents.')}"
+        )
     for format_id in _ordered_unique(
         [str(item.get("format_id") or "") for item in inputs]
         + [str(output.get("format_id") or "") for output in outputs]
@@ -439,7 +446,9 @@ def _render_prompt_text(
     return "\n".join(lines).strip() + "\n"
 
 
-def _input_path_from_node_workdir(path: object, runtime_context: Mapping[str, str] | None = None) -> str:
+def _input_path_from_node_workdir(
+    path: object, runtime_context: Mapping[str, str] | None = None
+) -> str:
     path_value = str(path or "")
     if not path_value:
         return ""
@@ -449,11 +458,15 @@ def _input_path_from_node_workdir(path: object, runtime_context: Mapping[str, st
     node_workdir = runtime.get("node_workdir")
     workflow_run_root = runtime.get("workflow_run_root")
     if node_workdir and workflow_run_root:
-        return _relative_from_node_workdir(Path(workflow_run_root) / path_value, Path(node_workdir))
+        return _relative_from_node_workdir(
+            Path(workflow_run_root) / path_value, Path(node_workdir)
+        )
     return f"../../../{path_value.lstrip('./')}"
 
 
-def _input_absolute_path(path: object, runtime_context: Mapping[str, str] | None = None) -> str:
+def _input_absolute_path(
+    path: object, runtime_context: Mapping[str, str] | None = None
+) -> str:
     path_value = str(path or "")
     if not path_value:
         return ""
@@ -462,7 +475,12 @@ def _input_absolute_path(path: object, runtime_context: Mapping[str, str] | None
     runtime = runtime_context or {}
     workflow_run_root = runtime.get("workflow_run_root")
     if workflow_run_root and not workflow_run_root.startswith("<"):
-        return (Path(workflow_run_root) / path_value).expanduser().resolve(strict=False).as_posix()
+        return (
+            (Path(workflow_run_root) / path_value)
+            .expanduser()
+            .resolve(strict=False)
+            .as_posix()
+        )
     return f"<workflow_run_root>/{path_value.lstrip('./')}"
 
 
@@ -494,7 +512,12 @@ def _output_absolute_path(
     runtime = runtime_context or {}
     node_workdir = runtime.get("node_workdir")
     if node_workdir and not node_workdir.startswith("<"):
-        return (Path(node_workdir) / path_value).expanduser().resolve(strict=False).as_posix()
+        return (
+            (Path(node_workdir) / path_value)
+            .expanduser()
+            .resolve(strict=False)
+            .as_posix()
+        )
     return f"<workflow_run_root>/{_output_path_from_run_root(node_id, path_value, runtime_context)}"
 
 
@@ -551,10 +574,18 @@ def _configured_outputs(
             raise ValueError(f"Agent outputs[{index}] must be an object")
         outputs.append(
             {
-                "port_id": _required_string(raw_output.get("port_id"), f"outputs[{index}].port_id"),
-                "path": _required_string(raw_output.get("path"), f"outputs[{index}].path"),
-                "format_id": _required_string(raw_output.get("format_id"), f"outputs[{index}].format_id"),
-                "type": _required_string(raw_output.get("type"), f"outputs[{index}].type"),
+                "port_id": _required_string(
+                    raw_output.get("port_id"), f"outputs[{index}].port_id"
+                ),
+                "path": _required_string(
+                    raw_output.get("path"), f"outputs[{index}].path"
+                ),
+                "format_id": _required_string(
+                    raw_output.get("format_id"), f"outputs[{index}].format_id"
+                ),
+                "type": _required_string(
+                    raw_output.get("type"), f"outputs[{index}].type"
+                ),
                 "description": _required_string(
                     raw_output.get("description"),
                     f"outputs[{index}].description",
@@ -571,7 +602,9 @@ def _configured_scripts(
 ) -> tuple[Mapping[str, Any], ...]:
     raw_scripts = config.get("scripts")
     if raw_scripts is None:
-        scripts: list[Mapping[str, Any]] = [script.to_dict() for script in preset.scripts]
+        scripts: list[Mapping[str, Any]] = [
+            script.to_dict() for script in preset.scripts
+        ]
     else:
         if not isinstance(raw_scripts, list | tuple):
             raise ValueError("Agent scripts must be an array")
@@ -583,9 +616,13 @@ def _configured_scripts(
 
     normalized: list[Mapping[str, Any]] = []
     for index, script in enumerate(scripts):
-        script_id = _required_string(script.get("script_id") or script.get("id"), f"scripts[{index}].script_id")
+        script_id = _required_string(
+            script.get("script_id") or script.get("id"), f"scripts[{index}].script_id"
+        )
         path = _required_string(script.get("path"), f"scripts[{index}].path")
-        description = _required_string(script.get("description"), f"scripts[{index}].description")
+        description = _required_string(
+            script.get("description"), f"scripts[{index}].description"
+        )
         usage = str(script.get("usage") or "")
         resolved_path = _script_path_for_prompt(path, runtime_context)
         node_workdir = runtime_context.get("node_workdir")
@@ -612,14 +649,22 @@ def _script_path_for_prompt(path: str, runtime_context: Mapping[str, str]) -> st
         return path_obj.as_posix()
     repo_root = runtime_context.get("repo_root")
     if repo_root and not repo_root.startswith("<"):
-        return (Path(repo_root) / path_obj).expanduser().resolve(strict=False).as_posix()
+        return (
+            (Path(repo_root) / path_obj).expanduser().resolve(strict=False).as_posix()
+        )
     return path_obj.as_posix()
 
 
 def _runtime_context(runtime_context: Mapping[str, Any] | None) -> Mapping[str, str]:
     raw = dict(runtime_context or {})
     normalized: dict[str, str] = {}
-    for key in ("workflow_run_root", "node_workdir", "repo_root", "attempt_id", "input_manifest"):
+    for key in (
+        "workflow_run_root",
+        "node_workdir",
+        "repo_root",
+        "attempt_id",
+        "input_manifest",
+    ):
         value = raw.get(key)
         if value not in (None, ""):
             normalized[key] = str(value)
@@ -636,7 +681,11 @@ def _validate_agent_config(config: Mapping[str, Any]) -> None:
             raise ValueError(f"unsupported reasoning_effort: {effort}")
     if config.get("timeout_seconds") not in (None, ""):
         timeout = config["timeout_seconds"]
-        if not isinstance(timeout, int | float) or isinstance(timeout, bool) or timeout <= 0:
+        if (
+            not isinstance(timeout, int | float)
+            or isinstance(timeout, bool)
+            or timeout <= 0
+        ):
             raise ValueError("timeout_seconds must be positive")
     for field_name in ("model", "profile", "provider_id"):
         if field_name in config and not isinstance(config[field_name], str):
@@ -667,7 +716,9 @@ def _agent_task(preset: AgentPreset, config: Mapping[str, Any]) -> str:
     return task
 
 
-def _agent_constraints(preset: AgentPreset, config: Mapping[str, Any]) -> tuple[str, ...]:
+def _agent_constraints(
+    preset: AgentPreset, config: Mapping[str, Any]
+) -> tuple[str, ...]:
     raw = config.get("constraints")
     if raw is None:
         return tuple(preset.constraints)

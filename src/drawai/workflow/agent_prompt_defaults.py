@@ -58,7 +58,7 @@ The final JSON must use schema drawai.codex_element_analysis.v1 and contain:
 - categories counts for svg_self_draw/crop/crop_nobg
 - refinement_actions counts for unchanged/adjusted/split/added/removed/merged
 - elements containing box_id, source_candidate_ids, refinement_action, category, confidence, visual_role, reason, evidence, bbox, type, current_pipeline_method, recommended_asset_source, and optional geometry fields
-- optional removal_records or removal-style elements for removed/merged candidates
+- optional removal_records or removal-style elements for removed/merged candidates. Top-level removal_records must use action or refinement_action removed|merged, include source_candidate_ids or removed_source_candidate_ids, include reason or removal_reason, and may include merged_into/evidence/diagnostic bbox/type fields. Do not put retained output elements in removal_records.
 - notes
 
 Also write a concise markdown audit note to reports/element_analysis_codex/analysis_notes.md. The JSON file is the source of truth."""

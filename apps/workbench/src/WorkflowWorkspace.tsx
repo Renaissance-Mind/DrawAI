@@ -267,7 +267,7 @@ const WORKFLOW_TYPE_CONTRACTS: Record<string, string> = {
   element_plans:
     "Refined/planned DrawAI elements. JSON contains elements with element_id, source_candidate_ids, element_type, bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent {object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason.",
   element_analysis:
-    "Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source.",
+    "Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
   asset_packages:
     "Processed asset package collection. JSON contains asset_packages with asset_id, element_id, processor_type, status pending|running|ok|failed|unsupported, files, metadata, processor_runs, all_results, active_result, editable_payload, and failure.",
   semantic_svg: "Editable SVG file with an <svg> root following the DrawAI semantic SVG/PPT profile.",
@@ -279,7 +279,7 @@ const WORKFLOW_FORMAT_CONTRACTS: Record<string, string> = {
   "drawai.element_candidates.v1": "UTF-8 JSON object with a candidates array, or a JSON array of element candidate objects.",
   "drawai.element_plans.v1": "UTF-8 JSON object with an elements array, or a JSON array of element plan objects.",
   "drawai.codex_element_analysis.v1":
-    "UTF-8 JSON object with schema drawai.codex_element_analysis.v1 and an elements array. Retained elements use box_id/element_id, bbox as x1,y1,x2,y2, category svg_self_draw|crop|crop_nobg, source_candidate_ids, type, confidence, reason, and evidence; removed or merged candidates may appear in removal_records.",
+    "UTF-8 JSON object with schema drawai.codex_element_analysis.v1 and an elements array. Retained elements use box_id/element_id, bbox as x1,y1,x2,y2, category svg_self_draw|crop|crop_nobg, source_candidate_ids, type, confidence, reason, and evidence. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
   "drawai.asset_package.v1": "UTF-8 JSON object for one DrawAI asset package.",
   "drawai.asset_packages.v1": "UTF-8 JSON object with an asset_packages array, or a JSON array of asset package objects.",
   "drawai.semantic_svg.v1": "SVG XML file whose document root is <svg>.",
