@@ -182,11 +182,39 @@ def svg_agent_preset() -> AgentPreset:
     )
 
 
+def custom_agent_preset() -> AgentPreset:
+    return AgentPreset(
+        preset_id="custom_agent",
+        title="Custom Agent",
+        provider_id="codex_sdk",
+        task=(
+            "Use the connected input files as context and produce exactly the "
+            "output files declared by this node configuration."
+        ),
+        outputs=(
+            AgentOutputDeclaration(
+                port_id="image",
+                path="output/image.png",
+                format_id="drawai.image.v1",
+                type="image",
+                description="Generated or edited image file.",
+            ),
+        ),
+        constraints=(
+            "Treat every connected input file as explicit node context.",
+            "Honor the configured output declarations over the preset defaults.",
+            "Write only the declared output paths inside this node work directory.",
+        ),
+    )
+
+
 def agent_preset_by_id(preset_id: str) -> AgentPreset:
     if preset_id == "run0_element_refine":
         return run0_agent_preset()
     if preset_id == "svg_generation":
         return svg_agent_preset()
+    if preset_id == "custom_agent":
+        return custom_agent_preset()
     raise ValueError(f"unknown Agent preset: {preset_id}")
 
 

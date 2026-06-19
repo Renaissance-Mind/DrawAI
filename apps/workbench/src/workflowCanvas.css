@@ -73,6 +73,7 @@
 .workflow-field select,
 .workflow-field textarea,
 .workflow-output-grid input,
+.workflow-output-grid select,
 .workflow-agent-input textarea,
 .workflow-agent-output textarea,
 .workflow-sam-prompt input {
@@ -560,6 +561,12 @@
   font-size: 11px;
 }
 
+.workflow-output-grid select {
+  height: 30px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
 .workflow-parser-editor {
   display: grid;
   gap: 4px;
@@ -734,6 +741,7 @@
 .workflow-field select,
 .workflow-field textarea,
 .workflow-output-grid input,
+.workflow-output-grid select,
 .workflow-agent-input textarea,
 .workflow-agent-output textarea {
   border-color: #d0d5dc;
@@ -1222,28 +1230,6 @@
   font-size: 14px;
   font-weight: 760;
   text-align: center;
-}
-
-.workflow-picker-tabs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid rgba(16, 24, 40, 0.08);
-  background: #f2f4f7;
-  padding: 8px 10px;
-}
-
-.workflow-picker-tabs strong {
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.workflow-picker-tabs button {
-  justify-self: end;
-  width: 24px;
-  height: 24px;
-  padding: 0;
 }
 
 .workflow-picker-search {
@@ -2061,6 +2047,11 @@
   width: 14px;
   height: 14px;
   stroke-width: 3;
+  pointer-events: none;
+}
+
+.workflow-node-plus .plus-icon path {
+  pointer-events: none;
 }
 
 .workflow-node-plus::before {

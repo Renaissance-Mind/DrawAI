@@ -101,6 +101,12 @@ type AgentOutputConfig = {
   type: string;
   description: string;
 };
+type WorkflowFormatOption = {
+  format_id: string;
+  type: string;
+  label: string;
+  description: string;
+};
 type SamPromptConfig = {
   id: string;
   text: string;
@@ -145,6 +151,51 @@ const DEFAULT_SAM_PROMPTS: SamPromptConfig[] = [
   { id: "picture", text: "picture", confidence_threshold: 0.3 }
 ];
 const NODE_PICKER_GROUP_ORDER = ["Parser", "Agent", "Processor", "Review", "Fusion", "Export"];
+const WORKFLOW_FORMAT_OPTIONS: WorkflowFormatOption[] = [
+  {
+    format_id: "drawai.image.v1",
+    type: "image",
+    label: "Image",
+    description: "Generated or edited image file."
+  },
+  {
+    format_id: "drawai.element_candidates.v1",
+    type: "element_candidates",
+    label: "Element Candidates",
+    description: "Parser-style element candidate JSON."
+  },
+  {
+    format_id: "drawai.element_plans.v1",
+    type: "element_plans",
+    label: "Element Plans",
+    description: "DrawAI element plan JSON."
+  },
+  {
+    format_id: "drawai.asset_packages.v1",
+    type: "asset_packages",
+    label: "Asset Packages",
+    description: "Renderable asset package JSON."
+  },
+  {
+    format_id: "drawai.semantic_svg.v1",
+    type: "semantic_svg",
+    label: "Semantic SVG",
+    description: "Editable semantic SVG file."
+  },
+  {
+    format_id: "drawai.pptx.v1",
+    type: "pptx",
+    label: "PPTX",
+    description: "Exported PowerPoint presentation."
+  },
+  {
+    format_id: "drawai.final_outputs.v1",
+    type: "final_outputs",
+    label: "Final Outputs",
+    description: "Collected output manifest JSON."
+  }
+];
+const WORKFLOW_ANY_TYPES = WORKFLOW_FORMAT_OPTIONS.map((option) => option.type);
 
 const NODE_PRESETS: NodePreset[] = [
   {
@@ -227,6 +278,29 @@ const NODE_PRESETS: NodePreset[] = [
     }
   },
   {
+    key: "custom-agent",
+    node_type: "agent",
+    title: "Custom Agent",
+    icon: "A",
+    description: "Unconstrained Agent node that reads connected files and writes declared outputs.",
+    inputs: [port("inputs", "Inputs", WORKFLOW_ANY_TYPES, "", true, "many")],
+    outputs: [port("image", "Image", ["image"], "drawai.image.v1", false)],
+    config: {
+      preset_id: "custom_agent",
+      provider_id: "codex_sdk",
+      prompt_fragments: "Use the connected files as context and write the declared outputs exactly.",
+      outputs: [
+        {
+          port_id: "image",
+          path: "output/image.png",
+          format_id: "drawai.image.v1",
+          type: "image",
+          description: "Generated or edited image file."
+        }
+      ]
+    }
+  },
+  {
     key: "processor",
     node_type: "processor",
     title: "Processor",
@@ -294,6 +368,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
   const [busy, setBusy] = useState("");
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const handleDragRef = useRef<HandleDragState | null>(null);
 
   useEffect(() => {
     void loadWorkflowData();
@@ -332,6 +407,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
       setValidation(null);
       setPromptPreview(null);
       setNodePicker(null);
+      handleDragRef.current = null;
       setHandleDrag(null);
       setConnecting(null);
       setInspectorOpen(false);
@@ -473,6 +549,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     setValidation(null);
     setPromptPreview(null);
     setNodePicker(null);
+    handleDragRef.current = null;
     setHandleDrag(null);
     setConnecting(null);
     setInspectorOpen(false);
@@ -546,6 +623,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     setPromptPreview(null);
     setConnecting(null);
     setNodePicker(null);
+    handleDragRef.current = null;
     setHandleDrag(null);
     setInspectorOpen(false);
     setViewport(DEFAULT_VIEWPORT);
@@ -562,6 +640,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     setSelectedEdgeId("");
     setNodePicker(null);
     setConnecting(null);
+    handleDragRef.current = null;
     setHandleDrag(null);
     setInspectorOpen(false);
   }
@@ -825,17 +904,12 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     setSelectedEdgeId(edge.edge_id);
   }
 
-  function closeNodePicker() {
-    setNodePicker(null);
-    setConnecting(null);
-  }
-
   function beginOutputHandlePointer(event: PointerEvent<HTMLButtonElement>, node: WorkflowNode, output: WorkflowPort) {
     if (readOnly) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     const start = outputAnchorFor(node);
-    setHandleDrag({
+    const nextDrag = {
       nodeId: node.node_id,
       portId: output.port_id,
       pointerId: event.pointerId,
@@ -844,7 +918,9 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
       start,
       current: start,
       active: false
-    });
+    };
+    handleDragRef.current = nextDrag;
+    setHandleDrag(nextDrag);
     setConnecting({ nodeId: node.node_id, portId: output.port_id });
     setNodePicker(null);
     setSelectedNodeId(node.node_id);
@@ -852,27 +928,32 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
   }
 
   function moveOutputHandlePointer(event: PointerEvent<HTMLElement>) {
-    if (!handleDrag || handleDrag.pointerId !== event.pointerId) return;
-    const distance = Math.hypot(event.clientX - handleDrag.startClientX, event.clientY - handleDrag.startClientY);
-    setHandleDrag({
-      ...handleDrag,
+    const currentDrag = handleDragRef.current || handleDrag;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+    const distance = Math.hypot(event.clientX - currentDrag.startClientX, event.clientY - currentDrag.startClientY);
+    const nextDrag = {
+      ...currentDrag,
       current: canvasPointFromClient(event.clientX, event.clientY),
-      active: handleDrag.active || distance > 5
-    });
+      active: currentDrag.active || distance > 5
+    };
+    handleDragRef.current = nextDrag;
+    setHandleDrag(nextDrag);
   }
 
   function endOutputHandlePointer(event: PointerEvent<HTMLElement>) {
-    if (!handleDrag || handleDrag.pointerId !== event.pointerId) return;
+    const currentDrag = handleDragRef.current || handleDrag;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
     event.stopPropagation();
-    const distance = Math.hypot(event.clientX - handleDrag.startClientX, event.clientY - handleDrag.startClientY);
+    const distance = Math.hypot(event.clientX - currentDrag.startClientX, event.clientY - currentDrag.startClientY);
     const dropPoint = canvasPointFromClient(event.clientX, event.clientY);
-    const wasDrag = handleDrag.active || distance > 5;
+    const wasDrag = currentDrag.active || distance > 5;
     if (wasDrag) {
-      const connected = connectDropTarget(handleDrag.nodeId, handleDrag.portId, event.clientX, event.clientY);
-      if (!connected) openNodePicker(handleDrag.nodeId, handleDrag.portId, dropPoint);
+      const connected = connectDropTarget(currentDrag.nodeId, currentDrag.portId, event.clientX, event.clientY);
+      if (!connected) openNodePicker(currentDrag.nodeId, currentDrag.portId, dropPoint);
     } else {
-      openNodePicker(handleDrag.nodeId, handleDrag.portId);
+      openNodePicker(currentDrag.nodeId, currentDrag.portId);
     }
+    handleDragRef.current = null;
     setHandleDrag(null);
   }
 
@@ -944,7 +1025,8 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     if (!targetPort) return;
     const insertTargetNode = draft.nodes.find((node) => node.node_id === nodePicker.targetNodeId);
     const insertTargetPort = insertTargetNode?.inputs.find((portItem) => portItem.port_id === nodePicker.targetPortId);
-    const sourceOutput = bestOutputForTarget(preset, insertTargetPort);
+    const customInsertOutput = isCustomAgentPreset(preset) && insertTargetPort ? outputPortForTarget(insertTargetPort) : null;
+    const sourceOutput = customInsertOutput || bestOutputForTarget(preset, insertTargetPort);
     if (nodePicker.insertEdgeId && (!insertTargetNode || !insertTargetPort || !sourceOutput)) return;
     const insertionLayout =
       nodePicker.insertEdgeId && insertTargetNode
@@ -952,25 +1034,29 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
         : null;
     const workingDraft = insertionLayout ? { ...draft, nodes: insertionLayout.nodes } : draft;
     const insertTarget = insertionLayout?.target || insertTargetNode;
-    const node = buildWorkflowNode(
+    let node = buildWorkflowNode(
       workingDraft,
       preset,
       insertionLayout ? insertionLayout.position : suggestedConnectedNodePosition(workingDraft, source)
     );
+    node = customizeCustomAgentNode(node, customInsertOutput);
+    const reservedEdgeIds = new Set(workingDraft.edges.map((item) => item.edge_id));
     const edge: WorkflowEdge = {
-      edge_id: uniqueEdgeId(workingDraft, `${source.node_id}:${sourcePort.port_id}->${node.node_id}:${targetPort.port_id}`),
+      edge_id: uniqueEdgeIdFromSet(reservedEdgeIds, `${source.node_id}:${sourcePort.port_id}->${node.node_id}:${targetPort.port_id}`),
       source_node_id: source.node_id,
       source_port_id: sourcePort.port_id,
       target_node_id: node.node_id,
       target_port_id: targetPort.port_id,
       enabled_types: compatibleTypes(sourcePort, targetPort)
     };
+    const inheritedEdges = inheritedCustomAgentInputEdges(workingDraft, source, node, targetPort, reservedEdgeIds);
     const nextEdges = nodePicker.insertEdgeId && insertTarget && insertTargetPort && sourceOutput
       ? [
           ...workingDraft.edges.filter((item) => item.edge_id !== nodePicker.insertEdgeId),
           edge,
+          ...inheritedEdges,
           {
-            edge_id: uniqueEdgeId(workingDraft, `${node.node_id}:${sourceOutput.port_id}->${insertTarget.node_id}:${insertTargetPort.port_id}`),
+            edge_id: uniqueEdgeIdFromSet(reservedEdgeIds, `${node.node_id}:${sourceOutput.port_id}->${insertTarget.node_id}:${insertTargetPort.port_id}`),
             source_node_id: node.node_id,
             source_port_id: sourceOutput.port_id,
             target_node_id: insertTarget.node_id,
@@ -978,7 +1064,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
             enabled_types: compatibleTypes(sourceOutput, insertTargetPort)
           }
         ]
-      : [...workingDraft.edges, edge];
+      : [...workingDraft.edges, edge, ...inheritedEdges];
     setDraft({ ...workingDraft, nodes: [...workingDraft.nodes, node], edges: nextEdges });
     setSelectedNodeId(node.node_id);
     setSelectedEdgeId("");
@@ -1050,15 +1136,32 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     });
   }
 
+  function updateAgentOutputFormat(index: number, formatId: string) {
+    if (!selectedNode || selectedNode.node_type !== "agent") return;
+    const outputs = agentOutputsForNode(selectedNode);
+    const current = outputs[index];
+    if (!current) return;
+    const option = workflowFormatOption(formatId);
+    updateAgentOutput(index, {
+      format_id: option.format_id,
+      type: option.type,
+      path: defaultOutputPathForPort(current.port_id, option.format_id),
+      description: option.description
+    });
+  }
+
   function addAgentOutput() {
     if (!selectedNode || selectedNode.node_type !== "agent") return;
     const portId = uniquePortId(selectedNode, "output");
+    const defaultOption = selectedNode.config.preset_id === "custom_agent"
+      ? workflowFormatOption("drawai.image.v1")
+      : workflowFormatOption("drawai.element_plans.v1");
     const output: AgentOutputConfig = {
       port_id: portId,
-      path: `output/${portId}.json`,
-      format_id: "drawai.element_plans.v1",
-      type: "element_plans",
-      description: "Agent declared output."
+      path: defaultOutputPathForPort(portId, defaultOption.format_id),
+      format_id: defaultOption.format_id,
+      type: defaultOption.type,
+      description: defaultOption.description
     };
     updateNode(selectedNode.node_id, (node) => ({
       ...node,
@@ -1247,7 +1350,8 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
           }}
           onPointerCancel={(event) => {
             endCanvasPan(event);
-            if (handleDrag?.pointerId === event.pointerId) {
+            if ((handleDragRef.current || handleDrag)?.pointerId === event.pointerId) {
+              handleDragRef.current = null;
               setHandleDrag(null);
               setConnecting(null);
             }
@@ -1277,6 +1381,8 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                   setSelectedEdgeId(edgeId);
                   setSelectedNodeId("");
                   setInspectorOpen(true);
+                  setNodePicker(null);
+                  setConnecting(null);
                 }}
                 onOpenEdgeInsert={openEdgePicker}
               />
@@ -1290,11 +1396,15 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                   className={`workflow-node node-${node.node_type} ${node.node_id === selectedNodeId ? "active" : ""}`}
                   data-node-id={node.node_id}
                   style={{ left: node.position.x || 0, top: node.position.y || 0 }}
-                  onClick={() => {
+                  onClick={(event) => {
+                    const target = event.target;
+                    if (target instanceof Element && target.closest(".workflow-node-plus, [data-input-port]")) return;
                     setSelectedNodeId(node.node_id);
                     setSelectedEdgeId("");
                     setPromptPreview(null);
                     setInspectorOpen(true);
+                    setNodePicker(null);
+                    setConnecting(null);
                   }}
                   onPointerDown={(event) => beginNodeDrag(event, node)}
                   onPointerMove={moveNode}
@@ -1337,11 +1447,15 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                       disabled={readOnly || node.node_type === "output"}
                       title={readOnly || node.node_type === "output" ? "不可添加下游节点" : "添加或连接下游节点"}
                       aria-label={readOnly || node.node_type === "output" ? "不可添加下游节点" : "添加或连接下游节点"}
-                      onClick={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!readOnly && node.node_type !== "output") openNodePicker(node.node_id, sourceOutput.port_id);
+                      }}
                       onPointerDown={(event) => beginOutputHandlePointer(event, node, sourceOutput)}
                       onPointerMove={moveOutputHandlePointer}
                       onPointerUp={endOutputHandlePointer}
                       onPointerCancel={() => {
+                        handleDragRef.current = null;
                         setHandleDrag(null);
                         setConnecting(null);
                       }}
@@ -1359,10 +1473,6 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
-                <div className="workflow-picker-tabs">
-                  <strong>节点</strong>
-                  <button type="button" onClick={closeNodePicker}>×</button>
-                </div>
                 <label className="workflow-picker-search">
                   <span>⌕</span>
                   <input
@@ -1556,6 +1666,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                   >
                     <option value="run0_element_refine">Asset Refine Agent</option>
                     <option value="svg_generation">SVG 生成</option>
+                    <option value="custom_agent">Custom Agent</option>
                   </select>
                 </label>
 
@@ -1609,7 +1720,13 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                         </label>
                         <label>
                           <span>格式</span>
-                          <input value={output.format_id} disabled={readOnly} onChange={(event) => updateAgentOutput(index, { format_id: event.target.value })} />
+                          <select value={output.format_id} disabled={readOnly} onChange={(event) => updateAgentOutputFormat(index, event.target.value)}>
+                            {WORKFLOW_FORMAT_OPTIONS.map((option) => (
+                              <option value={option.format_id} key={option.format_id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label>
                           <span>路径</span>
@@ -1932,7 +2049,7 @@ function nodePickerItems(template: WorkflowTemplate, picker: NodePickerState): N
       compatible: Boolean(
         sourcePort
         && bestInputForPreset(sourcePort, preset)
-        && (!picker.insertEdgeId || bestOutputForTarget(preset, targetPort))
+        && (!picker.insertEdgeId || presetCanOutputToTarget(preset, targetPort))
       ),
       group: nodePresetGroup(preset)
     }));
@@ -2004,7 +2121,8 @@ function normalizedThreshold(value: unknown, fallback: number): number {
 function agentPresetLabel(presetId: string): string {
   const labels: Record<string, string> = {
     run0_element_refine: "Asset Refine Agent",
-    svg_generation: "SVG Agent"
+    svg_generation: "SVG Agent",
+    custom_agent: "Custom Agent"
   };
   return labels[presetId] || presetId;
 }
@@ -2308,6 +2426,79 @@ function bestOutputForTarget(preset: NodePreset, targetPort?: WorkflowPort): Wor
   return preset.outputs.find((output) => compatibleTypes(output, targetPort).length > 0) || null;
 }
 
+function presetCanOutputToTarget(preset: NodePreset, targetPort?: WorkflowPort): boolean {
+  if (!targetPort) return false;
+  return Boolean(bestOutputForTarget(preset, targetPort) || (isCustomAgentPreset(preset) && targetPort.types.length > 0));
+}
+
+function isCustomAgentPreset(preset: NodePreset): boolean {
+  return preset.key === "custom-agent" || preset.config?.preset_id === "custom_agent";
+}
+
+function isCustomAgentNode(node: WorkflowNode): boolean {
+  return node.node_type === "agent" && node.config.preset_id === "custom_agent";
+}
+
+function outputPortForTarget(targetPort: WorkflowPort): WorkflowPort {
+  const firstType = targetPort.types[0] || "image";
+  const option = workflowFormatOptionForType(firstType);
+  return port(
+    safePortId(option.type || targetPort.port_id || "output"),
+    option.label,
+    [option.type],
+    option.format_id,
+    false,
+    "single",
+    option.description
+  );
+}
+
+function customizeCustomAgentNode(node: WorkflowNode, replacementOutput?: WorkflowPort | null): WorkflowNode {
+  if (!isCustomAgentNode(node)) return node;
+  const outputs = replacementOutput ? [replacementOutput] : node.outputs;
+  return {
+    ...node,
+    outputs,
+    config: {
+      ...node.config,
+      outputs: outputs.map((output) => agentOutputConfigForPort(output))
+    }
+  };
+}
+
+function inheritedCustomAgentInputEdges(
+  template: WorkflowTemplate,
+  source: WorkflowNode,
+  target: WorkflowNode,
+  targetPort: WorkflowPort,
+  reservedEdgeIds: Set<string>
+): WorkflowEdge[] {
+  if (!isCustomAgentNode(target)) return [];
+  const seenConnections = new Set<string>();
+  return template.edges
+    .filter((edge) => edge.target_node_id === source.node_id)
+    .flatMap((edge) => {
+      const upstream = template.nodes.find((node) => node.node_id === edge.source_node_id);
+      const upstreamPort = upstream?.outputs.find((portItem) => portItem.port_id === edge.source_port_id);
+      if (!upstream || !upstreamPort) return [];
+      const overlap = compatibleTypes(upstreamPort, targetPort);
+      if (overlap.length === 0) return [];
+      const connectionKey = `${upstream.node_id}:${upstreamPort.port_id}->${target.node_id}:${targetPort.port_id}`;
+      if (seenConnections.has(connectionKey)) return [];
+      seenConnections.add(connectionKey);
+      return [
+        {
+          edge_id: uniqueEdgeIdFromSet(reservedEdgeIds, connectionKey),
+          source_node_id: upstream.node_id,
+          source_port_id: upstreamPort.port_id,
+          target_node_id: target.node_id,
+          target_port_id: targetPort.port_id,
+          enabled_types: overlap
+        }
+      ];
+    });
+}
+
 function outputAnchorPoint(node: WorkflowNode): { x: number; y: number } {
   return {
     x: (node.position.x || 0) + NODE_WIDTH,
@@ -2454,13 +2645,17 @@ function uniqueNodeId(template: WorkflowTemplate, base: string): string {
 }
 
 function uniqueEdgeId(template: WorkflowTemplate, base: string): string {
-  const existing = new Set(template.edges.map((edge) => edge.edge_id));
+  return uniqueEdgeIdFromSet(new Set(template.edges.map((edge) => edge.edge_id)), base);
+}
+
+function uniqueEdgeIdFromSet(existing: Set<string>, base: string): string {
   let candidate = base;
   let index = 2;
   while (existing.has(candidate)) {
     candidate = `${base}#${index}`;
     index += 1;
   }
+  existing.add(candidate);
   return candidate;
 }
 
@@ -2502,6 +2697,34 @@ function isAgentOutputConfig(value: unknown): value is AgentOutputConfig {
 function defaultOutputPath(output: WorkflowPort): string {
   const extension = fileExtensionForFormat(output.formats[0] || "");
   return `output/${output.port_id}.${extension}`;
+}
+
+function defaultOutputPathForPort(portId: string, formatId: string): string {
+  return `output/${portId}.${fileExtensionForFormat(formatId)}`;
+}
+
+function agentOutputConfigForPort(output: WorkflowPort): AgentOutputConfig {
+  const formatId = output.formats[0] || workflowFormatOptionForType(output.types[0] || "image").format_id;
+  const option = workflowFormatOption(formatId);
+  return {
+    port_id: output.port_id,
+    path: defaultOutputPathForPort(output.port_id, option.format_id),
+    format_id: option.format_id,
+    type: output.types[0] || option.type,
+    description: output.description || option.description
+  };
+}
+
+function workflowFormatOption(formatId: string): WorkflowFormatOption {
+  return WORKFLOW_FORMAT_OPTIONS.find((option) => option.format_id === formatId) || WORKFLOW_FORMAT_OPTIONS[0];
+}
+
+function workflowFormatOptionForType(type: string): WorkflowFormatOption {
+  return WORKFLOW_FORMAT_OPTIONS.find((option) => option.type === type) || WORKFLOW_FORMAT_OPTIONS[0];
+}
+
+function safePortId(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "output";
 }
 
 function fileExtensionForFormat(formatId: string): string {

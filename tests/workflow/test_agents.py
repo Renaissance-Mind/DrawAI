@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from drawai.workflow.agents import (
+    agent_preset_by_id,
+    custom_agent_preset,
     default_agent_provider_registry,
     render_agent_prompt,
     run0_agent_preset,
@@ -70,6 +72,52 @@ def test_svg_agent_prompt_uses_same_agent_contract() -> None:
     assert prompt.outputs[0]["format_id"] == "drawai.semantic_svg.v1"
     assert "nodes/asset_processors/runs/001/output/asset_packages.json" in prompt.text
     assert "output/semantic.svg" in prompt.text
+
+
+def test_custom_agent_prompt_uses_configured_output_formats() -> None:
+    preset = agent_preset_by_id("custom_agent")
+    assert preset == custom_agent_preset()
+
+    prompt = render_agent_prompt(
+        preset,
+        inputs=(
+            {
+                "path": "nodes/input/runs/latest/output/image.png",
+                "format_id": "drawai.image.v1",
+                "type": "image",
+                "source_node_id": "input",
+                "source_port_id": "image",
+                "description": "Original uploaded image.",
+            },
+            {
+                "path": "nodes/sam/runs/latest/output/candidates.json",
+                "format_id": "drawai.element_candidates.v1",
+                "type": "element_candidates",
+                "source_node_id": "sam",
+                "source_port_id": "candidates",
+                "description": "SAM candidate boxes.",
+            },
+        ),
+        node_config={
+            "outputs": [
+                {
+                    "port_id": "asset_packages",
+                    "path": "output/asset_packages.json",
+                    "format_id": "drawai.asset_packages.v1",
+                    "type": "asset_packages",
+                    "description": "Custom generated assets.",
+                }
+            ],
+            "prompt_fragments": "Use the image and candidates together.",
+        },
+    )
+
+    assert prompt.preset_id == "custom_agent"
+    assert prompt.outputs[0]["format_id"] == "drawai.asset_packages.v1"
+    assert "nodes/input/runs/latest/output/image.png" in prompt.text
+    assert "nodes/sam/runs/latest/output/candidates.json" in prompt.text
+    assert "output/asset_packages.json" in prompt.text
+    assert "Use the image and candidates together." in prompt.text
 
 
 def test_agent_prompt_can_exclude_inputs_and_override_descriptions() -> None:
