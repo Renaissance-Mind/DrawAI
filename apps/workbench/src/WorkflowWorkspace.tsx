@@ -1,4 +1,4 @@
-import { PointerEvent, WheelEvent, useEffect, useMemo, useRef, useState } from "react";
+import { PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   copyWorkflowTemplate,
@@ -267,6 +267,15 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
   useEffect(() => {
     saveWorkflowFolders(workflowFolders);
   }, [workflowFolders]);
+
+  useEffect(() => {
+    if (workflowView !== "canvas") return;
+    const viewportElement = viewportRef.current;
+    if (!viewportElement) return;
+    const handleWheel = (event: globalThis.WheelEvent) => handleCanvasWheel(event);
+    viewportElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewportElement.removeEventListener("wheel", handleWheel);
+  }, [workflowView, draft?.template_id]);
 
   async function loadWorkflowData(preferredTemplateId = selectedTemplateId) {
     try {
@@ -583,9 +592,14 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     if (canvasPan?.pointerId === event.pointerId) setCanvasPan(null);
   }
 
-  function handleCanvasWheel(event: WheelEvent<HTMLDivElement>) {
+  function handleCanvasWheel(event: globalThis.WheelEvent) {
     event.preventDefault();
-    setZoomAroundPoint(viewport.zoom * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+    const delta = normalizedWheelDelta(event);
+    if (event.ctrlKey || event.metaKey) {
+      zoomCanvasByFactor(Math.exp(-delta.y * 0.002), event.clientX, event.clientY);
+      return;
+    }
+    panCanvasByWheel(delta.x, delta.y);
   }
 
   function setZoomAroundPoint(nextZoomValue: number, clientX?: number, clientY?: number) {
@@ -603,6 +617,29 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
         zoom: nextZoom
       };
     });
+  }
+
+  function zoomCanvasByFactor(factor: number, clientX: number, clientY: number) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    setViewport((current) => {
+      const nextZoom = clamp(current.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+      if (!rect) return { ...current, zoom: nextZoom };
+      const canvasX = (clientX - rect.left - current.x) / current.zoom;
+      const canvasY = (clientY - rect.top - current.y) / current.zoom;
+      return {
+        x: Math.round(clientX - rect.left - canvasX * nextZoom),
+        y: Math.round(clientY - rect.top - canvasY * nextZoom),
+        zoom: nextZoom
+      };
+    });
+  }
+
+  function panCanvasByWheel(deltaX: number, deltaY: number) {
+    setViewport((current) => ({
+      ...current,
+      x: Math.round(current.x - deltaX),
+      y: Math.round(current.y - deltaY)
+    }));
   }
 
   function zoomCanvas(delta: number) {
@@ -1103,7 +1140,6 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
               setConnecting(null);
             }
           }}
-          onWheel={handleCanvasWheel}
         >
           <div
             ref={canvasRef}
@@ -1788,6 +1824,14 @@ function compatibleTypes(sourcePort: WorkflowPort, targetPort: WorkflowPort): st
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizedWheelDelta(event: globalThis.WheelEvent): { x: number; y: number } {
+  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1;
+  return {
+    x: event.deltaX * scale,
+    y: event.deltaY * scale
+  };
 }
 
 function workflowBounds(template: WorkflowTemplate): { x: number; y: number; width: number; height: number } {
