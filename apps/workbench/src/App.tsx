@@ -30,6 +30,7 @@ import {
 } from "./api";
 import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudio";
 import WorkflowWorkspace from "./WorkflowWorkspace";
+import { WorkflowNodeIcon } from "./workflowNodeIcons";
 import { listWorkflowTemplates } from "./workflowApi";
 import type {
   ArtifactRecord,
@@ -1569,7 +1570,9 @@ function DagRunPanel({
               style={{ left: `${view.x / 10}%`, top: `${view.y / 5.6}%` }}
               onClick={() => setSelectedNodeId(view.node.node_id)}
             >
-              <span className="dag-node-icon">{workflowRuntimeIcon(view.node)}</span>
+              <span className="dag-node-icon">
+                <WorkflowNodeIcon nodeType={view.node.node_type} />
+              </span>
               <strong>{view.node.title}</strong>
               <em>{stateLabel(view.state)}</em>
             </button>
@@ -2893,12 +2896,6 @@ function stageIsAfterOrEqual(currentStage: string, targetStage: string): boolean
   const target = canonicalPipelineStage(targetStage);
   if (!current || !target) return false;
   return PIPELINE_STAGE_ORDER.indexOf(current) >= PIPELINE_STAGE_ORDER.indexOf(target);
-}
-
-function workflowRuntimeIcon(node: WorkflowTemplate["nodes"][number]): string {
-  if (node.node_type === "human_review") return "H";
-  if (node.node_type === "fusion") return "M";
-  return (node.node_type[0] || "N").toUpperCase();
 }
 
 function TaskSelectionWorkspace({

@@ -109,6 +109,22 @@ button.running {
   animation: button-spin 780ms linear infinite;
 }
 
+.workflow-node-type-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dag-node-icon .workflow-node-type-icon {
+  width: 17px;
+  height: 17px;
+}
+
 @keyframes button-spin {
   to {
     transform: rotate(360deg);

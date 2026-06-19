@@ -17,6 +17,7 @@ import type {
   WorkflowTemplate,
   WorkflowValidationResult
 } from "./workflowTypes";
+import { WorkflowNodeIcon } from "./workflowNodeIcons";
 
 type DraggingNode = {
   nodeId: string;
@@ -1153,7 +1154,9 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                   onPointerCancel={endNodeDrag}
                 >
                   <div className="workflow-node-head">
-                    <span className="workflow-node-icon">{nodeIcon(node)}</span>
+                    <span className="workflow-node-icon">
+                      <WorkflowNodeIcon nodeType={node.node_type} />
+                    </span>
                     <div>
                       <em>{node.node_type}</em>
                       <strong>{node.title}</strong>
@@ -1231,7 +1234,9 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                       title={item.compatible ? item.preset.description : "当前输出没有兼容输入"}
                       onClick={() => addNodeFromPicker(item.preset)}
                     >
-                      <span>{item.preset.icon}</span>
+                      <span>
+                        <WorkflowNodeIcon nodeType={item.preset.node_type} />
+                      </span>
                       <strong>{item.preset.title}</strong>
                       <em>{item.group}</em>
                     </button>
@@ -1633,12 +1638,6 @@ function nodeOutputSummary(node: WorkflowNode): string {
   const formats = node.outputs.flatMap((item) => item.formats);
   if (formats.length > 0) return formats.join(" · ");
   return node.outputs.map((item) => item.types.join("/")).join(" · ") || "control";
-}
-
-function nodeIcon(node: WorkflowNode): string {
-  if (node.node_type === "human_review") return "H";
-  if (node.node_type === "fusion") return "M";
-  return (node.node_type[0] || "N").toUpperCase();
 }
 
 function PlusIcon() {
