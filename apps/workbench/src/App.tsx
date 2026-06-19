@@ -207,7 +207,7 @@ export default function App() {
   const [v2AssetLoadingElementId, setV2AssetLoadingElementId] = useState("");
   const [v2ActionPending, setV2ActionPending] = useState("");
   const [activeView, setActiveView] = useState<AppView>("board");
-  const [boardMode, setBoardMode] = useState<BoardMode>("process");
+  const [boardMode, setBoardMode] = useState<BoardMode>(() => initialBoardMode());
   const [submitOpen, setSubmitOpen] = useState(false);
   const [imageGenSettingsOpen, setImageGenSettingsOpen] = useState(false);
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
@@ -1170,6 +1170,7 @@ function BoardWorkspace({
         <TaskDetailPanel
           caseDetail={activeCase}
           progress={caseProgress}
+          workflowTemplateId={activeBatch?.batch.workflow_template_id || ""}
           runCompatibility={runCompatibility}
           runPackage={runPackage}
           v2Elements={v2Elements}
@@ -1183,6 +1184,7 @@ function BoardWorkspace({
           onProcessV2Asset={onProcessV2Asset}
           onSetActiveV2Result={onSetActiveV2Result}
           onForkV2FromSource={onForkV2FromSource}
+          onOpenCaseAssets={onOpenCaseAssets}
         />
       </div>
     </main>
@@ -1417,6 +1419,7 @@ function TaskDeleteDialog({
 function TaskDetailPanel({
   caseDetail,
   progress,
+  workflowTemplateId,
   runCompatibility,
   runPackage,
   v2Elements,
@@ -1429,10 +1432,12 @@ function TaskDetailPanel({
   onSelectV2Element,
   onProcessV2Asset,
   onSetActiveV2Result,
-  onForkV2FromSource
+  onForkV2FromSource,
+  onOpenCaseAssets
 }: {
   caseDetail: CaseDetail | null;
   progress: CaseProgress | null;
+  workflowTemplateId: string;
   runCompatibility: RunCompatibilityMode;
   runPackage: V2RunPackage | null;
   v2Elements: V2ElementPlan[];
@@ -1446,6 +1451,7 @@ function TaskDetailPanel({
   onProcessV2Asset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveV2Result: (resultId: string) => void;
   onForkV2FromSource: () => void;
+  onOpenCaseAssets: (caseId: string) => void;
 }) {
   if (!caseDetail) {
     return (
@@ -1456,7 +1462,12 @@ function TaskDetailPanel({
   }
   return (
     <aside className="task-detail-panel">
-      <PipelineProgressPanel caseDetail={caseDetail} progress={progress} />
+      <DagRunPanel
+        caseDetail={caseDetail}
+        progress={progress}
+        workflowTemplateId={workflowTemplateId}
+        onOpenAssetsReview={() => onOpenCaseAssets(caseDetail.case.case_id)}
+      />
       {runCompatibility === "legacy_readonly" && (
         <LegacyReadOnlyBanner
           canForkV2FromSource={canForkV2FromSource}
@@ -1467,6 +1478,138 @@ function TaskDetailPanel({
       {runCompatibility === "v2" && v2PackageError && <p className="detail-error">{shortenError(v2PackageError)}</p>}
       {caseDetail.case.error_message && <p className="detail-error">{shortenError(caseDetail.case.error_message)}</p>}
     </aside>
+  );
+}
+
+type DagNodeView = {
+  node: WorkflowTemplate["nodes"][number];
+  state: PipelineNodeState;
+  stage: string;
+  meta: string;
+  error: string;
+  x: number;
+  y: number;
+};
+
+function DagRunPanel({
+  caseDetail,
+  progress,
+  workflowTemplateId,
+  onOpenAssetsReview
+}: {
+  caseDetail: CaseDetail;
+  progress: CaseProgress | null;
+  workflowTemplateId: string;
+  onOpenAssetsReview: () => void;
+}) {
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [selectedNodeId, setSelectedNodeId] = useState("");
+
+  useEffect(() => {
+    let canceled = false;
+    listWorkflowTemplates()
+      .then((response) => {
+        if (canceled) return;
+        setTemplates(response.templates);
+        setLoadError("");
+      })
+      .catch((err) => {
+        if (canceled) return;
+        setLoadError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [workflowTemplateId]);
+
+  const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
+  const stageRuns = progress?.stage_runs || caseDetail.stage_runs;
+  const files = progress?.files || [];
+  const views = useMemo(() => buildDagNodeViews(template, caseDetail, stageRuns, files), [template, caseDetail, stageRuns, files]);
+  const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
+
+  useEffect(() => {
+    setSelectedNodeId("");
+  }, [caseDetail.case.case_id, workflowTemplateId]);
+
+  return (
+    <section className="dag-run-card">
+      <header className="dag-run-head">
+        <div>
+          <span>Workflow run</span>
+          <strong>{template?.name || workflowTemplateId || "Default DrawAI DAG"}</strong>
+        </div>
+        <em>{caseDetail.case.name}</em>
+      </header>
+      {loadError && <p className="detail-error">{shortenError(loadError)}</p>}
+      <div className="dag-run-body">
+        <div className="dag-run-canvas">
+          <svg className="dag-run-edges" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+            {template?.edges.map((edge) => {
+              const source = views.find((item) => item.node.node_id === edge.source_node_id);
+              const target = views.find((item) => item.node.node_id === edge.target_node_id);
+              if (!source || !target) return null;
+              const sourceState = source.state;
+              const edgeState = sourceState === "done" ? "done" : sourceState === "running" ? "running" : "waiting";
+              const startX = source.x + 108;
+              const startY = source.y + 34;
+              const endX = target.x;
+              const endY = target.y + 34;
+              const mid = Math.max(58, Math.abs(endX - startX) * 0.45);
+              const d = `M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`;
+              return <path key={edge.edge_id} className={edgeState} d={d} />;
+            })}
+          </svg>
+          {views.map((view) => (
+            <button
+              type="button"
+              key={view.node.node_id}
+              className={`dag-run-node ${view.state} node-${view.node.node_type} ${selectedView?.node.node_id === view.node.node_id ? "active" : ""}`}
+              style={{ left: `${view.x / 10}%`, top: `${view.y / 5.6}%` }}
+              onClick={() => setSelectedNodeId(view.node.node_id)}
+            >
+              <span className="dag-node-icon">{workflowRuntimeIcon(view.node)}</span>
+              <strong>{view.node.title}</strong>
+              <em>{stateLabel(view.state)}</em>
+            </button>
+          ))}
+        </div>
+        <aside className="dag-node-detail">
+          {selectedView ? (
+            <>
+              <div className="dag-node-detail-head">
+                <span>{selectedView.node.node_type}</span>
+                <strong>{selectedView.node.title}</strong>
+                <em className={selectedView.state}>{stateLabel(selectedView.state)}</em>
+              </div>
+              <dl>
+                <div><dt>Stage</dt><dd>{selectedView.stage ? humanize(selectedView.stage) : "Workflow node"}</dd></div>
+                <div><dt>Node ID</dt><dd>{selectedView.node.node_id}</dd></div>
+                <div><dt>Runtime</dt><dd>{selectedView.meta}</dd></div>
+                <div><dt>Inputs</dt><dd>{selectedView.node.inputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
+                <div><dt>Outputs</dt><dd>{selectedView.node.outputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
+              </dl>
+              {selectedView.error && <p className="detail-error">{shortenError(selectedView.error)}</p>}
+              <div className="dag-node-actions">
+                {selectedView.node.node_type === "human_review" && String(selectedView.node.config.review_surface || "assets") === "assets" && (
+                  <button type="button" className="primary" onClick={onOpenAssetsReview}>
+                    Open assets review
+                  </button>
+                )}
+                {selectedView.node.node_type === "output" && caseDetail.artifacts.length > 0 && (
+                  <a href={caseDetail.artifacts[0].url} target="_blank" rel="noreferrer">
+                    Open output
+                  </a>
+                )}
+              </div>
+            </>
+          ) : (
+            <EmptyState label="还没有 Workflow 节点" />
+          )}
+        </aside>
+      </div>
+    </section>
   );
 }
 
@@ -2627,6 +2770,135 @@ function PipelineNodeRow({
       {node.description && <div className="pipeline-node-tip" role="tooltip">{node.description}</div>}
     </div>
   );
+}
+
+function buildDagNodeViews(
+  template: WorkflowTemplate | null,
+  caseDetail: CaseDetail,
+  stageRuns: StageRunRecord[],
+  files: CaseProgress["files"]
+): DagNodeView[] {
+  if (!template) return [];
+  return template.nodes.map((node, index) => {
+    const layout = snakeDagLayout(index);
+    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, files, caseDetail.artifacts);
+    return {
+      node,
+      ...runtime,
+      x: layout.x,
+      y: layout.y
+    };
+  });
+}
+
+function snakeDagLayout(index: number): { x: number; y: number } {
+  const row = Math.floor(index / 3);
+  const rawCol = index % 3;
+  const col = row % 2 === 0 ? rawCol : 2 - rawCol;
+  return {
+    x: 64 + col * 330,
+    y: 52 + row * 104
+  };
+}
+
+function workflowNodeRuntimeState(
+  node: WorkflowTemplate["nodes"][number],
+  caseDetail: CaseDetail,
+  stageRuns: StageRunRecord[],
+  files: CaseProgress["files"],
+  artifacts: ArtifactRecord[]
+): Pick<DagNodeView, "state" | "stage" | "meta" | "error"> {
+  const stage = workflowStageForNode(node);
+  const current = caseDetail.case;
+  if (node.node_type === "human_review") {
+    if (current.status === "assets_review") {
+      return { stage, state: "review", meta: "等待人工确认", error: "" };
+    }
+    if (
+      current.status === "completed" ||
+      stageIsAfterOrEqual(current.stage, "compose_svg") ||
+      artifactOrFileReady(["approved_asset_plan", "semantic_svg", "pptx"], files, artifacts)
+    ) {
+      return { stage, state: "done", meta: "人工确认已完成或下游已解锁", error: "" };
+    }
+    if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "plan_assets")) {
+      return { stage, state: "failed", meta: "失败", error: current.error_message };
+    }
+    return { stage, state: "waiting", meta: "等待上游资产处理", error: "" };
+  }
+
+  if (node.node_type === "output") {
+    if (current.status === "completed" || artifactOrFileReady(["semantic_svg", "pptx", "pptx_export_report"], files, artifacts)) {
+      return { stage, state: "done", meta: "输出文件已准备", error: "" };
+    }
+    if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "export")) {
+      return { stage, state: "failed", meta: "失败", error: current.error_message };
+    }
+    return { stage, state: "waiting", meta: "等待 SVG / PPT 输出", error: "" };
+  }
+
+  if (!stage) {
+    return {
+      stage: "",
+      state: current.status === "completed" ? "done" : "waiting",
+      meta: node.description || "Workflow node",
+      error: ""
+    };
+  }
+
+  const view = pipelineNodeState(
+    {
+      stage,
+      title: node.title,
+      detail: node.node_type,
+      description: node.description
+    } as PipelineNodeSpec,
+    caseDetail,
+    stageRuns,
+    files,
+    artifacts
+  );
+  return {
+    stage,
+    state: view.state,
+    meta: view.meta,
+    error: view.error
+  };
+}
+
+function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
+  const configuredStage = typeof node.config.stage === "string" ? node.config.stage : "";
+  if (configuredStage) return configuredStage;
+  if (node.node_type === "input") return "prepare";
+  if (node.node_type === "parser") return "parse_elements";
+  if (node.node_type === "fusion") return "fuse_elements";
+  if (node.node_type === "human_review") return "asset_confirm";
+  if (node.node_type === "export") return "export";
+  if (node.node_type === "output") return "output";
+  if (node.node_type === "processor") {
+    const processorId = String(node.config.processor_id || "");
+    if (processorId === "asset_planner") return "plan_assets";
+    return "process_assets";
+  }
+  if (node.node_type === "agent") {
+    const presetId = String(node.config.preset_id || "");
+    if (presetId === "svg_generation") return "compose_svg";
+    return "refine_elements";
+  }
+  return "";
+}
+
+function stageIsAfterOrEqual(currentStage: string, targetStage: string): boolean {
+  const current = canonicalPipelineStage(currentStage);
+  const target = canonicalPipelineStage(targetStage);
+  if (!current || !target) return false;
+  return PIPELINE_STAGE_ORDER.indexOf(current) >= PIPELINE_STAGE_ORDER.indexOf(target);
+}
+
+function workflowRuntimeIcon(node: WorkflowTemplate["nodes"][number]): string {
+  if (node.node_type === "human_review") return "H";
+  if (node.node_type === "fusion") return "M";
+  return (node.node_type[0] || "N").toUpperCase();
 }
 
 function TaskSelectionWorkspace({
@@ -4772,6 +5044,13 @@ function stateLabel(state: PipelineNodeState): string {
     stale: "需更新"
   };
   return labels[state];
+}
+
+function initialBoardMode(): BoardMode {
+  if (typeof window === "undefined") return "process";
+  const value = new URLSearchParams(window.location.search).get("mode");
+  if (value === "generate" || value === "process" || value === "workflow") return value;
+  return "process";
 }
 
 function EmptyState({ label }: { label: string }) {

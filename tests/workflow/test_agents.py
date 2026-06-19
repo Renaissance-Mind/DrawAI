@@ -106,6 +106,36 @@ def test_agent_prompt_can_exclude_inputs_and_override_descriptions() -> None:
     assert "nodes/ocr_parser/runs/001/output/candidates.json" not in prompt.text
 
 
+def test_agent_prompt_uses_configured_outputs_and_task_prompt() -> None:
+    prompt = render_agent_prompt(
+        run0_agent_preset(),
+        inputs=(
+            {
+                "path": "nodes/merge/runs/001/output/elements.json",
+                "format_id": "drawai.element_plans.v1",
+                "type": "element_plans",
+                "description": "Merged boxes.",
+            },
+        ),
+        node_config={
+            "outputs": [
+                {
+                    "port_id": "elements",
+                    "path": "output/refined_elements.json",
+                    "format_id": "drawai.element_plans.v1",
+                    "type": "element_plans",
+                    "description": "UI-configured refined element plan file.",
+                }
+            ],
+            "prompt_fragments": "Use the source image as visual truth and return JSON only.",
+        },
+    )
+
+    assert "output/refined_elements.json" in prompt.text
+    assert "UI-configured refined element plan file." in prompt.text
+    assert "Use the source image as visual truth and return JSON only." in prompt.text
+
+
 def test_agent_config_rejects_arbitrary_command_override() -> None:
     with pytest.raises(ValueError, match="shell_command"):
         render_agent_prompt(

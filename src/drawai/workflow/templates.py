@@ -142,6 +142,31 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 position={"x": 1280, "y": 160},
             ),
             WorkflowNode(
+                node_id="asset_confirm",
+                node_type="human_review",
+                title="Asset Confirm",
+                inputs=(
+                    _input(
+                        "asset_packages",
+                        "Asset Packages",
+                        ("asset_packages",),
+                    ),
+                ),
+                outputs=(
+                    _output(
+                        "asset_packages",
+                        "Confirmed Asset Packages",
+                        ("asset_packages",),
+                        formats=("drawai.asset_packages.v1",),
+                    ),
+                ),
+                config={
+                    "review_surface": "assets",
+                    "result_path": "output/confirmed_asset_packages.json",
+                },
+                position={"x": 1540, "y": 80},
+            ),
+            WorkflowNode(
                 node_id="svg_agent",
                 node_type="agent",
                 title="SVG Agent",
@@ -163,7 +188,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     "provider_id": "codex_sdk",
                     "prompt_role": "Generate editable semantic SVG from element plans and asset packages.",
                 },
-                position={"x": 1540, "y": 160},
+                position={"x": 1540, "y": 260},
             ),
             WorkflowNode(
                 node_id="svg_to_ppt",
@@ -180,7 +205,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"exporter_id": "svg_to_ppt"},
-                position={"x": 1800, "y": 240},
+                position={"x": 1800, "y": 260},
             ),
             WorkflowNode(
                 node_id="output",
@@ -203,7 +228,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"auto_collect_deliverables": True},
-                position={"x": 2060, "y": 160},
+                position={"x": 2060, "y": 180},
             ),
         ),
         edges=(
@@ -215,7 +240,8 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
             _edge("run0_agent", "elements", "asset_planner", "elements"),
             _edge("asset_planner", "elements", "asset_processors", "elements"),
             _edge("asset_planner", "elements", "svg_agent", "elements"),
-            _edge("asset_processors", "asset_packages", "svg_agent", "asset_packages"),
+            _edge("asset_processors", "asset_packages", "asset_confirm", "asset_packages"),
+            _edge("asset_confirm", "asset_packages", "svg_agent", "asset_packages"),
             _edge("svg_agent", "semantic_svg", "svg_to_ppt", "semantic_svg"),
             _edge("svg_agent", "semantic_svg", "output", "deliverables"),
             _edge("svg_to_ppt", "pptx", "output", "deliverables"),

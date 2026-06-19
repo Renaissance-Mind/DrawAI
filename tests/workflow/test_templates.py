@@ -40,10 +40,25 @@ def test_default_template_contains_current_v2_nodes() -> None:
         "run0_agent",
         "asset_planner",
         "asset_processors",
+        "asset_confirm",
         "svg_agent",
         "svg_to_ppt",
         "output",
     }.issubset(node_ids)
+
+
+def test_default_template_routes_assets_through_human_review_node() -> None:
+    template = default_drawai_workflow_template()
+    nodes = {node.node_id: node for node in template.nodes}
+    edges = {
+        (edge.source_node_id, edge.source_port_id, edge.target_node_id, edge.target_port_id)
+        for edge in template.edges
+    }
+
+    assert nodes["asset_confirm"].node_type == "human_review"
+    assert nodes["asset_confirm"].config["review_surface"] == "assets"
+    assert ("asset_processors", "asset_packages", "asset_confirm", "asset_packages") in edges
+    assert ("asset_confirm", "asset_packages", "svg_agent", "asset_packages") in edges
 
 
 def test_run0_and_svg_are_agent_node_presets() -> None:

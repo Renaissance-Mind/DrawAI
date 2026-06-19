@@ -758,7 +758,7 @@ select:focus {
 .board-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(312px, 336px);
+  grid-template-columns: minmax(520px, 0.9fr) minmax(560px, 1.1fr);
   gap: 0;
   border-radius: 0;
   box-shadow: none;
@@ -2190,6 +2190,313 @@ select:focus {
   transform: translateY(0);
 }
 
+.dag-run-card {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.dag-run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.dag-run-head div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dag-run-head span,
+.dag-node-detail-head span,
+.dag-node-detail dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.dag-run-head strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.dag-run-head em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.dag-run-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(340px, 1fr) auto;
+  gap: 12px;
+}
+
+.dag-run-canvas {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(rgba(18, 32, 24, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 32, 24, 0.045) 1px, transparent 1px),
+    #ffffff;
+  background-size: 26px 26px;
+}
+
+.dag-run-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.dag-run-edges path {
+  fill: none;
+  stroke: rgba(100, 116, 139, 0.5);
+  stroke-width: 2.2;
+}
+
+.dag-run-edges path.done {
+  stroke: var(--teal);
+  stroke-width: 2.8;
+}
+
+.dag-run-edges path.running {
+  stroke: var(--blue);
+  stroke-dasharray: 8 6;
+}
+
+.dag-run-node {
+  position: absolute;
+  width: 124px;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+  border: 2px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+  color: var(--ink);
+  padding: 9px;
+  text-align: left;
+}
+
+.dag-run-node .dag-node-icon {
+  grid-row: 1 / 3;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: #64748b;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dag-run-node strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.dag-run-node em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dag-run-node.done {
+  border-color: var(--teal);
+}
+
+.dag-run-node.running {
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, var(--blue) 50%, transparent 0) repeat-x,
+    linear-gradient(90deg, var(--blue) 50%, transparent 0) repeat-x,
+    linear-gradient(0deg, var(--blue) 50%, transparent 0) repeat-y,
+    linear-gradient(0deg, var(--blue) 50%, transparent 0) repeat-y,
+    #ffffff;
+  background-size: 18px 2px, 18px 2px, 2px 18px, 2px 18px, auto;
+  background-position: 0 0, 0 100%, 0 0, 100% 0, 0 0;
+  animation: dag-running-border 900ms linear infinite;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1), var(--shadow-soft);
+}
+
+.dag-run-node.review {
+  border-color: var(--amber);
+  background: #fff8ec;
+}
+
+.dag-run-node.failed {
+  border-color: var(--danger);
+  background: #fff7f6;
+}
+
+.dag-run-node.stale {
+  border-color: #7c3aed;
+}
+
+.dag-run-node.waiting {
+  border-style: dashed;
+  opacity: 0.78;
+}
+
+.dag-run-node.active {
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1), var(--shadow-soft);
+}
+
+.dag-run-node.node-parser .dag-node-icon {
+  background: var(--blue);
+}
+
+.dag-run-node.node-agent .dag-node-icon {
+  background: var(--teal);
+}
+
+.dag-run-node.node-human_review .dag-node-icon {
+  background: #7c3aed;
+}
+
+.dag-run-node.node-processor .dag-node-icon {
+  background: var(--amber);
+}
+
+.dag-run-node.node-export .dag-node-icon,
+.dag-run-node.node-output .dag-node-icon {
+  background: #6d5bd0;
+}
+
+.dag-run-node.node-fusion .dag-node-icon {
+  background: #0f766e;
+}
+
+.dag-node-detail {
+  min-height: 190px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.dag-node-detail-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.dag-node-detail-head span {
+  grid-column: 1 / -1;
+}
+
+.dag-node-detail-head strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.dag-node-detail-head em {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dag-node-detail-head em.done {
+  border-color: rgba(8, 120, 79, 0.28);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.dag-node-detail-head em.running {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--blue);
+}
+
+.dag-node-detail-head em.review {
+  border-color: rgba(197, 106, 8, 0.24);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber);
+}
+
+.dag-node-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 12px 0 0;
+}
+
+.dag-node-detail dl div {
+  min-width: 0;
+  border-top: 1px solid rgba(18, 32, 24, 0.08);
+  padding-top: 8px;
+}
+
+.dag-node-detail dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.dag-node-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.dag-node-actions button,
+.dag-node-actions a {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.dag-node-actions .primary {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pipeline-card {
     animation: none;
@@ -2197,6 +2504,10 @@ select:focus {
 
   .pipeline-node-tip {
     transition: none;
+  }
+
+  .dag-run-node.running {
+    animation: none;
   }
 }
 
@@ -2218,6 +2529,12 @@ select:focus {
   }
   50% {
     transform: scale(1.14);
+  }
+}
+
+@keyframes dag-running-border {
+  to {
+    background-position: 36px 0, -36px 100%, 0 -36px, 100% 36px, 0 0;
   }
 }
 
