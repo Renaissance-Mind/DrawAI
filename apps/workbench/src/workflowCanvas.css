@@ -1901,8 +1901,55 @@
 
 .workflow-template-preview {
   position: relative;
-  width: min(76%, 210px);
+  width: min(86%, 236px);
   aspect-ratio: 16 / 9;
+}
+
+.workflow-template-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.workflow-template-preview path {
+  fill: none;
+  stroke: rgba(100, 116, 139, 0.3);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workflow-template-preview rect {
+  fill: #2563eb;
+  stroke: rgba(15, 23, 42, 0.08);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 5px 8px rgba(15, 23, 42, 0.08));
+}
+
+.workflow-template-preview rect.node-agent {
+  fill: var(--teal);
+}
+
+.workflow-template-preview rect.node-processor {
+  fill: var(--amber);
+}
+
+.workflow-template-preview rect.node-output,
+.workflow-template-preview rect.node-export {
+  fill: #6d5bd0;
+}
+
+.workflow-template-preview rect.node-human_review {
+  fill: #7c3aed;
+}
+
+.workflow-template-preview rect.node-fusion {
+  fill: #0f766e;
+}
+
+.workflow-template-preview rect.node-input {
+  fill: #111827;
 }
 
 .workflow-template-preview span {

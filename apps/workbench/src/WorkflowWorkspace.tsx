@@ -15,6 +15,7 @@ import type {
   WorkflowTemplate,
   WorkflowValidationResult
 } from "./workflowTypes";
+import { buildWorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
 
 type DraggingNode = {
@@ -2585,22 +2586,33 @@ function PlusIcon() {
 }
 
 function WorkflowTemplatePreview({ template }: { template: WorkflowTemplate }) {
-  const nodes = template.nodes.slice(0, 8);
+  const layout = buildWorkflowPreviewLayout(template, {
+    nodeWidth: 128,
+    nodeHeight: 50,
+    columnGap: 46,
+    rowGap: 66,
+    nodeGap: 18,
+    paddingX: 18,
+    paddingY: 16
+  });
   return (
     <div className="workflow-template-preview" aria-hidden="true">
-      {nodes.map((node, index) => (
-        <span
-          key={node.node_id}
-          className={`node-${node.node_type}`}
-          style={{
-            left: `${8 + (index % 4) * 22}%`,
-            top: `${18 + Math.floor(index / 4) * 34}%`
-          }}
-        />
-      ))}
-      <i />
-      <i />
-      <i />
+      <svg viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet">
+        {layout.edges.map((edgeLayout) => (
+          <path key={edgeLayout.edge.edge_id} d={edgeLayout.d} />
+        ))}
+        {layout.nodes.map((nodeLayout) => (
+          <rect
+            key={nodeLayout.node.node_id}
+            className={`node-${nodeLayout.node.node_type}`}
+            x={nodeLayout.x}
+            y={nodeLayout.y}
+            width={nodeLayout.width}
+            height={nodeLayout.height}
+            rx="8"
+          />
+        ))}
+      </svg>
     </div>
   );
 }

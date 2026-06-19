@@ -30,6 +30,7 @@ import {
 } from "./api";
 import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudio";
 import WorkflowWorkspace from "./WorkflowWorkspace";
+import { buildWorkflowPreviewLayout, type WorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
 import { listWorkflowTemplates } from "./workflowApi";
 import type {
@@ -1490,6 +1491,8 @@ type DagNodeView = {
   error: string;
   x: number;
   y: number;
+  width: number;
+  height: number;
 };
 
 function DagRunPanel({
@@ -1525,10 +1528,13 @@ function DagRunPanel({
   }, [workflowTemplateId]);
 
   const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
-  const stageRuns = progress?.stage_runs || caseDetail.stage_runs;
+  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
   const files = progress?.files || [];
-  const views = useMemo(() => buildDagNodeViews(template, caseDetail, stageRuns, files), [template, caseDetail, stageRuns, files]);
+  const layout = useMemo(() => (template ? buildWorkflowPreviewLayout(template) : null), [template]);
+  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, files), [template, layout, caseDetail, stageRuns, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
+  const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
+  const markerId = `dag-run-arrow-${caseDetail.case.case_id.replace(/[^a-z0-9_-]/gi, "")}`;
 
   useEffect(() => {
     setSelectedNodeId("");
@@ -1546,37 +1552,45 @@ function DagRunPanel({
       {loadError && <p className="detail-error">{shortenError(loadError)}</p>}
       <div className="dag-run-body">
         <div className="dag-run-canvas">
-          <svg className="dag-run-edges" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
-            {template?.edges.map((edge) => {
-              const source = views.find((item) => item.node.node_id === edge.source_node_id);
-              const target = views.find((item) => item.node.node_id === edge.target_node_id);
-              if (!source || !target) return null;
-              const sourceState = source.state;
-              const edgeState = sourceState === "done" ? "done" : sourceState === "running" ? "running" : "waiting";
-              const startX = source.x + 108;
-              const startY = source.y + 34;
-              const endX = target.x;
-              const endY = target.y + 34;
-              const mid = Math.max(58, Math.abs(endX - startX) * 0.45);
-              const d = `M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`;
-              return <path key={edge.edge_id} className={edgeState} d={d} />;
-            })}
-          </svg>
-          {views.map((view) => (
-            <button
-              type="button"
-              key={view.node.node_id}
-              className={`dag-run-node ${view.state} node-${view.node.node_type} ${selectedView?.node.node_id === view.node.node_id ? "active" : ""}`}
-              style={{ left: `${view.x / 10}%`, top: `${view.y / 5.6}%` }}
-              onClick={() => setSelectedNodeId(view.node.node_id)}
-            >
-              <span className="dag-node-icon">
-                <WorkflowNodeIcon nodeType={view.node.node_type} />
-              </span>
-              <strong>{view.node.title}</strong>
-              <em>{stateLabel(view.state)}</em>
-            </button>
-          ))}
+          {layout ? (
+            <>
+              <svg className="dag-run-edges" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <marker id={markerId} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M 0 0 L 8 4 L 0 8 z" />
+                  </marker>
+                </defs>
+                {layout.edges.map((edgeLayout) => {
+                  const source = viewByNodeId.get(edgeLayout.edge.source_node_id);
+                  const sourceState = source?.state || "waiting";
+                  const edgeState = sourceState === "done" ? "done" : sourceState === "running" ? "running" : "waiting";
+                  return <path key={edgeLayout.edge.edge_id} className={edgeState} d={edgeLayout.d} markerEnd={`url(#${markerId})`} />;
+                })}
+              </svg>
+              {views.map((view) => (
+                <button
+                  type="button"
+                  key={view.node.node_id}
+                  className={`dag-run-node ${view.state} node-${view.node.node_type} ${selectedView?.node.node_id === view.node.node_id ? "active" : ""}`}
+                  style={{
+                    left: `${toPercent(view.x, layout.width)}%`,
+                    top: `${toPercent(view.y, layout.height)}%`,
+                    width: `${toPercent(view.width, layout.width)}%`,
+                    height: `${toPercent(view.height, layout.height)}%`
+                  }}
+                  onClick={() => setSelectedNodeId(view.node.node_id)}
+                >
+                  <span className="dag-node-icon">
+                    <WorkflowNodeIcon nodeType={view.node.node_type} />
+                  </span>
+                  <strong>{view.node.title}</strong>
+                  <em>{stateLabel(view.state)}</em>
+                </button>
+              ))}
+            </>
+          ) : (
+            <EmptyState label="还没有 Workflow 节点" />
+          )}
         </div>
         <aside className="dag-node-detail">
           {selectedView ? (
@@ -2733,7 +2747,7 @@ function SvgResultStudio({
 }
 
 function PipelineProgressPanel({ caseDetail, progress }: { caseDetail: CaseDetail; progress: CaseProgress | null }) {
-  const stageRuns = progress?.stage_runs || caseDetail.stage_runs;
+  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
   const files = progress?.files || [];
   return (
     <section className="pipeline-card">
@@ -2777,31 +2791,30 @@ function PipelineNodeRow({
 
 function buildDagNodeViews(
   template: WorkflowTemplate | null,
+  layout: WorkflowPreviewLayout | null,
   caseDetail: CaseDetail,
   stageRuns: StageRunRecord[],
   files: CaseProgress["files"]
 ): DagNodeView[] {
-  if (!template) return [];
-  return template.nodes.map((node, index) => {
-    const layout = snakeDagLayout(index);
+  if (!template || !layout) return [];
+  const layoutByNodeId = new Map(layout.nodes.map((nodeLayout) => [nodeLayout.node.node_id, nodeLayout]));
+  return template.nodes.map((node) => {
+    const nodeLayout = layoutByNodeId.get(node.node_id);
     const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, files, caseDetail.artifacts);
     return {
       node,
       ...runtime,
-      x: layout.x,
-      y: layout.y
+      x: nodeLayout?.x || 0,
+      y: nodeLayout?.y || 0,
+      width: nodeLayout?.width || 138,
+      height: nodeLayout?.height || 62
     };
   });
 }
 
-function snakeDagLayout(index: number): { x: number; y: number } {
-  const row = Math.floor(index / 3);
-  const rawCol = index % 3;
-  const col = row % 2 === 0 ? rawCol : 2 - rawCol;
-  return {
-    x: 64 + col * 330,
-    y: 52 + row * 104
-  };
+function toPercent(value: number, total: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0;
+  return (value / total) * 100;
 }
 
 function workflowNodeRuntimeState(
@@ -4743,7 +4756,7 @@ function ButtonSpinner() {
 
 function ProgressView({ progress, caseDetail }: { progress: CaseProgress | null; caseDetail: CaseDetail | null }) {
   if (!caseDetail) return <EmptyState label="请选择一张图" />;
-  const stageRuns = progress?.stage_runs || caseDetail.stage_runs;
+  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
   const running = latestStageRun(stageRuns, (stage) => stage.status === "running");
   const semanticFile = latestProgressFile(progress, "semantic_svg");
   const hasSvgOk = stageRuns.some((stage) => stageMatchesNode(stage.stage_name, "compose_svg") && stage.status === "ok");
@@ -5817,7 +5830,7 @@ function caseCanOpenCanvas(detail: CaseDetail | null, progress: CaseProgress | n
 
 function isCaseActivelyRunning(detail: CaseDetail | null, progress: CaseProgress | null): boolean {
   const status = progress?.case.status || detail?.case.status || "";
-  return status === "queued" || status === "analysis_running" || status === "svg_running" || (progress?.stage_runs || detail?.stage_runs || []).some((stage) => stage.status === "running");
+  return status === "queued" || status === "analysis_running" || status === "svg_running" || stageRunList(progress?.stage_runs || detail?.stage_runs || []).some((stage) => stage.status === "running");
 }
 
 function retryStageForCase(item: Pick<CaseRecord, "phase" | "stage" | "stale_from_stage">): WorkbenchRerunStage {
@@ -5832,7 +5845,11 @@ function latestProgressFile(progress: CaseProgress | null, label: string) {
 }
 
 function latestStageRun(stageRuns: StageRunRecord[], predicate: (stage: StageRunRecord) => boolean = () => true): StageRunRecord | null {
-  return stageRuns.slice().reverse().find(predicate) || null;
+  return stageRunList(stageRuns).slice().reverse().find(predicate) || null;
+}
+
+function stageRunList(stageRuns: unknown): StageRunRecord[] {
+  return Array.isArray(stageRuns) ? stageRuns : [];
 }
 
 function isEditorSourceStrategy(strategy: SourceStrategy): strategy is EditorSourceStrategy {

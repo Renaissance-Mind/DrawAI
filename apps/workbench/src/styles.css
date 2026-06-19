@@ -2255,13 +2255,13 @@ select:focus {
 .dag-run-body {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(340px, 1fr) auto;
+  grid-template-rows: minmax(360px, 1fr) auto;
   gap: 12px;
 }
 
 .dag-run-canvas {
   position: relative;
-  min-height: 390px;
+  min-height: 420px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -2283,12 +2283,18 @@ select:focus {
 .dag-run-edges path {
   fill: none;
   stroke: rgba(100, 116, 139, 0.5);
-  stroke-width: 2.2;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dag-run-edges marker path {
+  fill: rgba(100, 116, 139, 0.78);
 }
 
 .dag-run-edges path.done {
   stroke: var(--teal);
-  stroke-width: 2.8;
+  stroke-width: 3;
 }
 
 .dag-run-edges path.running {
@@ -2298,28 +2304,29 @@ select:focus {
 
 .dag-run-node {
   position: absolute;
-  width: 124px;
-  min-height: 70px;
+  z-index: 2;
+  min-height: 54px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 25px minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-content: center;
   align-items: center;
-  column-gap: 8px;
+  column-gap: 7px;
   row-gap: 3px;
   border: 2px solid var(--line-strong);
   border-radius: 6px;
   background: #fff;
   box-shadow: var(--shadow-soft);
   color: var(--ink);
-  padding: 9px;
+  padding: 8px;
   text-align: left;
+  cursor: pointer;
 }
 
 .dag-run-node .dag-node-icon {
   grid-row: 1 / 3;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   background: #64748b;
@@ -2329,14 +2336,19 @@ select:focus {
 }
 
 .dag-run-node strong {
-  overflow-wrap: anywhere;
-  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 720;
   line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dag-run-node em {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-style: normal;
   font-weight: 700;
   text-transform: uppercase;
