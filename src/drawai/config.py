@@ -126,6 +126,36 @@ class AgentCliConfig:
 
 
 @dataclass(frozen=True)
+class ApiProviderConfig:
+    mode: str = "auth"
+    base_url: str = ""
+    api_key: str = ""
+    api_key_env: str = ""
+    wire_api: str = "responses"
+    model_provider: str = "drawai-relay"
+    env_key: str = "OPENAI_API_KEY"
+    requires_openai_auth: bool = False
+
+    def to_runtime_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"mode": self.mode}
+        if self.mode == "thirdparty":
+            result.update(
+                {
+                    "base_url": self.base_url,
+                    "wire_api": self.wire_api,
+                    "model_provider": self.model_provider,
+                    "env_key": self.env_key,
+                    "requires_openai_auth": self.requires_openai_auth,
+                }
+            )
+            if self.api_key:
+                result["api_key"] = self.api_key
+            if self.api_key_env:
+                result["api_key_env"] = self.api_key_env
+        return result
+
+
+@dataclass(frozen=True)
 class ModelRuntimeConfig:
     provider: str = "codex-python-sdk"
     connection_id: str = "codex-python-sdk-controlled"
@@ -140,6 +170,7 @@ class ModelRuntimeConfig:
     max_concurrent: int = 20
     max_critic_rounds: int = 3
     cli: AgentCliConfig = AgentCliConfig()
+    api_provider: ApiProviderConfig = ApiProviderConfig()
 
     def to_runtime_dict(self) -> dict[str, Any]:
         return {
@@ -156,6 +187,7 @@ class ModelRuntimeConfig:
             "max_concurrent": self.max_concurrent,
             "max_critic_rounds": self.max_critic_rounds,
             "cli": self.cli.to_runtime_dict(),
+            "api_provider": self.api_provider.to_runtime_dict(),
         }
 
 
@@ -468,6 +500,8 @@ def _parse_model_runtime_config(raw: Any) -> ModelRuntimeConfig:
         raise ValueError("model_runtime.acp_command has been removed; use model_runtime.cli.command")
     if "kimi_command" in data:
         raise ValueError("model_runtime.kimi_command has been removed; use model_runtime.cli.command")
+    if "codex" in data:
+        raise ValueError("model_runtime.codex is no longer supported; use model_runtime.api_provider")
     return ModelRuntimeConfig(
         provider=_as_non_empty_str(
             data.get("provider", ModelRuntimeConfig.provider),
@@ -509,6 +543,32 @@ def _parse_model_runtime_config(raw: Any) -> ModelRuntimeConfig:
             "model_runtime.max_critic_rounds",
         ),
         cli=_parse_agent_cli_config(data.get("cli")),
+        api_provider=_parse_api_provider_config(data.get("api_provider")),
+    )
+
+
+def _parse_api_provider_config(raw: Any, field_name: str = "model_runtime.api_provider") -> ApiProviderConfig:
+    if raw is None:
+        return ApiProviderConfig()
+    data = _require_mapping(raw, field_name)
+    mode = _as_non_empty_str(data.get("mode", ApiProviderConfig.mode), f"{field_name}.mode").strip().lower()
+    thirdparty_field = f"{field_name}.thirdparty"
+    thirdparty = _optional_mapping(data.get("thirdparty"), thirdparty_field) or {}
+    return ApiProviderConfig(
+        mode=mode,
+        base_url=_as_str(thirdparty.get("base_url", ApiProviderConfig.base_url), f"{thirdparty_field}.base_url"),
+        api_key=_as_str(thirdparty.get("api_key", ApiProviderConfig.api_key), f"{thirdparty_field}.api_key"),
+        api_key_env=_as_str(thirdparty.get("api_key_env", ApiProviderConfig.api_key_env), f"{thirdparty_field}.api_key_env"),
+        wire_api=_as_str(thirdparty.get("wire_api", ApiProviderConfig.wire_api), f"{thirdparty_field}.wire_api"),
+        model_provider=_as_non_empty_str(
+            thirdparty.get("model_provider", ApiProviderConfig.model_provider),
+            f"{thirdparty_field}.model_provider",
+        ),
+        env_key=_as_non_empty_str(thirdparty.get("env_key", ApiProviderConfig.env_key), f"{thirdparty_field}.env_key"),
+        requires_openai_auth=_as_bool(
+            thirdparty.get("requires_openai_auth", ApiProviderConfig.requires_openai_auth),
+            f"{thirdparty_field}.requires_openai_auth",
+        ),
     )
 
 
@@ -639,12 +699,25 @@ def _validate_config(cfg: DrawAiPipelineConfig, validate_input_exists: bool) -> 
             f"model_runtime.reasoning_effort={cfg.model_runtime.reasoning_effort!r} is unsupported. "
             f"Expected one of: {supported}"
         )
+    if cfg.model_runtime.api_provider.mode not in {"auth", "thirdparty"}:
+        raise ValueError("model_runtime.api_provider.mode must be auth or thirdparty")
+    if cfg.model_runtime.api_provider.mode == "thirdparty":
+        if not cfg.model_runtime.api_provider.base_url.strip():
+            raise ValueError("model_runtime.api_provider.thirdparty.base_url is required when mode is thirdparty")
+        if not cfg.model_runtime.api_provider.api_key and not cfg.model_runtime.api_provider.api_key_env:
+            raise ValueError("model_runtime.api_provider.thirdparty.api_key or api_key_env is required when mode is thirdparty")
 
 
 def _require_mapping(raw: Any, field_name: str) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"{field_name} must be a mapping")
     return raw
+
+
+def _optional_mapping(raw: Any, field_name: str) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    return _require_mapping(raw, field_name)
 
 
 def _require_value(data: dict[str, Any], key: str) -> Any:

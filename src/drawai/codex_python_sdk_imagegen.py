@@ -183,13 +183,14 @@ def _invoke_codex_python_sdk_image_tool(
     with _imagegen_run_cwd(isolated_cwd) as run_cwd:
         with _isolated_codex_home(run_cwd) as prepared_codex_home:
             overrides = controlled_codex_config_overrides(
-                ("features.image_generation=true", *(config_overrides or ()))
+                ("features.image_generation=true", *(config_overrides or ())),
+                runtime_config=runtime_settings,
             )
             with sdk.Codex(
                 sdk.CodexConfig(
                     cwd=str(run_cwd),
                     config_overrides=overrides,
-                    env=_codex_sdk_env(prepared_codex_home.codex_home),
+                    env=_codex_sdk_env(prepared_codex_home.codex_home, runtime_config=runtime_settings),
                 )
             ) as codex:
                 capabilities = _read_model_provider_capabilities(codex)

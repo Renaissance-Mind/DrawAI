@@ -35,6 +35,7 @@ from drawai.codex_python_sdk_svg import (  # noqa: E402
     controlled_codex_config_overrides,
 )
 from drawai.codex_cli import resolve_codex_executable  # noqa: E402
+from drawai.config import load_drawai_config  # noqa: E402
 from drawai.asset_geometry import geometry_crop, normalize_asset_geometry  # noqa: E402
 from drawai.agent_cli_svg import invoke_agent_cli_text  # noqa: E402
 
@@ -125,6 +126,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
     output_dir = case_dir / "reports" / "element_analysis_codex"
     output_path = output_dir / "element_analysis.json"
+    runtime_config = _load_case_runtime_config(case_dir)
     started_at = time.monotonic()
     if args.skip_existing and output_path.exists():
         return {
@@ -175,6 +177,7 @@ def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
             reasoning_effort=args.reasoning_effort,
             timeout_seconds=args.timeout_seconds,
             config_overrides=args.config_override,
+            runtime_config=runtime_config,
         )
     elif args.invoker == "agent_cli":
         codex_result = invoke_agent_cli_element_analysis(
@@ -199,6 +202,7 @@ def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
             reasoning_effort=args.reasoning_effort,
             timeout_seconds=args.timeout_seconds,
             config_overrides=args.config_override,
+            runtime_config=runtime_config,
         )
     analysis = enrich_analysis_with_source_geometry(case_dir, read_json(output_path))
     write_json(output_path, analysis)
@@ -227,6 +231,17 @@ def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
         "elapsed_seconds": elapsed_seconds,
         "category_counts": validation["category_counts"],
     }
+
+
+def _load_case_runtime_config(case_dir: Path) -> dict[str, Any]:
+    config_path = case_dir / "drawai.config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        cfg = load_drawai_config(config_path, validate_input_exists=False)
+    except Exception:
+        return {}
+    return cfg.model_runtime.to_runtime_dict()
 
 
 def build_request(case_dir: Path, output_dir: Path) -> dict[str, Any]:
@@ -729,6 +744,7 @@ def invoke_codex_element_analysis_cli(
     reasoning_effort: str,
     timeout_seconds: float,
     config_overrides: Sequence[str],
+    runtime_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     codex_bin = resolve_codex_executable()
     if codex_bin is None:
@@ -761,18 +777,14 @@ def invoke_codex_element_analysis_cli(
             "-o",
             str(last_message_path),
             *image_cli_args(image_paths),
-            *cli_config_args(normalized_effort, config_overrides),
+            *cli_config_args(normalized_effort, config_overrides, runtime_config=runtime_config),
         ]
         if normalized_model is not None:
             command.extend(["-m", normalized_model])
         command.append("-")
         env = os.environ.copy()
-        env.update(
-            {
-                "CODEX_HOME": str(prepared_codex_home.codex_home),
-                "HOME": str(prepared_codex_home.codex_home),
-            }
-        )
+        env.update(_codex_sdk_env(prepared_codex_home.codex_home, runtime_config=runtime_config))
+        env["HOME"] = str(prepared_codex_home.codex_home)
         for key in ("DRAWAI_HOST_HOME", "DRAWAI_HOST_CODEX_HOME"):
             env.pop(key, None)
         with events_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
@@ -840,9 +852,15 @@ def image_cli_args(image_paths: Sequence[Path]) -> list[str]:
     return args
 
 
-def cli_config_args(reasoning_effort: str, extra_overrides: Sequence[str]) -> list[str]:
+def cli_config_args(
+    reasoning_effort: str,
+    extra_overrides: Sequence[str],
+    *,
+    runtime_config: Mapping[str, Any] | None = None,
+) -> list[str]:
     overrides = controlled_codex_config_overrides(
-        [f'model_reasoning_effort="{reasoning_effort}"', *[str(item) for item in extra_overrides]]
+        [f'model_reasoning_effort="{reasoning_effort}"', *[str(item) for item in extra_overrides]],
+        runtime_config=runtime_config,
     )
     args: list[str] = []
     for override in overrides:
@@ -907,6 +925,7 @@ def invoke_codex_element_analysis_sdk(
     reasoning_effort: str,
     timeout_seconds: float,
     config_overrides: Sequence[str],
+    runtime_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     sdk = _load_openai_codex_sdk()
     normalized_model = _normalize_codex_model_name(model_name)
@@ -919,8 +938,10 @@ def invoke_codex_element_analysis_sdk(
         with sdk.Codex(
             sdk.CodexConfig(
                 cwd=str(case_dir),
-                config_overrides=controlled_codex_config_overrides(config_overrides),
-                env=_codex_sdk_env(prepared_codex_home.codex_home),
+                config_overrides=controlled_codex_config_overrides(
+                    config_overrides, runtime_config=runtime_config
+                ),
+                env=_codex_sdk_env(prepared_codex_home.codex_home, runtime_config=runtime_config),
             )
         ) as codex:
             thread = codex.thread_start(

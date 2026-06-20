@@ -116,7 +116,7 @@ def create_app(
             raise HTTPException(status_code=400, detail="image generation payload must be an object")
         normalized = _normalize_image_generation_payload(payload)
         if _image_generation_provider(payload) == "codex":
-            return _call_codex_image_generation(normalized, store=resolved_store)
+            return _call_codex_image_generation(normalized, store=resolved_store, settings=resolved_settings)
         api_url = _image_generation_api_url(payload.get("api_base_url") or payload.get("base_url"))
         api_key = str(payload.get("api_key") or "").strip() or None
         return _call_image_generation_upstream(normalized, api_url=api_url, api_key=api_key)
@@ -129,7 +129,7 @@ def create_app(
         if _image_generation_provider(payload) != "codex":
             raise HTTPException(status_code=400, detail="image edits currently require provider=codex")
         normalized = _normalize_image_edit_payload(payload)
-        return _call_codex_image_edit(normalized, store=resolved_store)
+        return _call_codex_image_edit(normalized, store=resolved_store, settings=resolved_settings)
 
     @app.post("/api/batches")
     async def create_batch(request: Request) -> dict[str, Any]:
@@ -1156,10 +1156,15 @@ def _image_generation_provider(payload: Mapping[str, Any]) -> str:
     return "api"
 
 
-def _call_codex_image_generation(payload: Mapping[str, Any], *, store: WorkbenchStore) -> dict[str, Any]:
+def _call_codex_image_generation(
+    payload: Mapping[str, Any],
+    *,
+    store: WorkbenchStore,
+    settings: WorkbenchSettings,
+) -> dict[str, Any]:
     n = int(payload.get("n") or 1)
     output_root = _codex_imagegen_output_dir(store.workspace, "generations")
-    runtime_config = _codex_imagegen_runtime_config(payload)
+    runtime_config = _codex_imagegen_runtime_config(payload, settings=settings)
     results: list[CodexImageGenResult] = []
     try:
         for index in range(1, n + 1):
@@ -1185,9 +1190,14 @@ def _call_codex_image_generation(payload: Mapping[str, Any], *, store: Workbench
     )
 
 
-def _call_codex_image_edit(payload: Mapping[str, Any], *, store: WorkbenchStore) -> dict[str, Any]:
+def _call_codex_image_edit(
+    payload: Mapping[str, Any],
+    *,
+    store: WorkbenchStore,
+    settings: WorkbenchSettings,
+) -> dict[str, Any]:
     output_dir = _codex_imagegen_output_dir(store.workspace, "edits")
-    runtime_config = _codex_imagegen_runtime_config(payload)
+    runtime_config = _codex_imagegen_runtime_config(payload, settings=settings)
     prompt = _codex_edit_prompt(payload)
     try:
         result = invoke_codex_python_sdk_image_edit(
@@ -1204,13 +1214,13 @@ def _call_codex_image_edit(payload: Mapping[str, Any], *, store: WorkbenchStore)
     return _codex_imagegen_response([result], provider="codex", prompt=prompt)
 
 
-def _codex_imagegen_runtime_config(payload: Mapping[str, Any]) -> dict[str, Any]:
-    timeout = (
-        _optional_positive_float_env("DRAWAI_CODEX_IMAGEGEN_TIMEOUT_SECONDS")
-        or _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS")
-        or 300.0
+def _codex_imagegen_runtime_config(payload: Mapping[str, Any], *, settings: WorkbenchSettings) -> dict[str, Any]:
+    runtime_config = _default_model_runtime_config(settings)
+    timeout = _optional_positive_float_env("DRAWAI_CODEX_IMAGEGEN_TIMEOUT_SECONDS") or _optional_positive_float_env(
+        "DRAWAI_IMAGEGEN_TIMEOUT_SECONDS"
     )
-    runtime_config: dict[str, Any] = {"timeout_seconds": timeout}
+    if timeout is not None:
+        runtime_config["timeout_seconds"] = timeout
     reasoning_effort = str(os.environ.get("DRAWAI_CODEX_IMAGEGEN_REASONING_EFFORT") or "").strip()
     if reasoning_effort:
         runtime_config["reasoning_effort"] = reasoning_effort
@@ -1218,6 +1228,14 @@ def _codex_imagegen_runtime_config(payload: Mapping[str, Any]) -> dict[str, Any]
     if model_name:
         runtime_config["model_name"] = model_name
     return runtime_config
+
+
+def _default_model_runtime_config(settings: WorkbenchSettings) -> dict[str, Any]:
+    try:
+        cfg = load_drawai_config(settings.default_config, validate_input_exists=False)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to load DrawAI config: {exc}") from exc
+    return cfg.model_runtime.to_runtime_dict()
 
 
 def _codex_imagegen_model_name(payload: Mapping[str, Any]) -> str:

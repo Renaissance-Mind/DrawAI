@@ -78,3 +78,8 @@ model_runtime:
   concurrency_mode: auto
   max_concurrent: 20
   max_critic_rounds: 3
+  api_provider:
+    mode: auth
+    thirdparty:
+      base_url: ""
+      api_key: ""

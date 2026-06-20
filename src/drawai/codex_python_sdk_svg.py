@@ -60,6 +60,8 @@ def build_codex_svg_output_schema() -> dict[str, Any]:
 
 def controlled_codex_config_overrides(
     extra_overrides: Sequence[str] | None = None,
+    *,
+    runtime_config: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     overrides = (
         'web_search="disabled"',
@@ -79,6 +81,7 @@ def controlled_codex_config_overrides(
     return (
         *overrides,
         *_host_codex_model_provider_overrides_from_env(),
+        *_runtime_codex_model_provider_overrides(runtime_config),
         *(str(item) for item in (extra_overrides or ())),
     )
 
@@ -87,6 +90,34 @@ def _host_codex_model_provider_overrides_from_env() -> tuple[str, ...]:
     if not _env_truthy(os.environ.get("DRAWAI_CODEX_INHERIT_HOST_CONFIG")):
         return ()
     return host_codex_model_provider_overrides(_host_codex_home() / "config.toml")
+
+
+def _runtime_codex_model_provider_overrides(runtime_config: Mapping[str, Any] | None) -> tuple[str, ...]:
+    api_provider = _runtime_api_provider_config(runtime_config)
+    if not api_provider or str(api_provider.get("mode") or "auth").strip().lower() != "thirdparty":
+        return ()
+    provider_name = str(api_provider.get("model_provider") or "drawai-relay").strip()
+    base_url = str(api_provider.get("base_url") or "").strip()
+    if not provider_name or not base_url:
+        return ()
+    model_name = str((runtime_config or {}).get("model_name") or "").strip()
+    provider_key = _toml_dotted_key(provider_name)
+    prefix = f"model_providers.{provider_key}"
+    env_key = str(api_provider.get("env_key") or api_provider.get("api_key_env") or "OPENAI_API_KEY").strip()
+    overrides: list[str] = [f"model_provider={_toml_string(provider_name)}"]
+    if model_name:
+        overrides.append(f"model={_toml_string(model_name)}")
+    overrides.append(f"{prefix}.name={_toml_string(str(api_provider.get('name') or provider_name))}")
+    wire_api = str(api_provider.get("wire_api") or "responses").strip()
+    if wire_api:
+        overrides.append(f"{prefix}.wire_api={_toml_string(wire_api)}")
+    overrides.append(f"{prefix}.base_url={_toml_string(base_url)}")
+    if env_key:
+        overrides.append(f"{prefix}.env_key={_toml_string(env_key)}")
+    requires_auth = api_provider.get("requires_openai_auth")
+    if isinstance(requires_auth, bool):
+        overrides.append(f"{prefix}.requires_openai_auth={str(requires_auth).lower()}")
+    return tuple(overrides)
 
 
 def host_codex_model_provider_overrides(config_path: str | Path) -> tuple[str, ...]:
@@ -243,7 +274,7 @@ def _host_codex_home() -> Path:
     return (Path.home() / ".codex").resolve(strict=False)
 
 
-def _codex_sdk_env(codex_home: Path) -> dict[str, str]:
+def _codex_sdk_env(codex_home: Path, *, runtime_config: Mapping[str, Any] | None = None) -> dict[str, str]:
     env: dict[str, str] = {"CODEX_HOME": str(codex_home)}
     host_home = os.environ.get("DRAWAI_HOST_HOME") or os.environ.get("HOME")
     if host_home:
@@ -251,7 +282,23 @@ def _codex_sdk_env(codex_home: Path) -> dict[str, str]:
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     if openai_api_key:
         env["OPENAI_API_KEY"] = openai_api_key
+    api_provider = _runtime_api_provider_config(runtime_config)
+    if api_provider and str(api_provider.get("mode") or "auth").strip().lower() == "thirdparty":
+        env_key = str(api_provider.get("env_key") or api_provider.get("api_key_env") or "OPENAI_API_KEY").strip()
+        api_key = str(api_provider.get("api_key") or "").strip()
+        api_key_env = str(api_provider.get("api_key_env") or "").strip()
+        if api_key_env and os.environ.get(api_key_env):
+            env[env_key] = os.environ[api_key_env]
+        elif api_key:
+            env[env_key] = api_key
     return env
+
+
+def _runtime_api_provider_config(runtime_config: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    if not isinstance(runtime_config, Mapping):
+        return None
+    api_provider = runtime_config.get("api_provider")
+    return api_provider if isinstance(api_provider, Mapping) else None
 
 
 def check_codex_python_sdk_connectivity(
@@ -497,6 +544,7 @@ class CodexPythonSdkSvgSession:
         shared_prompt: str | None = None,
     ) -> None:
         settings = dict(runtime_config or {})
+        self.runtime_config = settings
         self.model_name = _normalize_codex_model_name(settings.get("model_name"))
         self.reasoning_effort = _normalize_codex_reasoning_effort(
             settings.get("reasoning_effort", settings.get("model_reasoning_effort"))
@@ -509,7 +557,7 @@ class CodexPythonSdkSvgSession:
         )
         self.run_cwd = self.run_cwd.expanduser().resolve(strict=False)
         self.trace = Path(trace_path) if trace_path is not None else None
-        self.overrides = controlled_codex_config_overrides(config_overrides)
+        self.overrides = controlled_codex_config_overrides(config_overrides, runtime_config=settings)
         self.shared_prompt = str(shared_prompt or "").strip()
 
         self._sdk: Any | None = None
@@ -534,7 +582,7 @@ class CodexPythonSdkSvgSession:
                 self._sdk.CodexConfig(
                     cwd=str(self.run_cwd),
                     config_overrides=self.overrides,
-                    env=_codex_sdk_env(self._prepared_codex_home.codex_home),
+                    env=_codex_sdk_env(self._prepared_codex_home.codex_home, runtime_config=self.runtime_config),
                 )
             )
             self._codex = self._codex_context.__enter__()
