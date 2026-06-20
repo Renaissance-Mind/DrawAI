@@ -2314,7 +2314,7 @@ select:focus {
 .dag-run-node {
   position: absolute;
   z-index: 2;
-  min-height: 54px;
+  min-height: 0;
   display: grid;
   grid-template-columns: 25px minmax(0, 1fr);
   grid-template-rows: auto auto;
