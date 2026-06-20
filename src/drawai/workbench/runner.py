@@ -9,6 +9,7 @@ from collections.abc import Callable
 from collections.abc import Mapping
 from contextlib import ExitStack, contextmanager
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal
@@ -311,12 +312,19 @@ class WorkbenchRunner:
             template = load_workflow_template_by_id(self.store.workspace, batch.workflow_template_id)
             review_template = _workflow_until_first_human_review(template)
             run_template = template if batch.auto_run_svg_after_analysis or review_template is None else review_template
+            parser_ids = _workflow_parser_ids(run_template)
             stage_state: dict[str, bool] = {}
             runner = WorkflowRunner(
                 run_template,
                 handlers={
                     "input": lambda context, inputs: self._run_workflow_input_node(case, context, inputs, stage_state),
-                    "parser": lambda context, inputs: self._run_workflow_parser_node(case, context, inputs, stage_state),
+                    "parser": lambda context, inputs: self._run_workflow_parser_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        parser_ids=parser_ids,
+                    ),
                     "fusion": lambda context, inputs: self._run_workflow_fusion_node(case, context, inputs, stage_state),
                     "agent": lambda context, inputs: self._run_workflow_agent_node(case, context, inputs, stage_state),
                     "processor": lambda context, inputs: self._run_workflow_processor_node(case, context, inputs, stage_state),
@@ -377,8 +385,13 @@ class WorkbenchRunner:
         context: NodeRunContext,
         _inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        *,
+        parser_ids: frozenset[str],
     ) -> tuple[Mapping[str, Any], ...]:
-        self._ensure_workflow_stage(case, "parse_elements", stage_state)
+        self._ensure_workflow_stage(case, "prepare", stage_state)
+        if not stage_state.get("parse_elements"):
+            self._run_workflow_parse_elements(case, parser_ids)
+            stage_state["parse_elements"] = True
         paths = prepare_artifact_paths(case.run_root)
         parser_id = str(context.node.config.get("parser_id") or "")
         if parser_id == "sam3_structure_parser":
@@ -391,6 +404,46 @@ class WorkbenchRunner:
             source = paths.v2_parser_outputs_dir / "element_candidates.json"
         output_path = _copy_workflow_json(source, context.output_dir / "candidates.json")
         return (_workflow_output(context, "candidates", output_path, "element_candidates", "drawai.element_candidates.v1"),)
+
+    def _run_workflow_parse_elements(
+        self,
+        case: CaseRecord,
+        parser_ids: frozenset[str],
+    ) -> None:
+        sam3_enabled = "sam3_structure_parser" in parser_ids
+        ocr_enabled = "ocr_text_parser" in parser_ids
+        if not sam3_enabled and not ocr_enabled:
+            raise ValueError("workflow parse_elements requires at least one parser node")
+        self.store.update_case_status(case.case_id, status="analysis_running", phase="analysis", stage="parse_elements")
+        stage_run = self.store.start_stage_run(case.case_id, "parse_elements")
+        resources = _workflow_parser_resources(parser_ids)
+        try:
+            with ExitStack() as stack:
+                for resource in resources:
+                    stack.enter_context(self._resource_slot(resource))
+                if self.stage_executor is not None:
+                    self.stage_executor(case, "parse_elements")
+                else:
+                    cfg = load_drawai_config(case.config_path, validate_input_exists=False)
+                    parser_config = replace(
+                        cfg.v2.parser,
+                        sam3_enabled=sam3_enabled,
+                        ocr_enabled=ocr_enabled,
+                    )
+                    workflow_cfg = replace(cfg, v2=replace(cfg.v2, parser=parser_config))
+                    summary = run_drawai_pipeline_from_stage(
+                        workflow_cfg,
+                        "parse_elements",
+                        to_stage="parse_elements",
+                    )
+                    if summary.get("status") != "ok":
+                        message = _pipeline_failure_message(summary)
+                        failed_stage = summary.get("failed_stage") or "parse_elements"
+                        raise RuntimeError(f"DrawAI stage {failed_stage} failed: {message or summary.get('status')}")
+            self.store.finish_stage_run(stage_run.stage_run_id, status="ok")
+        except Exception as exc:
+            self.store.finish_stage_run(stage_run.stage_run_id, status="failed", error_message=f"{type(exc).__name__}: {exc}")
+            raise
 
     def _run_workflow_fusion_node(
         self,
@@ -977,6 +1030,23 @@ def _workflow_until_first_human_review(template: WorkflowTemplate) -> WorkflowTe
 def _first_human_review_node_id(template: WorkflowTemplate) -> str:
     node = next((item for item in template.nodes if item.node_type == "human_review"), None)
     return node.node_id if node is not None else ""
+
+
+def _workflow_parser_ids(template: WorkflowTemplate) -> frozenset[str]:
+    return frozenset(
+        str(node.config.get("parser_id") or "")
+        for node in template.nodes
+        if node.node_type == "parser"
+    )
+
+
+def _workflow_parser_resources(parser_ids: frozenset[str]) -> tuple[str, ...]:
+    resources: list[str] = []
+    if "sam3_structure_parser" in parser_ids:
+        resources.append("sam3")
+    if "ocr_text_parser" in parser_ids:
+        resources.append("ocr")
+    return tuple(resources)
 
 
 def _upstream_node_ids(template: WorkflowTemplate, node_id: str) -> set[str]:

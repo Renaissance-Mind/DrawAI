@@ -23,6 +23,7 @@ def _config(
     tmp_path: Path,
     *,
     refine_enabled: bool | None = False,
+    ocr_enabled: bool | None = None,
     export_pptx: bool = False,
     compose_enabled: bool | None = None,
 ) -> Path:
@@ -42,6 +43,13 @@ def _config(
             f"""
   compose:
     enabled: {str(compose_enabled).lower()}
+""".rstrip()
+        )
+    if ocr_enabled is not None:
+        v2_lines.append(
+            f"""
+  parser:
+    ocr_enabled: {str(ocr_enabled).lower()}
 """.rstrip()
         )
     v2_body = "\n".join(v2_lines)
@@ -81,6 +89,18 @@ svg_to_ppt:
         encoding="utf-8",
     )
     return config
+
+
+def test_parse_elements_writes_empty_ocr_artifact_when_ocr_disabled(tmp_path: Path) -> None:
+    config = _config(tmp_path, ocr_enabled=False)
+
+    summary = run_drawai_pipeline_from_stage(config, "prepare", to_stage="parse_elements")
+
+    assert summary["status"] == "ok"
+    paths = prepare_artifact_paths(tmp_path / "out")
+    assert json.loads(paths.ocr_boxes_json.read_text(encoding="utf-8")) == []
+    parser_outputs = json.loads((paths.v2_parser_outputs_dir / "element_candidates.json").read_text(encoding="utf-8"))
+    assert parser_outputs["candidate_count"] == len(parser_outputs["candidates"])
 
 
 def _write_fixture_refinement_artifact(paths: DrawAiArtifactPaths) -> None:

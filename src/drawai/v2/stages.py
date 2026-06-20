@@ -440,6 +440,7 @@ def _run_parse_elements(
         ocr_candidates = ocr_payload_to_candidates(ocr_payload, paths.figure_image)
         _release_runtime_if_supported(options.ocr_provider)
     else:
+        write_json(paths.ocr_boxes_json, [])
         ocr_candidates = ()
 
     if options.sam3_transport is not None:

@@ -743,6 +743,61 @@ def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
     assert ocr_activity["running"] == 0
 
 
+@pytest.mark.parametrize(
+    ("parser_ids", "expected_flags"),
+    [
+        (frozenset({"sam3_structure_parser"}), (True, False)),
+        (frozenset({"sam3_structure_parser", "ocr_text_parser"}), (True, True)),
+    ],
+)
+def test_workflow_parse_elements_uses_only_parser_nodes_declared_by_dag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    parser_ids: frozenset[str],
+    expected_flags: tuple[bool, bool],
+) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    settings = WorkbenchSettings(workspace=tmp_path / "workspace", default_config=base_config)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    batch = store.create_batch(
+        name="batch",
+        input_mode="local_dir",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=True,
+        config_path=base_config,
+    )
+    case_root = store.runs_root / batch.batch_id / "case_1"
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=create_case_config(
+            base_config_path=base_config,
+            source_image=source,
+            output_dir=case_root,
+            target_path=case_root / "drawai.config.yaml",
+        ),
+    )
+    captured_flags: list[tuple[bool, bool]] = []
+
+    def fake_run_drawai_pipeline_from_stage(config, from_stage: str, *, to_stage: str | None = None, **_kwargs):
+        captured_flags.append((config.v2.parser.sam3_enabled, config.v2.parser.ocr_enabled))
+        return {"status": "ok", "completed_stages": [from_stage], "to_stage": to_stage}
+
+    monkeypatch.setattr(
+        "drawai.workbench.runner.run_drawai_pipeline_from_stage",
+        fake_run_drawai_pipeline_from_stage,
+    )
+
+    runner = WorkbenchRunner(store, settings)
+    runner._run_workflow_parse_elements(case, parser_ids)
+
+    assert captured_flags == [expected_flags]
+    assert store.list_stage_runs(case.case_id)[0].status == "ok"
+
+
 def test_workflow_canvas_size_uses_v2_normalized_source_metadata() -> None:
     assert _source_metadata_canvas_size({"normalized_size": [2048, 1449]}) == (2048.0, 1449.0)
     assert _source_metadata_canvas_size({"width": 24, "height": 12}) == (24.0, 12.0)
