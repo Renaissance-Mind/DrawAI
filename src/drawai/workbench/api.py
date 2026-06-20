@@ -2439,7 +2439,7 @@ def _workflow_viewer_element_from_plan(item: Mapping[str, Any], index: int) -> d
 
 
 def _workflow_viewer_element_from_analysis(item: Mapping[str, Any], index: int) -> dict[str, Any] | None:
-    bbox = _coerce_bbox_xywh(item.get("bbox"), item.get("geometry"))
+    bbox = _coerce_bbox_xyxy_to_xywh(item.get("bbox"), item.get("geometry"))
     if bbox is None:
         return None
     element_id = str(item.get("box_id") or item.get("element_id") or f"A{index + 1:03d}")
@@ -2510,6 +2510,18 @@ def _coerce_bbox_xywh(value: object, geometry: object = None) -> tuple[float, fl
         x1, y1, x2, y2 = bbox
         return (x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1))
     return None
+
+
+def _coerce_bbox_xyxy_to_xywh(value: object, geometry: object = None) -> tuple[float, float, float, float] | None:
+    bbox = _number_tuple4(value)
+    if bbox is None and isinstance(geometry, Mapping) and geometry.get("kind") == "bbox":
+        bbox = _number_tuple4(geometry.get("bbox"))
+    if bbox is None:
+        return None
+    x1, y1, x2, y2 = bbox
+    left, right = sorted((x1, x2))
+    top, bottom = sorted((y1, y2))
+    return (left, top, max(0.0, right - left), max(0.0, bottom - top))
 
 
 def _number_tuple4(value: object) -> tuple[float, float, float, float] | None:

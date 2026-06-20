@@ -1112,6 +1112,67 @@ def test_api_exposes_workflow_node_viewer_for_planned_elements(tmp_path: Path) -
     assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
 
 
+def test_api_exposes_workflow_node_viewer_for_analysis_xyxy_bboxes(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(
+        store,
+        settings,
+        stage_executor=_deterministic_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="viewer batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _write_workflow_node_run(
+        Path(case.run_root),
+        "asset_refine_agent",
+        output_type="element_analysis",
+        format_id="drawai.codex_element_analysis.v1",
+        output_payload={
+            "schema": "drawai.codex_element_analysis.v1",
+            "elements": [
+                {
+                    "box_id": "R0_A001",
+                    "source_candidate_ids": ["sam3:B001"],
+                    "category": "crop",
+                    "confidence": "high",
+                    "reason": "Retained crop.",
+                    "bbox": [2, 3, 10, 12],
+                    "type": "picture",
+                }
+            ],
+        },
+        output_name="element_analysis.json",
+    )
+
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/asset_refine_agent/viewer")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["kind"] == "element_analysis"
+    assert payload["elements"][0]["element_id"] == "R0_A001"
+    assert payload["elements"][0]["bbox"] == [2.0, 3.0, 8.0, 9.0]
+    assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
+
+
 def test_api_workflow_node_viewer_reports_unavailable_node_output(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
