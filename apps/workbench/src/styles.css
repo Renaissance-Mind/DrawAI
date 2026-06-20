@@ -2400,8 +2400,60 @@ select:focus {
   opacity: 0.78;
 }
 
-.dag-run-node.active {
-  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1), var(--shadow-soft);
+button.dag-run-node.active {
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 2px;
+  border-color: rgba(37, 99, 235, 0.72);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  color: var(--ink);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12), var(--shadow-soft);
+}
+
+button.dag-run-node.active:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+}
+
+button.dag-run-node.active strong {
+  color: var(--ink);
+}
+
+button.dag-run-node.active em {
+  color: var(--blue);
+}
+
+button.dag-run-node.active .dag-node-icon {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+button.dag-run-node.done.active {
+  border-color: var(--teal);
+}
+
+button.dag-run-node.review.active {
+  border-color: var(--amber);
+  background: #fff8ec;
+}
+
+button.dag-run-node.failed.active {
+  border-color: var(--danger);
+  background: #fff7f6;
+}
+
+button.dag-run-node.stale.active {
+  border-color: #7c3aed;
+}
+
+button.dag-run-node.running.active {
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, var(--blue) 50%, transparent 0) repeat-x,
+    linear-gradient(90deg, var(--blue) 50%, transparent 0) repeat-x,
+    linear-gradient(0deg, var(--blue) 50%, transparent 0) repeat-y,
+    linear-gradient(0deg, var(--blue) 50%, transparent 0) repeat-y,
+    #ffffff;
+  background-size: 18px 2px, 18px 2px, 2px 18px, 2px 18px, auto;
+  background-position: 0 0, 0 100%, 0 0, 100% 0, 0 0;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14), var(--shadow-soft);
 }
 
 .dag-run-node.node-parser .dag-node-icon {
