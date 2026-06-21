@@ -65,6 +65,7 @@ type CanvasMode = "select" | "add" | "polygon";
 type AssetEditorView = "extraction" | "processing";
 type PipelineNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale";
 type AssetPlanChangeOptions = { track?: boolean };
+type V2FilterDropdownId = "elementTypes" | "processingTypes" | "statuses";
 type V2ElementFilter = {
   query: string;
   elementTypes: string[] | null;
@@ -2333,6 +2334,7 @@ function V2ElementFilterControls({
   statusFallback: string;
   showStatus?: boolean;
 }) {
+  const [openDropdown, setOpenDropdown] = useState<V2FilterDropdownId | null>(null);
   const elementTypeOptions = useMemo(
     () => uniqueSorted(elements.map((element) => element.element_type).filter(Boolean)),
     [elements]
@@ -2348,6 +2350,22 @@ function V2ElementFilterControls({
     [elements, packageByElementId, statusFallback, showStatus]
   );
   const active = Boolean(filter.query || filter.elementTypes !== null || filter.processingTypes !== null || filter.statuses !== null);
+
+  useEffect(() => {
+    if (!openDropdown) return;
+    function closeDropdown() {
+      setOpenDropdown(null);
+    }
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") closeDropdown();
+    }
+    window.addEventListener("pointerdown", closeDropdown);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeDropdown);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openDropdown]);
 
   function update(patch: Partial<V2ElementFilter>) {
     onChange({ ...filter, ...patch });
@@ -2366,7 +2384,12 @@ function V2ElementFilterControls({
   }
 
   return (
-    <div className="element-filter-bar" aria-label="筛选框">
+    <div
+      className="element-filter-bar"
+      aria-label="筛选框"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
       <input
         type="search"
         value={filter.query}
@@ -2374,22 +2397,31 @@ function V2ElementFilterControls({
         placeholder="筛选框"
       />
       <MultiFilterDropdown
+        id="elementTypes"
         label="类型"
         options={elementTypeOptions}
         selected={filter.elementTypes}
+        open={openDropdown === "elementTypes"}
+        onOpenChange={(open) => setOpenDropdown(open ? "elementTypes" : null)}
         onToggle={toggleElementType}
       />
       <MultiFilterDropdown
+        id="processingTypes"
         label="处理"
         options={processingOptions}
         selected={filter.processingTypes}
+        open={openDropdown === "processingTypes"}
+        onOpenChange={(open) => setOpenDropdown(open ? "processingTypes" : null)}
         onToggle={toggleProcessingType}
       />
       {showStatus && (
         <MultiFilterDropdown
+          id="statuses"
           label="状态"
           options={statusOptions}
           selected={filter.statuses}
+          open={openDropdown === "statuses"}
+          onOpenChange={(open) => setOpenDropdown(open ? "statuses" : null)}
           onToggle={toggleStatus}
         />
       )}
@@ -2403,42 +2435,73 @@ function V2ElementFilterControls({
 }
 
 function MultiFilterDropdown({
+  id,
   label,
   options,
   selected,
+  open,
+  onOpenChange,
   onToggle
 }: {
+  id: V2FilterDropdownId;
   label: string;
   options: string[];
   selected: string[] | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onToggle: (value: string) => void;
 }) {
   if (options.length === 0) return null;
   return (
-    <details className="element-filter-select">
-      <summary aria-label={`${label}筛选`}>
+    <div className={open ? "element-filter-select open" : "element-filter-select"} data-filter-id={id}>
+      <button
+        type="button"
+        className="element-filter-trigger"
+        aria-label={`${label}筛选`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenChange(!open);
+        }}
+      >
         <span>{label}</span>
         <strong>{multiFilterSummary(selected, options)}</strong>
-      </summary>
-      <div className="element-filter-menu" role="group" aria-label={label}>
-        {options.map((value) => {
-          const checked = multiFilterValueSelected(selected, value);
-          return (
-            <label
-              key={value}
-              className={checked ? "active" : ""}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(value)}
-              />
-              {humanize(value)}
-            </label>
-          );
-        })}
-      </div>
-    </details>
+      </button>
+      {open && (
+        <div
+          className="element-filter-menu"
+          role="menu"
+          aria-label={label}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {options.map((value) => {
+            const checked = multiFilterValueSelected(selected, value);
+            return (
+              <label
+                key={value}
+                className={checked ? "active" : ""}
+                role="menuitemcheckbox"
+                aria-checked={checked}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    onToggle(value);
+                  }}
+                />
+                {humanize(value)}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -5601,8 +5664,11 @@ function multiFilterValueSelected(selected: string[] | null, value: string): boo
 }
 
 function multiFilterSummary(selected: string[] | null, options: string[]): string {
-  if (selected === null || selected.length === options.length) return "全部";
-  return `${selected.length}/${options.length}`;
+  if (selected === null) return "全部";
+  const optionSet = new Set(options);
+  const count = selected.filter((value) => optionSet.has(value)).length;
+  if (count === options.length) return "全部";
+  return `${count}/${options.length}`;
 }
 
 function filterV2Elements(
