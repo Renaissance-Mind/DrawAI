@@ -410,6 +410,7 @@ def create_app(
         return {
             "case": _case_to_api_with_preview(resolved_store, case),
             "stage_runs": stage_runs,
+            "workflow_node_runs": _workflow_node_runs_progress(root),
             "files": _standard_progress_files(case_id, root),
             "svg_attempts": _svg_attempts_progress(case_id, root),
             "pptx_export": _pptx_export_progress(case_id, root),
@@ -2088,6 +2089,31 @@ def _svg_attempts_progress(case_id: str, root: Path) -> list[dict[str, Any]]:
     return attempts
 
 
+def _workflow_node_runs_progress(root: Path) -> list[dict[str, Any]]:
+    nodes_root = root / "nodes"
+    if not nodes_root.is_dir():
+        return []
+    runs: list[dict[str, Any]] = []
+    for run_path in sorted(nodes_root.glob("*/runs/*/node_run.json")):
+        payload = _read_json_file(run_path)
+        if not isinstance(payload, dict):
+            continue
+        node_id = str(payload.get("node_id") or run_path.parents[2].name)
+        attempt_id = str(payload.get("attempt_id") or run_path.parent.name)
+        runs.append(
+            {
+                "node_id": node_id,
+                "attempt_id": attempt_id,
+                "status": str(payload.get("status") or ""),
+                "started_at": str(payload.get("started_at") or ""),
+                "ended_at": str(payload.get("ended_at") or ""),
+                "error_message": str(payload.get("error") or ""),
+                "workdir": _case_relative_path(root, run_path.parent),
+            }
+        )
+    return runs
+
+
 def _svg_attempt_summary(attempt_dir: Path, files: list[dict[str, Any]]) -> dict[str, Any]:
     validation_report = _read_json_file(attempt_dir / "validation_report.json")
     final_report = _read_json_file(attempt_dir / "final_report.json")
@@ -2233,7 +2259,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
         return base_payload
 
     kind, relative_path, payload = overlay_source
-    elements = _workflow_viewer_elements_from_payload(payload, kind)
+    elements = _workflow_viewer_elements_from_payload(payload, kind, root=root)
     if not elements:
         base_payload["message"] = "这个节点产物已生成，但没有可绘制的 bbox。"
         base_payload["kind"] = kind
@@ -2343,7 +2369,7 @@ def _workflow_node_overlay_source(
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         inferred_kind = _workflow_overlay_kind_from_payload(payload, fallback=kind)
-        if _workflow_viewer_elements_from_payload(payload, inferred_kind):
+        if _workflow_viewer_elements_from_payload(payload, inferred_kind, root=root):
             return inferred_kind, relative_path, payload
     return None
 
@@ -2356,6 +2382,8 @@ def _workflow_overlay_kind(output_type: str, format_id: str, path: str) -> str:
         return "element_candidates"
     if "element_plans" in probe or path.endswith("elements.json"):
         return "element_plans"
+    if "asset_packages" in probe or path.endswith("asset_packages.json"):
+        return "asset_packages"
     if "element_analysis" in probe or path.endswith("element_analysis.json"):
         return "element_analysis"
     return ""
@@ -2370,6 +2398,8 @@ def _workflow_overlay_kind_from_payload(payload: object, *, fallback: str) -> st
             return "element_candidates"
         if "element_plan" in schema or "run_package" in schema:
             return "element_plans"
+        if schema == "drawai.asset_packages.v1" or "asset_packages" in payload:
+            return "asset_packages"
         if "element_analysis" in schema:
             return "element_analysis"
     return fallback
@@ -2379,6 +2409,7 @@ def _workflow_overlay_priority(kind: str) -> int:
     return {
         "page_spec": 10,
         "element_plans": 20,
+        "asset_packages": 25,
         "element_candidates": 30,
         "element_analysis": 40,
     }.get(kind, 100)
@@ -2387,6 +2418,8 @@ def _workflow_overlay_priority(kind: str) -> int:
 def _workflow_viewer_elements_from_payload(
     payload: Mapping[str, Any] | list[Any],
     kind: str,
+    *,
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
     if kind == "page_spec":
         items = payload.get("elements", []) if isinstance(payload, Mapping) else payload
@@ -2415,6 +2448,14 @@ def _workflow_viewer_elements_from_payload(
             element
             for index, item in enumerate(_json_list(items))
             if (element := _workflow_viewer_element_from_analysis(item, index)) is not None
+        ]
+    if kind == "asset_packages":
+        items = payload.get("asset_packages", []) if isinstance(payload, Mapping) else payload
+        page_elements_by_id = _workflow_page_spec_items_by_id(root) if root is not None else {}
+        return [
+            element
+            for index, item in enumerate(_json_list(items))
+            if (element := _workflow_viewer_element_from_asset_package(item, index, page_elements_by_id)) is not None
         ]
     return []
 
@@ -2521,6 +2562,45 @@ def _workflow_viewer_element_from_analysis(item: Mapping[str, Any], index: int) 
     )
 
 
+def _workflow_viewer_element_from_asset_package(
+    item: Mapping[str, Any],
+    index: int,
+    page_elements_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    element_id = str(item.get("element_id") or item.get("asset_id") or f"A{index + 1:03d}")
+    page_element = page_elements_by_id.get(element_id)
+    if isinstance(page_element, Mapping):
+        viewer_element = _workflow_viewer_element_from_page_spec(page_element, index)
+        if viewer_element is None:
+            return None
+        processor_type = str(item.get("processor_type") or viewer_element["processing_intent"]["processing_type"])
+        viewer_element["processing_intent"]["processing_type"] = processor_type
+        viewer_element["review_status"] = str(item.get("status") or "asset_package")
+        viewer_element["created_by_stage"] = "asset_prepare"
+        viewer_element["change_reason"] = _asset_package_summary(item, processor_type)
+        return viewer_element
+
+    bbox = _asset_package_bbox(item)
+    if bbox is None:
+        return None
+    processor_type = str(item.get("processor_type") or "asset_package")
+    source_ids = _asset_package_source_ids(item) or (element_id,)
+    return _workflow_viewer_element(
+        element_id=element_id,
+        bbox=bbox,
+        element_type="asset",
+        source_candidate_ids=source_ids,
+        confidence="unknown",
+        processing_type=processor_type,
+        object_type="asset",
+        review_status=str(item.get("status") or "asset_package"),
+        created_by_stage="asset_prepare",
+        change_reason=_asset_package_summary(item, processor_type),
+        z_order=index,
+        geometry={"kind": "bbox", "bbox": [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]},
+    )
+
+
 def _workflow_viewer_element(
     *,
     element_id: str,
@@ -2568,6 +2648,65 @@ def _page_spec_source_ids(item: Mapping[str, Any]) -> tuple[str, ...]:
         if ids:
             return tuple(ids)
     return ()
+
+
+def _workflow_page_spec_items_by_id(root: Path | None) -> dict[str, Mapping[str, Any]]:
+    if root is None:
+        return {}
+    page_spec_path = root / "page_spec.json"
+    if not page_spec_path.is_file():
+        return {}
+    payload = json.loads(page_spec_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        return {}
+    items = payload.get("elements")
+    if not isinstance(items, list | tuple):
+        return {}
+    page_elements: dict[str, Mapping[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        element_id = item.get("id")
+        if isinstance(element_id, str) and element_id:
+            page_elements[element_id] = item
+    return page_elements
+
+
+def _asset_package_bbox(item: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+    for metadata in (
+        _mapping_value(item.get("metadata"), "last_run_metadata"),
+        _mapping_value(_mapping_value(item.get("active_result"), "metadata"), "crop_bbox_xyxy"),
+    ):
+        if isinstance(metadata, Mapping):
+            bbox = _coerce_bbox_xyxy_to_xywh(metadata.get("crop_bbox_xyxy"))
+            if bbox is not None:
+                return bbox
+        else:
+            bbox = _coerce_bbox_xyxy_to_xywh(metadata)
+            if bbox is not None:
+                return bbox
+    return None
+
+
+def _asset_package_source_ids(item: Mapping[str, Any]) -> tuple[str, ...]:
+    runs = item.get("processor_runs")
+    if not isinstance(runs, list | tuple) or not runs:
+        return ()
+    first_run = runs[0]
+    if not isinstance(first_run, Mapping):
+        return ()
+    input_refs = first_run.get("input_refs")
+    if not isinstance(input_refs, Mapping):
+        return ()
+    return _string_sequence(input_refs.get("source_candidate_ids"))
+
+
+def _asset_package_summary(item: Mapping[str, Any], processor_type: str) -> str:
+    status = str(item.get("status") or "unknown")
+    asset_id = str(item.get("asset_id") or "")
+    if asset_id:
+        return f"Asset {asset_id} prepared with {processor_type}; status={status}."
+    return f"Asset prepared with {processor_type}; status={status}."
 
 
 def _mapping_value(value: object, key: str) -> object:

@@ -45,10 +45,49 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 position={"x": 0, "y": 160},
             ),
             WorkflowNode(
-                node_id="page_spec_analyze",
+                node_id="sam_parse",
                 node_type="processor",
-                title="PageSpec Analyze",
+                title="SAM Parse",
                 inputs=(_input("image", "Image", ("image",)),),
+                outputs=(
+                    _output(
+                        "sam_page_spec",
+                        "SAM Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                    ),
+                ),
+                config={
+                    "processor_id": "sam_parse",
+                    "stage": "sam_parse",
+                    "prompts": _sam3_prompt_configs(),
+                },
+                position={"x": 280, "y": 80},
+            ),
+            WorkflowNode(
+                node_id="ocr_parse",
+                node_type="processor",
+                title="OCR Parse",
+                inputs=(_input("image", "Image", ("image",)),),
+                outputs=(
+                    _output(
+                        "ocr_page_spec",
+                        "OCR Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                    ),
+                ),
+                config={"processor_id": "ocr_parse", "stage": "ocr_parse"},
+                position={"x": 280, "y": 240},
+            ),
+            WorkflowNode(
+                node_id="page_spec_fuse",
+                node_type="processor",
+                title="PageSpec Fuse",
+                inputs=(
+                    _input("sam_page_spec", "SAM Page Spec", ("page_spec",), formats=("drawai.page_spec.v1",)),
+                    _input("ocr_page_spec", "OCR Page Spec", ("page_spec",), formats=("drawai.page_spec.v1",)),
+                ),
                 outputs=(
                     _output(
                         "page_spec",
@@ -57,12 +96,24 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                         formats=("drawai.page_spec.v1",),
                     ),
                 ),
-                config={
-                    "processor_id": "page_spec_analyze",
-                    "stage": "fuse_elements",
-                    "prompts": _sam3_prompt_configs(),
-                },
-                position={"x": 280, "y": 160},
+                config={"processor_id": "page_spec_fuse", "stage": "fuse_elements"},
+                position={"x": 560, "y": 160},
+            ),
+            WorkflowNode(
+                node_id="page_spec_refine",
+                node_type="processor",
+                title="PageSpec Refine",
+                inputs=(_input("page_spec", "Page Spec", ("page_spec",), formats=("drawai.page_spec.v1",)),),
+                outputs=(
+                    _output(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                    ),
+                ),
+                config={"processor_id": "page_spec_refine", "stage": "refine_elements"},
+                position={"x": 840, "y": 160},
             ),
             WorkflowNode(
                 node_id="asset_prepare",
@@ -81,7 +132,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"processor_id": "asset_prepare", "stage": "process_assets"},
-                position={"x": 560, "y": 160},
+                position={"x": 1120, "y": 160},
             ),
             WorkflowNode(
                 node_id="svg_compose",
@@ -101,7 +152,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"processor_id": "svg_compose", "stage": "compose_svg"},
-                position={"x": 840, "y": 160},
+                position={"x": 1400, "y": 160},
             ),
             WorkflowNode(
                 node_id="svg_to_ppt",
@@ -118,7 +169,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"exporter_id": "svg_to_ppt"},
-                position={"x": 1120, "y": 160},
+                position={"x": 1680, "y": 160},
             ),
             WorkflowNode(
                 node_id="output",
@@ -141,14 +192,18 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"auto_collect_deliverables": True},
-                position={"x": 1400, "y": 160},
+                position={"x": 1960, "y": 160},
             ),
         ),
         edges=(
-            _edge("input", "image", "page_spec_analyze", "image"),
+            _edge("input", "image", "sam_parse", "image"),
+            _edge("input", "image", "ocr_parse", "image"),
             _edge("input", "image", "asset_prepare", "image"),
-            _edge("page_spec_analyze", "page_spec", "asset_prepare", "page_spec"),
-            _edge("page_spec_analyze", "page_spec", "svg_compose", "page_spec"),
+            _edge("sam_parse", "sam_page_spec", "page_spec_fuse", "sam_page_spec"),
+            _edge("ocr_parse", "ocr_page_spec", "page_spec_fuse", "ocr_page_spec"),
+            _edge("page_spec_fuse", "page_spec", "page_spec_refine", "page_spec"),
+            _edge("page_spec_refine", "page_spec", "asset_prepare", "page_spec"),
+            _edge("page_spec_refine", "page_spec", "svg_compose", "page_spec"),
             _edge("asset_prepare", "asset_packages", "svg_compose", "asset_packages"),
             _edge("svg_compose", "semantic_svg", "svg_to_ppt", "semantic_svg"),
             _edge("svg_compose", "semantic_svg", "output", "deliverables"),

@@ -481,14 +481,47 @@ const NODE_PRESETS: NodePreset[] = [
     }
   },
   {
-    key: "page-spec-analyze",
+    key: "sam-parse",
     node_type: "processor",
-    title: "PageSpec Analyze",
+    title: "SAM Parse",
     icon: "R",
-    description: "Parse and fuse source evidence into a canonical PageSpec.",
+    description: "Run SAM prompts and write visual elements as PageSpec.",
     inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
+    outputs: [port("sam_page_spec", "SAM Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "sam_parse", stage: "sam_parse", prompts: DEFAULT_SAM_PROMPTS }
+  },
+  {
+    key: "ocr-parse",
+    node_type: "processor",
+    title: "OCR Parse",
+    icon: "R",
+    description: "Run OCR and write text elements as PageSpec.",
+    inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
+    outputs: [port("ocr_page_spec", "OCR Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "ocr_parse", stage: "ocr_parse" }
+  },
+  {
+    key: "page-spec-fuse",
+    node_type: "processor",
+    title: "PageSpec Fuse",
+    icon: "R",
+    description: "Fuse SAM and OCR PageSpec evidence into one PageSpec.",
+    inputs: [
+      port("sam_page_spec", "SAM Page Spec", ["page_spec"], "drawai.page_spec.v1"),
+      port("ocr_page_spec", "OCR Page Spec", ["page_spec"], "drawai.page_spec.v1")
+    ],
     outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
-    config: { processor_id: "page_spec_analyze", stage: "fuse_elements", prompts: DEFAULT_SAM_PROMPTS }
+    config: { processor_id: "page_spec_fuse", stage: "fuse_elements" }
+  },
+  {
+    key: "page-spec-refine",
+    node_type: "processor",
+    title: "PageSpec Refine",
+    icon: "R",
+    description: "Run the Run0 refinement pass and write refined PageSpec.",
+    inputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")],
+    outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "page_spec_refine", stage: "refine_elements" }
   },
   {
     key: "asset-prepare",

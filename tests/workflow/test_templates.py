@@ -36,7 +36,10 @@ def test_default_template_contains_pagespec_dag_nodes() -> None:
 
     assert node_ids == {
         "input",
-        "page_spec_analyze",
+        "sam_parse",
+        "ocr_parse",
+        "page_spec_fuse",
+        "page_spec_refine",
         "asset_prepare",
         "svg_compose",
         "svg_to_ppt",
@@ -50,11 +53,11 @@ def test_default_template_skips_human_review_node() -> None:
     assert "human_review" not in {node.node_type for node in template.nodes}
 
 
-def test_default_template_exposes_sam_prompt_configuration_on_pagespec_analyzer() -> None:
+def test_default_template_exposes_sam_prompt_configuration_on_sam_parser() -> None:
     template = default_drawai_workflow_template()
     nodes = {node.node_id: node for node in template.nodes}
 
-    prompts = nodes["page_spec_analyze"].config["prompts"]
+    prompts = nodes["sam_parse"].config["prompts"]
 
     assert prompts[0] == {
         "id": "arrow",
@@ -68,10 +71,16 @@ def test_default_template_uses_pagespec_processor_formats() -> None:
     template = default_drawai_workflow_template()
     nodes = {node.node_id: node for node in template.nodes}
 
-    assert nodes["page_spec_analyze"].node_type == "processor"
-    assert nodes["page_spec_analyze"].config["processor_id"] == "page_spec_analyze"
-    assert nodes["page_spec_analyze"].outputs[0].types == ("page_spec",)
-    assert nodes["page_spec_analyze"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["sam_parse"].node_type == "processor"
+    assert nodes["sam_parse"].config["processor_id"] == "sam_parse"
+    assert nodes["sam_parse"].outputs[0].types == ("page_spec",)
+    assert nodes["sam_parse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["ocr_parse"].outputs[0].types == ("page_spec",)
+    assert nodes["ocr_parse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_fuse"].inputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_fuse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_refine"].inputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_refine"].outputs[0].formats == ("drawai.page_spec.v1",)
     assert nodes["asset_prepare"].inputs[1].types == ("page_spec",)
     assert nodes["asset_prepare"].outputs[0].types == ("asset_packages",)
     assert nodes["svg_compose"].inputs[0].types == ("page_spec",)
@@ -98,10 +107,14 @@ def test_default_template_routes_page_spec_through_assets_and_svg() -> None:
         for edge in template.edges
     }
 
-    assert ("input", "image", "page_spec_analyze", "image") in edges
+    assert ("input", "image", "sam_parse", "image") in edges
+    assert ("input", "image", "ocr_parse", "image") in edges
     assert ("input", "image", "asset_prepare", "image") in edges
-    assert ("page_spec_analyze", "page_spec", "asset_prepare", "page_spec") in edges
-    assert ("page_spec_analyze", "page_spec", "svg_compose", "page_spec") in edges
+    assert ("sam_parse", "sam_page_spec", "page_spec_fuse", "sam_page_spec") in edges
+    assert ("ocr_parse", "ocr_page_spec", "page_spec_fuse", "ocr_page_spec") in edges
+    assert ("page_spec_fuse", "page_spec", "page_spec_refine", "page_spec") in edges
+    assert ("page_spec_refine", "page_spec", "asset_prepare", "page_spec") in edges
+    assert ("page_spec_refine", "page_spec", "svg_compose", "page_spec") in edges
     assert ("asset_prepare", "asset_packages", "svg_compose", "asset_packages") in edges
 
 

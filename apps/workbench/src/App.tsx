@@ -55,6 +55,7 @@ import type {
   V2AssetStatus,
   V2ElementPlan,
   V2RunPackage,
+  WorkflowNodeRunRecord,
   WorkflowNodeViewer
 } from "./types";
 import type { WorkflowTemplate } from "./workflowTypes";
@@ -1562,9 +1563,10 @@ function DagRunPanel({
 
   const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
   const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
+  const nodeRuns = progress?.workflow_node_runs || [];
   const files = progress?.files || [];
   const layout = useMemo(() => (template ? buildWorkflowPreviewLayout(template) : null), [template]);
-  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, files), [template, layout, caseDetail, stageRuns, files]);
+  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, nodeRuns, files), [template, layout, caseDetail, stageRuns, nodeRuns, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   useEffect(() => {
@@ -3109,13 +3111,14 @@ function buildDagNodeViews(
   layout: WorkflowPreviewLayout | null,
   caseDetail: CaseDetail,
   stageRuns: StageRunRecord[],
+  nodeRuns: WorkflowNodeRunRecord[],
   files: CaseProgress["files"]
 ): DagNodeView[] {
   if (!template || !layout) return [];
   const layoutByNodeId = new Map(layout.nodes.map((nodeLayout) => [nodeLayout.node.node_id, nodeLayout]));
   return template.nodes.map((node) => {
     const nodeLayout = layoutByNodeId.get(node.node_id);
-    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, files, caseDetail.artifacts);
+    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, nodeRuns, files, caseDetail.artifacts);
     return {
       node,
       ...runtime,
@@ -3136,11 +3139,27 @@ function workflowNodeRuntimeState(
   node: WorkflowTemplate["nodes"][number],
   caseDetail: CaseDetail,
   stageRuns: StageRunRecord[],
+  nodeRuns: WorkflowNodeRunRecord[],
   files: CaseProgress["files"],
   artifacts: ArtifactRecord[]
 ): Pick<DagNodeView, "state" | "stage" | "meta" | "error"> {
   const stage = workflowStageForNode(node);
   const current = caseDetail.case;
+  const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
+  if (latestNodeRun) {
+    if (latestNodeRun.status === "ok") {
+      return { state: "done", stage, meta: durationText(latestNodeRun.started_at, latestNodeRun.ended_at), error: "" };
+    }
+    if (latestNodeRun.status === "running") {
+      return { state: "running", stage, meta: durationText(latestNodeRun.started_at, ""), error: "" };
+    }
+    if (latestNodeRun.status === "failed") {
+      return { state: "failed", stage, meta: "失败", error: latestNodeRun.error_message };
+    }
+    if (latestNodeRun.status === "blocked") {
+      return { state: "failed", stage, meta: "阻塞", error: latestNodeRun.error_message };
+    }
+  }
   if (node.node_type === "human_review") {
     if (current.status === "assets_review") {
       return { stage, state: "review", meta: "等待人工确认", error: "" };
@@ -3208,7 +3227,10 @@ function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
   if (node.node_type === "output") return "output";
   if (node.node_type === "processor") {
     const processorId = String(node.config.processor_id || "");
-    if (processorId === "page_spec_analyze") return "fuse_elements";
+    if (processorId === "sam_parse") return "sam_parse";
+    if (processorId === "ocr_parse") return "ocr_parse";
+    if (processorId === "page_spec_fuse") return "fuse_elements";
+    if (processorId === "page_spec_refine") return "refine_elements";
     if (processorId === "asset_prepare") return "process_assets";
     if (processorId === "svg_compose") return "compose_svg";
     if (processorId === "asset_planner") return "plan_assets";
@@ -3220,6 +3242,16 @@ function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
     return "refine_elements";
   }
   return "";
+}
+
+function latestWorkflowNodeRun(nodeRuns: WorkflowNodeRunRecord[], nodeId: string): WorkflowNodeRunRecord | null {
+  const runs = nodeRuns.filter((run) => run.node_id === nodeId);
+  if (!runs.length) return null;
+  return [...runs].sort((a, b) => {
+    const attemptOrder = a.attempt_id.localeCompare(b.attempt_id, undefined, { numeric: true });
+    if (attemptOrder !== 0) return attemptOrder;
+    return Date.parse(a.started_at || "") - Date.parse(b.started_at || "");
+  })[runs.length - 1] || null;
 }
 
 function stageIsAfterOrEqual(currentStage: string, targetStage: string): boolean {
@@ -5311,6 +5343,8 @@ function pipelineNodeState(
 
 function stageReadyLabels(stage: string): string[] {
   if (stage === "prepare") return ["figure"];
+  if (stage === "sam_parse") return ["sam_page_spec", "raw_regions", "sam_boxes_by_prompt"];
+  if (stage === "ocr_parse") return ["ocr_page_spec", "ocr_boxes"];
   if (stage === "parse_elements") return ["raw_regions", "ocr_boxes", "parser_outputs"];
   if (stage === "fuse_elements") return ["box_ir", "fusion_trace"];
   if (stage === "refine_elements") return ["element_analysis", "refine_trace", "asset_draft"];

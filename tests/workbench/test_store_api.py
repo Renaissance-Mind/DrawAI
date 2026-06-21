@@ -372,8 +372,10 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
     assert updated.stage == "completed"
     assert observed_stages == [
         "prepare",
-        "parse_elements",
+        "sam_parse",
+        "ocr_parse",
         "fuse_elements",
+        "refine_elements",
         "plan_assets",
         "process_assets",
         "compose_svg",
@@ -396,7 +398,10 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
     assert len(asset_prepare_output["asset_packages"]) == 1
     assert "elements" not in asset_prepare_output
     assert (Path(updated.run_root) / "svg_to_ppt" / "assets" / "asset_manifest.json").exists()
-    assert (Path(updated.run_root) / "nodes" / "page_spec_analyze" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "sam_parse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "ocr_parse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "page_spec_fuse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "page_spec_refine" / "runs" / "001" / "node_run.json").exists()
     assert (Path(updated.run_root) / "nodes" / "asset_prepare" / "runs" / "001" / "node_run.json").exists()
     assert (Path(updated.run_root) / "nodes" / "svg_compose" / "runs" / "001" / "node_run.json").exists()
     assert not (Path(updated.run_root) / "nodes" / "asset_confirm").exists()
@@ -707,7 +712,7 @@ def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     assert codex_activity["running"] == 0
 
 
-def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
+def test_runner_ocr_parse_uses_ocr_resource_lane(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
     settings = WorkbenchSettings(
@@ -739,12 +744,12 @@ def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
                 target_path=case_root / "drawai.config.yaml",
             ),
         )
-    first_parse_started = threading.Event()
+    first_ocr_started = threading.Event()
     release = threading.Event()
 
     def blocking_parse_executor(case_record, stage: str) -> None:
-        if stage == "parse_elements" and not first_parse_started.is_set():
-            first_parse_started.set()
+        if stage == "ocr_parse" and not first_ocr_started.is_set():
+            first_ocr_started.set()
             release.wait(timeout=5)
         _deterministic_stage_executor(case_record, stage)
 
@@ -756,7 +761,7 @@ def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
     )
 
     runner.submit_batch(batch.batch_id)
-    assert first_parse_started.wait(timeout=5)
+    assert first_ocr_started.wait(timeout=5)
     assert _wait_for_resource_activity(runner, "ocr", queued=1, running=1, timeout=5)
 
     release.set()
@@ -1135,6 +1140,82 @@ def test_api_exposes_workflow_node_viewer_for_planned_elements(tmp_path: Path) -
     assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
 
 
+def test_api_exposes_workflow_node_viewer_for_asset_packages(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(
+        store,
+        settings,
+        stage_executor=_deterministic_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="viewer batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _write_json(
+        Path(case.run_root) / "page_spec.json",
+        {
+            "schema": "drawai.page_spec.v1",
+            "page_id": case.case_id,
+            "source": {"image": str(source), "width_px": 24, "height_px": 24},
+            "canvas": {"width_px": 24, "height_px": 24},
+            "elements": [
+                {
+                    "id": "E001",
+                    "kind": "image",
+                    "role": "picture",
+                    "box_px": [2, 2, 12, 12],
+                    "z_index": 1,
+                    "confidence": "high",
+                    "build": {"mode": "asset_ref", "processing_type": "crop", "asset_id": "A001"},
+                    "source_refs": [{"kind": "candidate", "id": "fixture:E001"}],
+                }
+            ],
+        },
+    )
+    package_payload = json.loads((Path(case.run_root) / "drawai_package.json").read_text(encoding="utf-8"))
+    package_payload["asset_packages"][0]["status"] = "ok"
+    _write_workflow_node_run(
+        Path(case.run_root),
+        "asset_prepare",
+        output_type="asset_packages",
+        format_id="drawai.asset_packages.v1",
+        output_payload={
+            "schema": "drawai.asset_packages.v1",
+            "asset_packages": package_payload["asset_packages"],
+            "metadata": {},
+        },
+        output_name="asset_packages.json",
+    )
+
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/asset_prepare/viewer")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["kind"] == "asset_packages"
+    assert payload["elements"][0]["element_id"] == "E001"
+    assert payload["elements"][0]["bbox"] == [2.0, 2.0, 12.0, 12.0]
+    assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
+    assert payload["elements"][0]["review_status"] == "ok"
+
+
 def test_api_exposes_workflow_node_viewer_for_page_spec(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
@@ -1164,7 +1245,7 @@ def test_api_exposes_workflow_node_viewer_for_page_spec(tmp_path: Path) -> None:
     )
     _write_workflow_node_run(
         Path(case.run_root),
-        "page_spec_analyze",
+        "page_spec_refine",
         output_type="page_spec",
         format_id="drawai.page_spec.v1",
         output_payload={
@@ -1188,7 +1269,7 @@ def test_api_exposes_workflow_node_viewer_for_page_spec(tmp_path: Path) -> None:
         output_name="page_spec.json",
     )
 
-    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/page_spec_analyze/viewer")
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/page_spec_refine/viewer")
 
     assert response.status_code == 200
     payload = response.json()
@@ -2929,6 +3010,66 @@ def _deterministic_stage_executor(case, stage: str) -> None:
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "figure.png")
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "original.png")
         _write_json(root / "inputs" / "source_metadata.json", {"width": 24, "height": 24})
+    elif stage == "sam_parse":
+        _write_json(
+            root / "reports" / "parser_outputs" / "sam3_candidates.json",
+            {
+                "schema": "drawai.v2.parser_outputs.v1",
+                "candidates": [
+                    {
+                        "candidate_id": "sam3:B001",
+                        "source_parser": "sam3_structure_parser",
+                        "source_parser_version": "v1",
+                        "element_type": "picture",
+                        "bbox": [2, 2, 12, 12],
+                        "geometry": {
+                            "kind": "bbox",
+                            "bbox": [2, 2, 12, 12],
+                            "coordinate_system": "figure_image_pixels",
+                        },
+                        "confidence": 0.9,
+                        "z_hint": 1,
+                        "text": "",
+                        "evidence_files": [],
+                        "provenance": {
+                            "source_image": str(root / "inputs" / "figure.png"),
+                            "parser_priority": 10,
+                        },
+                        "raw_ref": {"field": "raw_regions", "index": 0},
+                    }
+                ],
+            },
+        )
+    elif stage == "ocr_parse":
+        _write_json(
+            root / "reports" / "parser_outputs" / "ocr_candidates.json",
+            {
+                "schema": "drawai.v2.parser_outputs.v1",
+                "candidates": [
+                    {
+                        "candidate_id": "ocr:T001",
+                        "source_parser": "ocr_text_parser",
+                        "source_parser_version": "v1",
+                        "element_type": "text",
+                        "bbox": [1, 1, 9, 5],
+                        "geometry": {
+                            "kind": "bbox",
+                            "bbox": [1, 1, 9, 5],
+                            "coordinate_system": "figure_image_pixels",
+                        },
+                        "confidence": 0.95,
+                        "z_hint": 2,
+                        "text": "hello",
+                        "evidence_files": [],
+                        "provenance": {
+                            "source_image": str(root / "inputs" / "figure.png"),
+                            "parser_priority": 5,
+                        },
+                        "raw_ref": {"field": "ocr_text_boxes", "id": "T001", "index": 0},
+                    }
+                ],
+            },
+        )
     elif stage == "parse_elements":
         _write_json(root / "reports" / "parser_outputs" / "element_candidates.json", {"candidates": []})
     elif stage == "fuse_elements":
@@ -3340,7 +3481,7 @@ def _write_workflow_node_run(
 
 
 def _failing_stage_executor(case, stage: str) -> None:
-    if stage == "parse_elements":
+    if stage == "sam_parse":
         raise RuntimeError("detector unavailable")
     _deterministic_stage_executor(case, stage)
 

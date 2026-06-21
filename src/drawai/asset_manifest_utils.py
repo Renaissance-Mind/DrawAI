@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,83 @@ def manifest_image_paths(asset_manifest: Mapping[str, Any] | list[Any] | None, s
             continue
         _add_manifest_path(paths, item, svg_dir)
     return paths
+
+
+def extend_asset_manifest_for_svg_export(
+    run_root: str | Path,
+    asset_manifest: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return an export-time manifest that includes native backfill assets used by SVG generation."""
+
+    base_assets = asset_manifest.get("assets") if isinstance(asset_manifest.get("assets"), list) else []
+    native_assets = native_backfill_validation_assets_for_export(run_root)
+    if not native_assets:
+        return dict(asset_manifest), {
+            "native_backfill_asset_count": 0,
+            "native_backfill_request_count": 0,
+            "manifest_extended": False,
+        }
+
+    schema = str(asset_manifest.get("schema") or "drawai.asset_manifest.v1")
+    request_paths = {
+        str(asset.get("native_backfill_request"))
+        for asset in native_assets
+        if str(asset.get("native_backfill_request") or "").strip()
+    }
+    return {
+        "schema": schema,
+        "assets": [*base_assets, *native_assets],
+    }, {
+        "native_backfill_asset_count": len(native_assets),
+        "native_backfill_request_count": len(request_paths),
+        "manifest_extended": True,
+    }
+
+
+def native_backfill_validation_assets_for_export(run_root: str | Path) -> list[dict[str, Any]]:
+    root = Path(run_root).expanduser().resolve(strict=False)
+    svg_dir = root / "svg"
+    attempts_dir = svg_dir / "attempts"
+    assets: list[dict[str, Any]] = []
+    seen_hrefs: set[str] = set()
+    for request_path in sorted(attempts_dir.glob("**/native_backfill_request.json")):
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        candidates = request.get("candidates") if isinstance(request, Mapping) else None
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if not isinstance(candidate, Mapping):
+                continue
+            bbox = candidate.get("bbox")
+            if not isinstance(bbox, list) or len(bbox) != 4:
+                continue
+            asset_id = str(candidate.get("asset_id") or "").strip()
+            if not asset_id:
+                continue
+            for suffix, href_key, background_policy in (
+                ("", "preserve_href", "preserve_crop"),
+                ("_nobg", "nobg_href", "transparent_subject"),
+            ):
+                href = str(candidate.get(href_key) or "").strip()
+                if not href or href in seen_hrefs:
+                    continue
+                if not (svg_dir / href).is_file():
+                    continue
+                assets.append(
+                    {
+                        "asset_id": f"{asset_id}{suffix}",
+                        "box_id": candidate.get("box_id"),
+                        "bbox": bbox,
+                        "svg_href": href,
+                        "render_policy": "raster_png",
+                        "background_policy": background_policy,
+                        "native_backfill_candidate": True,
+                        "native_backfill_request": str(request_path),
+                        "insertable": True,
+                    }
+                )
+                seen_hrefs.add(href)
+    return assets
 
 
 def _add_manifest_path(paths: set[Path], raw_item: Any, svg_dir: Path) -> None:

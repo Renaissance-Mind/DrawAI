@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from drawai.v2.registry import default_registry
-from drawai.v2.schema import ElementPlan, ProcessingIntent
+from drawai.v2.schema import ElementCandidate, ElementPlan, ProcessingIntent
 
 PAGE_SPEC_SCHEMA = "drawai.page_spec.v1"
 
@@ -176,6 +176,94 @@ def page_element_from_plan_payload(payload: Mapping[str, Any]) -> dict[str, Any]
     return element
 
 
+def page_spec_from_candidates(
+    candidates: Sequence[ElementCandidate | Mapping[str, Any]],
+    *,
+    page_id: str,
+    source_image: str = "",
+    canvas: Mapping[str, Any] | None = None,
+    producer: str,
+) -> dict[str, Any]:
+    canvas_payload = _mapping(canvas or {}, "canvas")
+    page_spec = {
+        "schema": PAGE_SPEC_SCHEMA,
+        "page_id": page_id,
+        "source": {
+            "image": source_image,
+            "width_px": canvas_payload.get("width_px", canvas_payload.get("width")),
+            "height_px": canvas_payload.get("height_px", canvas_payload.get("height")),
+        },
+        "canvas": {
+            "width_px": canvas_payload.get("width_px", canvas_payload.get("width")),
+            "height_px": canvas_payload.get("height_px", canvas_payload.get("height")),
+        },
+        "background": {},
+        "elements": [
+            page_element_from_candidate_payload(_candidate_payload(candidate))
+            for candidate in candidates
+        ],
+        "metadata": {"producer": producer},
+    }
+    validate_page_spec_payload(page_spec)
+    return page_spec
+
+
+def page_element_from_candidate_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    candidate_id = _require_string(payload, "candidate_id")
+    element_type = str(payload.get("element_type") or "unknown")
+    kind = _page_kind_from_element_type(element_type, _candidate_processing_type(element_type))
+    bbox = _bbox4(payload.get("bbox"), "candidate.bbox")
+    text = str(payload.get("text") or "")
+    build: dict[str, Any] = {
+        "mode": _candidate_build_mode(kind, element_type),
+        "processing_type": _candidate_processing_type(element_type),
+    }
+    if build["mode"] == "asset_ref":
+        build["asset_id"] = _asset_id_from_candidate_id(candidate_id)
+    element: dict[str, Any] = {
+        "id": _element_id_from_candidate_id(candidate_id),
+        "kind": kind,
+        "role": element_type,
+        "box_px": list(bbox),
+        "z_index": int(payload.get("z_hint", 0) or 0),
+        "confidence": float(payload.get("confidence", 0.0) or 0.0),
+        "geometry": _mapping(payload.get("geometry", {}), "candidate.geometry"),
+        "source_refs": [{"kind": "candidate", "id": candidate_id}],
+        "build": build,
+        "measurement": {
+            "text": text,
+            "confidence": payload.get("confidence"),
+        } if text else {"confidence": payload.get("confidence")},
+        "metadata": {
+            "source_parser": str(payload.get("source_parser") or ""),
+            "source_parser_version": str(payload.get("source_parser_version") or ""),
+            "legacy_element_type": element_type,
+            "candidate_payload": dict(payload),
+        },
+    }
+    if text:
+        element["text"] = text
+    return element
+
+
+def candidate_payloads_from_page_specs(
+    payloads: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for payload in payloads:
+        validate_page_spec_payload(payload)
+        for raw_element in payload.get("elements", ()):
+            if not isinstance(raw_element, Mapping):
+                continue
+            metadata = raw_element.get("metadata")
+            if not isinstance(metadata, Mapping):
+                continue
+            candidate = metadata.get("candidate_payload")
+            if isinstance(candidate, Mapping):
+                candidates.append(dict(candidate))
+    return candidates
+
+
 def element_plans_from_page_spec(payload: Mapping[str, Any]) -> tuple[ElementPlan, ...]:
     validate_page_spec_payload(payload)
     plans: list[ElementPlan] = []
@@ -279,6 +367,40 @@ def _processing_type(element: Mapping[str, Any]) -> str:
     if mode == "asset_ref":
         return "crop"
     return _BUILD_MODE_TO_PROCESSING.get(mode, "svg_self_draw")
+
+
+def _candidate_payload(candidate: ElementCandidate | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(candidate, ElementCandidate):
+        return candidate.to_dict()
+    if isinstance(candidate, Mapping):
+        return dict(candidate)
+    raise ValueError("candidate must be an ElementCandidate or mapping")
+
+
+def _candidate_build_mode(kind: str, element_type: str) -> str:
+    if kind == "text":
+        return "editable_text"
+    if kind in {"shape", "connector", "table", "chart", "formula"}:
+        return "vector"
+    if element_type in {"picture", "icon", "symbol", "diagram", "unknown"}:
+        return "asset_ref"
+    return "vector"
+
+
+def _candidate_processing_type(element_type: str) -> str:
+    if element_type in {"picture", "icon", "symbol", "diagram", "unknown"}:
+        return "crop"
+    return "svg_self_draw"
+
+
+def _element_id_from_candidate_id(candidate_id: str) -> str:
+    slug = candidate_id.replace(":", "_").replace("-", "_")
+    return f"C_{slug}"
+
+
+def _asset_id_from_candidate_id(candidate_id: str) -> str:
+    slug = candidate_id.replace(":", "_").replace("-", "_")
+    return f"A_{slug}"
 
 
 def _source_candidate_ids(element: Mapping[str, Any], *, fallback: str) -> list[str]:
