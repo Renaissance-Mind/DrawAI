@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createUploadBatch, generateImages } from "./api";
-import type { BatchDetail, ImageGenerationProvider, ImageGenerationRequest, ImageGenerationResponse } from "./types";
+import { createUploadBatch, generateImages, listSlideTemplateCards, listSlideTemplateGallery } from "./api";
+import type {
+  BatchDetail,
+  ImageGenerationProvider,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
+  ReferenceMode,
+  SlideTemplateCard,
+  SlideTemplateGalleryItem
+} from "./types";
 
 /**
  * Generation studio for OpenAI-compatible Images API and Codex built-in image generation.
@@ -10,7 +18,9 @@ import type { BatchDetail, ImageGenerationProvider, ImageGenerationRequest, Imag
  *   output_format, n
  *
  * Codex provider request shape (POST /api/imagegen/generations):
- *   provider, model, prompt, size, quality, background, output_format, n
+ *   provider, model, prompt, size, quality, background, output_format, n,
+ *   language, template_id, source_mode, text_density, visible_text_blocks,
+ *   sources, claims, data_sources, visual_style
  */
 
 const DEFAULT_MODEL = "gpt-image-2";
@@ -22,6 +32,13 @@ type Quality = "auto" | "low" | "medium" | "high";
 type Background = "auto" | "opaque" | "transparent";
 type OutputFormat = "png";
 type RightMode = "stage" | "grid";
+type StyleCandidateSlot = "auto" | "1" | "2" | "3";
+type IpSafetyMode = "off" | "generic" | "strict";
+type GalleryLightbox = {
+  item: SlideTemplateGalleryItem;
+  imageUrl: string;
+  title: string;
+};
 
 const SIZE_PRESETS = [
   "auto",
@@ -123,6 +140,150 @@ const PROVIDERS: Array<{ value: ImageGenerationProvider; label: string; sub: str
   { value: "codex", label: "Codex", sub: "内置工具" }
 ];
 
+type PPTTemplateOption = { value: string; label: string; sub: string };
+
+const PPT_TEMPLATE_GROUPS: Array<{ group: string; options: PPTTemplateOption[] }> = [
+  {
+    group: "自动",
+    options: [{ value: "auto", label: "自动选择", sub: "按意图路由" }]
+  },
+  {
+    group: "专业商务 / 咨询",
+    options: [
+      { value: "consulting_report", label: "咨询报告", sub: "战略、对比、决策页" },
+      { value: "mckinsey_boardroom", label: "董事会咨询页", sub: "结论先行、议题树、路线图" },
+      { value: "bcg_strategy_map", label: "战略地图", sub: "组合矩阵、能力地图、机会评估" },
+      { value: "investment_memo", label: "投资备忘录", sub: "投资假设、风险、尽调问题" },
+      { value: "vc_pitch_deck", label: "VC 路演", sub: "问题-方案-市场-产品叙事" },
+      { value: "annual_report", label: "年度报告", sub: "公司总结、ESG、经营亮点" }
+    ]
+  },
+  {
+    group: "科技 / AI 产品",
+    options: [
+      { value: "product_launch", label: "产品发布", sub: "能力发布、路线图" },
+      { value: "dark_tech", label: "暗色科技", sub: "AI、Agent、系统架构" },
+      { value: "openai_minimal", label: "AI 极简发布", sub: "模型能力、原则、系统概览" },
+      { value: "apple_keynote", label: "Keynote 产品页", sub: "高质感英雄视觉、功能亮点" },
+      { value: "linear_product_dark", label: "暗色产品系统", sub: "SaaS 工作流、产品运营" },
+      { value: "vercel_gradient", label: "开发平台渐变", sub: "部署、云平台、前端 AI" },
+      { value: "stripe_saas", label: "SaaS 商业产品", sub: "API、平台经济、增长飞轮" },
+      { value: "developer_docs", label: "开发者文档", sub: "API、SDK、技术上手" },
+      { value: "cyberpunk_infra", label: "赛博基础设施", sub: "网络、安全、控制平面" }
+    ]
+  },
+  {
+    group: "数据 / 媒体",
+    options: [
+      { value: "data_journalism", label: "数据新闻", sub: "证据、图表、指标叙事" },
+      { value: "economist_data_story", label: "经济数据故事", sub: "图表主导、政策/宏观解释" },
+      { value: "bloomberg_terminal", label: "终端仪表盘", sub: "金融监控、风险、多指标" },
+      { value: "nyt_scrollytelling", label: "滚动叙事报道", sub: "公共议题、时间线、注释场景" },
+      { value: "financial_times_report", label: "金融时报报告", sub: "严肃分析、表格、市场简报" },
+      { value: "infographic_dashboard", label: "信息图仪表盘", sub: "KPI、状态、运营概览" }
+    ]
+  },
+  {
+    group: "学术 / 教学",
+    options: [
+      { value: "academic_technical", label: "学术技术", sub: "论文、模型、方法讲解" },
+      { value: "nature_paper_briefing", label: "论文精读简报", sub: "论点、证据、贡献、局限" },
+      { value: "neurips_poster", label: "会议海报", sub: "架构、实验、消融、结果" },
+      { value: "lab_meeting", label: "组会汇报", sub: "问题、进展、证据、下一步" },
+      { value: "notebooklm_briefing", label: "资料简报", sub: "文档到幻灯片、读书笔记" },
+      { value: "notebooklm_cards", label: "资料卡片", sub: "来源卡、问题卡、综合卡" },
+      { value: "teaching_explainer", label: "教学讲解", sub: "课程、培训、分步解释" },
+      { value: "teaching_whiteboard", label: "白板教学", sub: "概念、例题、推导、纠错" },
+      { value: "courseware_explainer", label: "课件讲解", sub: "学习目标、例子、检查点" }
+    ]
+  },
+  {
+    group: "潮流视觉",
+    options: [
+      { value: "magazine_editorial", label: "杂志叙事", sub: "观点、故事、公共解释" },
+      { value: "creative_zine", label: "创意海报", sub: "活动、概念、年轻化表达" },
+      { value: "swiss_grid", label: "瑞士网格", sub: "严谨网格、现代报告" },
+      { value: "bauhaus_geometric", label: "包豪斯几何", sub: "几何结构、设计教育" },
+      { value: "memphis_playful", label: "孟菲斯趣味", sub: "年轻化、活动、创意课件" },
+      { value: "brutalist_poster", label: "野兽派海报", sub: "强观点、警示、宣言页" },
+      { value: "glassmorphism", label: "玻璃拟态", sub: "未来感、层叠面板、仪表盘" },
+      { value: "claymorphism", label: "黏土拟态", sub: "友好产品、入门解释" },
+      { value: "bento_grid", label: "Bento 网格", sub: "功能总览、能力地图" },
+      { value: "isometric_3d", label: "等距 3D", sub: "系统、流程、空间隐喻" },
+      { value: "retro_futurism", label: "复古未来", sub: "未来场景、技术史、愿景" },
+      { value: "pixel_art", label: "像素风", sub: "游戏化、开发者文化、趣味教学" }
+    ]
+  },
+  {
+    group: "卡通 / IP 安全氛围",
+    options: [
+      { value: "blue_robot_learning", label: "蓝白圆润机器人学习风", sub: "泛化机器猫氛围，不复刻角色" },
+      { value: "soft_storybook_anime", label: "柔和绘本动漫", sub: "原创角色、温和故事教学" },
+      { value: "collectible_creature_cards", label: "原创收集卡", sub: "分类、对比、能力卡片" },
+      { value: "toy_block_diagram", label: "玩具积木图解", sub: "模块、架构、拼装流程" },
+      { value: "retro_platform_game", label: "复古平台游戏", sub: "关卡、检查点、挑战路径" },
+      { value: "comic_manga_classroom", label: "漫画课堂", sub: "分镜、对话、课堂讲解" }
+    ]
+  }
+];
+
+const SOURCE_MODES: Array<{ value: string; label: string; sub: string }> = [
+  { value: "prompt_only", label: "仅提示词", sub: "不补事实" },
+  { value: "source_grounded", label: "资料约束", sub: "按来源生成" },
+  { value: "data_driven", label: "数据驱动", sub: "按表格/指标画图" },
+  { value: "brand_template", label: "品牌模板", sub: "按参考风格" },
+  { value: "web_research", label: "联网研究后", sub: "先研究再生成" }
+];
+
+const LANGUAGE_OPTIONS: Array<{ value: string; label: string; sub: string }> = [
+  { value: "zh", label: "中文", sub: "中文优先" },
+  { value: "auto", label: "自动", sub: "跟随提示词" },
+  { value: "en", label: "English", sub: "英文输出" }
+];
+
+const TEXT_DENSITIES: Array<{ value: string; label: string; sub: string }> = [
+  { value: "medium", label: "中等", sub: "标题+少量说明" },
+  { value: "medium-high", label: "中高", sub: "技术页推荐" },
+  { value: "high", label: "高", sub: "报告/资料页" },
+  { value: "low-medium", label: "偏低", sub: "海报/发布页" }
+];
+
+const STYLE_CANDIDATE_SLOTS: Array<{ value: StyleCandidateSlot; label: string; sub: string }> = [
+  { value: "auto", label: "自动", sub: "多图轮换" },
+  { value: "1", label: "1", sub: "候选一" },
+  { value: "2", label: "2", sub: "候选二" },
+  { value: "3", label: "3", sub: "候选三" }
+];
+
+const IP_SAFETY_MODES: Array<{ value: IpSafetyMode; label: string; sub: string }> = [
+  { value: "off", label: "Off", sub: "default" },
+  { value: "generic", label: "Generic", sub: "broad" },
+  { value: "strict", label: "Strict", sub: "strong" }
+];
+
+const TEMPLATE_STRATEGY_CARD_LINKS: Record<string, string> = {
+  mckinsey_boardroom: "corporate_strategy_cinematic",
+  bcg_strategy_map: "comparison_matrix_template",
+  openai_minimal: "minimalist_clean",
+  developer_docs: "design_blueprint",
+  economist_data_story: "modern_newspaper",
+  infographic_dashboard: "data_dashboard_template",
+  nature_paper_briefing: "seminar_minimal_photo",
+  courseware_explainer: "course_clay",
+  swiss_grid: "swiss_international",
+  bento_grid: "bento_grid_showcase",
+  blue_robot_learning: "manga_safe_learning",
+  comic_manga_classroom: "manga_safe_learning"
+};
+
+const REFERENCE_MODES: Array<{ value: ReferenceMode; label: string; sub: string }> = [
+  { value: "reference_context", label: "Context", sub: "image as context" },
+  { value: "reference_tokens_only", label: "Tokens", sub: "extract tokens only" },
+  { value: "reference_edit_low", label: "Edit low", sub: "loose edit" },
+  { value: "reference_edit_high", label: "Edit high", sub: "strong edit" },
+  { value: "content_edit", label: "Content edit", sub: "edit target" }
+];
+
 interface GeneratedImage {
   id: string;
   url: string;
@@ -155,11 +316,39 @@ export default function ImageGenStudio({
 }) {
   const [provider, setProvider] = useState<ImageGenerationProvider>(connection.provider || "api");
   const [prompt, setPrompt] = useState("");
-  const [size, setSize] = useState<string>("4:3");
-  const [resolution, setResolution] = useState<Resolution>("1k");
-  const [quality, setQuality] = useState<Quality>("auto");
+  const [size, setSize] = useState<string>("16:9");
+  const [resolution, setResolution] = useState<Resolution>("2k");
+  const [quality, setQuality] = useState<Quality>("high");
   const [background, setBackground] = useState<Background>("auto");
   const [count, setCount] = useState(1);
+  const [language, setLanguage] = useState("zh");
+  const [templateId, setTemplateId] = useState("auto");
+  const [templateCardId, setTemplateCardId] = useState("");
+  const [templateCards, setTemplateCards] = useState<SlideTemplateCard[]>([]);
+  const [templateCardsError, setTemplateCardsError] = useState("");
+  const [templateGallery, setTemplateGallery] = useState<SlideTemplateGalleryItem[]>([]);
+  const [templateGalleryError, setTemplateGalleryError] = useState("");
+  const [expandedGalleryTemplateId, setExpandedGalleryTemplateId] = useState("");
+  const [galleryLightbox, setGalleryLightbox] = useState<GalleryLightbox | null>(null);
+  const [sourceMode, setSourceMode] = useState("prompt_only");
+  const [textDensity, setTextDensity] = useState("medium-high");
+  const [styleCandidateCount, setStyleCandidateCount] = useState(3);
+  const [styleCandidateSlot, setStyleCandidateSlot] = useState<StyleCandidateSlot>("auto");
+  const [visibleTextInput, setVisibleTextInput] = useState("");
+  const [sourcesInput, setSourcesInput] = useState("");
+  const [claimsInput, setClaimsInput] = useState("");
+  const [dataSourcesInput, setDataSourcesInput] = useState("");
+  const [styleNotesInput, setStyleNotesInput] = useState("");
+  const [referenceImagePathInput, setReferenceImagePathInput] = useState("");
+  const [referenceMode, setReferenceMode] = useState<ReferenceMode>("reference_context");
+  const [ipSafetyMode, setIpSafetyMode] = useState<IpSafetyMode>("off");
+  const [specGuidedEnabled, setSpecGuidedEnabled] = useState(false);
+  const [templateSpecInput, setTemplateSpecInput] = useState("");
+  const [slotSchemaInput, setSlotSchemaInput] = useState("");
+  const [referenceStyleSpecInput, setReferenceStyleSpecInput] = useState("");
+  const [designTokensInput, setDesignTokensInput] = useState("");
+  const [specLockInput, setSpecLockInput] = useState("");
+  const [referenceRolesInput, setReferenceRolesInput] = useState("");
 
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [selected, setSelected] = useState(0);
@@ -179,6 +368,90 @@ export default function ImageGenStudio({
     setProvider(connection.provider || "api");
   }, [connection.provider]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (provider !== "codex") return;
+    listSlideTemplateCards()
+      .then((payload) => {
+        if (cancelled) return;
+        setTemplateCards(payload.cards || []);
+        setTemplateCardsError("");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setTemplateCards([]);
+        setTemplateCardsError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (provider !== "codex") return;
+    listSlideTemplateGallery()
+      .then((payload) => {
+        if (cancelled) return;
+        setTemplateGallery(payload.templates || []);
+        setTemplateGalleryError(payload.status === "missing" ? payload.message || "No gallery outputs yet" : "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setTemplateGallery([]);
+        setTemplateGalleryError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const templateGalleryGroups = useMemo(() => groupTemplateGallery(templateGallery), [templateGallery]);
+  const linkedTemplateCardId = useMemo(
+    () => findLinkedTemplateCardId(templateId, templateCards),
+    [templateId, templateCards]
+  );
+  const activeTemplateCard = useMemo(
+    () => templateCards.find((card) => card.id === (templateCardId || linkedTemplateCardId)),
+    [linkedTemplateCardId, templateCardId, templateCards]
+  );
+  const syncTemplateSelection = useCallback((nextTemplateId: string, options?: { expandGallery?: boolean }) => {
+    setTemplateId(nextTemplateId);
+    setTemplateCardId(findLinkedTemplateCardId(nextTemplateId, templateCards));
+    if (nextTemplateId !== "auto" && options?.expandGallery !== false) {
+      setExpandedGalleryTemplateId(nextTemplateId);
+    }
+  }, [templateCards]);
+  const selectGalleryTemplate = useCallback((item: SlideTemplateGalleryItem) => {
+    syncTemplateSelection(item.template_id || "auto");
+  }, [syncTemplateSelection]);
+  const openGalleryLightbox = useCallback((item: SlideTemplateGalleryItem, imageUrl?: string, title?: string) => {
+    const nextImageUrl = imageUrl || item.contact_sheet_url;
+    if (!nextImageUrl) return;
+    setGalleryLightbox({
+      item,
+      imageUrl: nextImageUrl,
+      title: title || item.template_name || item.template_id
+    });
+  }, []);
+
+  useEffect(() => {
+    if (provider !== "codex" || templateId === "auto") return;
+    const linked = findLinkedTemplateCardId(templateId, templateCards);
+    if (linked && templateCardId !== linked) {
+      setTemplateCardId(linked);
+    }
+  }, [provider, templateCardId, templateCards, templateId]);
+
+  useEffect(() => {
+    if (!galleryLightbox) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setGalleryLightbox(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [galleryLightbox]);
+
   const request = useMemo<ImageGenerationRequest>(() => {
     const model = imageModelForProvider(provider, connection.model);
     const body: ImageGenerationRequest = {
@@ -196,6 +469,76 @@ export default function ImageGenStudio({
     const apiKey = connection.apiKey.trim();
     if (apiBaseUrl) body.api_base_url = apiBaseUrl;
     if (apiKey) body.api_key = apiKey;
+    if (provider === "codex") {
+      const effectiveSourceMode = sourceMode === "prompt_only" && dataSourcesInput.trim()
+        ? "data_driven"
+        : sourceMode === "prompt_only" && (sourcesInput.trim() || claimsInput.trim())
+          ? "source_grounded"
+          : sourceMode;
+      body.rendering_mode = "baked_text";
+      body.ip_safety_mode = ipSafetyMode;
+      body.source_mode = effectiveSourceMode;
+      body.text_density = textDensity;
+      body.style_candidate_count = styleCandidateCount;
+      if (language !== "auto") {
+        body.language = language;
+        body.output_language = language;
+      }
+      if (templateId !== "auto") {
+        body.template_id = templateId;
+      }
+      if (templateCardId) {
+        body.template_card_id = templateCardId;
+      }
+      if (styleCandidateSlot !== "auto") {
+        body.style_candidate_index = Number(styleCandidateSlot);
+      }
+      const visibleText = parseVisibleTextInput(visibleTextInput);
+      if (visibleText.visible_text_blocks !== undefined) {
+        body.visible_text_blocks = visibleText.visible_text_blocks;
+      }
+      if (visibleText.locked_visible_text !== undefined) {
+        body.locked_visible_text = visibleText.locked_visible_text;
+      }
+      const sources = parseSourcesInput(sourcesInput);
+      if (sources !== undefined) {
+        body.sources = sources;
+      }
+      const claims = parseClaimsInput(claimsInput);
+      if (claims !== undefined) {
+        body.claims = claims;
+      }
+      const dataSources = parseJsonOrRawText(dataSourcesInput);
+      if (dataSources !== undefined) {
+        body.data_sources = dataSources;
+      }
+      const styleNotes = styleNotesInput.trim();
+      if (styleNotes) {
+        body.visual_style = styleNotes;
+        body.composition_guidance = inputLines(styleNotes);
+      }
+      const referenceImagePath = referenceImagePathInput.trim();
+      if (referenceImagePath) {
+        body.reference_mode = referenceMode;
+        body.source_image_path = referenceImagePath;
+        body.reference_image_path = referenceImagePath;
+      }
+      if (specGuidedEnabled) {
+        body.spec_guided_enabled = true;
+        const templateSpec = parseJsonOrRawText(templateSpecInput);
+        if (templateSpec !== undefined) body.template_spec = templateSpec;
+        const slotSchema = parseJsonOrRawText(slotSchemaInput);
+        if (slotSchema !== undefined) body.slot_schema = slotSchema;
+        const referenceStyleSpec = parseJsonOrRawText(referenceStyleSpecInput);
+        if (referenceStyleSpec !== undefined) body.reference_style_spec = referenceStyleSpec;
+        const designTokens = parseJsonOrRawText(designTokensInput);
+        if (designTokens !== undefined) body.design_tokens = designTokens;
+        const specLock = parseJsonOrRawText(specLockInput);
+        if (specLock !== undefined) body.spec_lock = specLock;
+        const referenceRoles = parseReferenceRolesInput(referenceRolesInput);
+        if (referenceRoles !== undefined) body.reference_roles = referenceRoles;
+      }
+    }
     return body;
   }, [
     provider,
@@ -204,6 +547,28 @@ export default function ImageGenStudio({
     quality,
     background,
     count,
+    language,
+    templateId,
+    templateCardId,
+    sourceMode,
+    textDensity,
+    styleCandidateCount,
+    styleCandidateSlot,
+    visibleTextInput,
+    sourcesInput,
+    claimsInput,
+    dataSourcesInput,
+    styleNotesInput,
+    referenceImagePathInput,
+    referenceMode,
+    ipSafetyMode,
+    specGuidedEnabled,
+    templateSpecInput,
+    slotSchemaInput,
+    referenceStyleSpecInput,
+    designTokensInput,
+    specLockInput,
+    referenceRolesInput,
     connection.apiKey,
     connection.baseUrl,
     connection.model
@@ -336,6 +701,310 @@ export default function ImageGenStudio({
               onChange={(v) => changeProvider(v as ImageGenerationProvider)}
             />
           </Field>
+
+          {provider === "codex" && (
+            <div className="gen-codex-panel">
+              <div className="gen-panel-head">
+                <span className="gen-panel-title">PPT 图像策略</span>
+                <span className="gen-panel-sub">模板、风格、来源和可见文字都会进入 Codex 提示词</span>
+              </div>
+
+              <Field label="模板选择 / 策略说明" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "视觉系统"}>
+                <select className="gen-select" value={templateId} onChange={(e) => syncTemplateSelection(e.target.value)}>
+                  {PPT_TEMPLATE_GROUPS.map((group) => (
+                    <optgroup key={group.group} label={group.group}>
+                      {group.options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label} - {option.sub}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
+                {activeTemplateCard && (
+                  <div className="gen-template-card-preview">
+                    <div className="gen-template-card-title">
+                      <span>{activeTemplateCard.name}</span>
+                      <em>{activeTemplateCard.category}</em>
+                    </div>
+                    <p>{activeTemplateCard.prompt_recipe}</p>
+                    <div className="gen-template-card-tags">
+                      {activeTemplateCard.visual_tags.slice(0, 5).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                    <div className="gen-template-card-meta">
+                      <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
+                      <span>{provenanceLabel(activeTemplateCard)}</span>
+                    </div>
+                  </div>
+                )}
+              </Field>
+
+              <Field label="模板效果库" hint={`${templateGallery.length || 0} templates，点击即选中模板`}>
+                {templateGalleryError && <p className="gen-inline-error">{templateGalleryError}</p>}
+                {!templateGalleryError && templateGallery.length === 0 && (
+                  <p className="gen-gallery-empty">还没有可展示的真实生成样例。</p>
+                )}
+                {templateGalleryGroups.length > 0 && (
+                  <div className="gen-template-gallery">
+                    {templateGalleryGroups.map((group) => (
+                      <section className="gen-gallery-group" key={group.category}>
+                        <div className="gen-gallery-group-title">{group.category}</div>
+                        <div className="gen-gallery-grid">
+                          {group.items.map((item) => {
+                            const selectedGallery = templateId === item.template_id;
+                            const expanded = expandedGalleryTemplateId === item.template_id;
+                            return (
+                              <div className={`gen-gallery-card${selectedGallery ? " active" : ""}`} key={item.template_id}>
+                                <div className="gen-gallery-card-main">
+                                  <button
+                                    type="button"
+                                    className="gen-gallery-thumb-button"
+                                    disabled={!item.contact_sheet_url}
+                                    onClick={() => openGalleryLightbox(item)}
+                                  >
+                                    {item.contact_sheet_url ? (
+                                      <img src={item.contact_sheet_url} alt={`${item.template_name} preview`} loading="lazy" />
+                                    ) : (
+                                      <span className="gen-gallery-placeholder">No preview</span>
+                                    )}
+                                    <span className="gen-gallery-zoom">
+                                      <ExpandIcon />
+                                      <span>查看大图</span>
+                                    </span>
+                                  </button>
+                                  <button type="button" className="gen-gallery-info-button" onClick={() => selectGalleryTemplate(item)}>
+                                    <strong>{item.template_name || item.template_id}</strong>
+                                    <em>{item.ok_count}/{item.page_count} pages</em>
+                                    <small>{item.reason}</small>
+                                  </button>
+                                </div>
+                                {expanded && (
+                                  <div className="gen-gallery-pages">
+                                    {item.pages.map((page) => (
+                                      <figure key={`${item.template_id}-${page.page_id}`}>
+                                        {page.image_url && (
+                                          <button
+                                            className="gen-gallery-page-thumb"
+                                            type="button"
+                                            onClick={() => openGalleryLightbox(item, page.image_url, page.page_title || page.page_id)}
+                                          >
+                                            <img src={page.image_url} alt={page.page_title} loading="lazy" />
+                                          </button>
+                                        )}
+                                        <figcaption>{page.page_title || page.page_id}</figcaption>
+                                      </figure>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </Field>
+
+              <div className="gen-two-col">
+                <Field label="来源模式" hint="事实策略">
+                  <select className="gen-select" value={sourceMode} onChange={(e) => setSourceMode(e.target.value)}>
+                    {SOURCE_MODES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} - {option.sub}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="输出语言" hint="中文优先">
+                  <select className="gen-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} - {option.sub}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <div className="gen-two-col">
+                <Field label="文字密度" hint="PPT 文本量">
+                  <select className="gen-select" value={textDensity} onChange={(e) => setTextDensity(e.target.value)}>
+                    {TEXT_DENSITIES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} - {option.sub}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="候选数量" hint="模板候选池">
+                  <Stepper value={styleCandidateCount} min={1} max={3} onChange={setStyleCandidateCount} />
+                </Field>
+              </div>
+
+              <Field label="风格候选" hint={styleCandidateSlot === "auto" ? "多图时自动轮换候选" : "固定使用一个候选"}>
+                <Segmented
+                  options={STYLE_CANDIDATE_SLOTS}
+                  value={styleCandidateSlot}
+                  onChange={(v) => setStyleCandidateSlot(v as StyleCandidateSlot)}
+                />
+              </Field>
+
+              <Field label="必须出现的文字" hint="JSON 或逐行">
+                <textarea
+                  className="gen-structured-textarea"
+                  value={visibleTextInput}
+                  onChange={(e) => setVisibleTextInput(e.target.value)}
+                  placeholder={'例如：\n{"title":"Kimi 系列模型技术路线","takeaway":"MoE 扩展、训练优化与 Agent 能力是主线","labels":["MoE 架构","长上下文","工具调用"]}\n或逐行写必须出现的标题、栏目和标签'}
+                  rows={5}
+                />
+              </Field>
+
+              <Field label="事实来源" hint="URL、摘录或 JSON">
+                <textarea
+                  className="gen-structured-textarea"
+                  value={sourcesInput}
+                  onChange={(e) => setSourcesInput(e.target.value)}
+                  placeholder="逐行粘贴来源 URL、官方资料摘录、论文 DOI，或直接粘贴 sources JSON。没有来源时不要让模型编数字、日期、排名。"
+                  rows={4}
+                />
+              </Field>
+
+              <Field label="事实清单" hint="逐行一个 claim">
+                <textarea
+                  className="gen-structured-textarea"
+                  value={claimsInput}
+                  onChange={(e) => setClaimsInput(e.target.value)}
+                  placeholder="例如：Kimi K2 是 MoE 模型。\n例如：不要编造 benchmark 分数，只展示已提供的结论。"
+                  rows={3}
+                />
+              </Field>
+
+              <Field label="数据源" hint="表格、CSV 摘要或 JSON">
+                <textarea
+                  className="gen-structured-textarea"
+                  value={dataSourcesInput}
+                  onChange={(e) => setDataSourcesInput(e.target.value)}
+                  placeholder="粘贴表格、CSV 摘要、指标说明或 data_sources JSON。图表和数字只应来自这里。"
+                  rows={3}
+                />
+              </Field>
+
+              <Field label="风格备注" hint="品牌、参考、禁忌">
+                <textarea
+                  className="gen-structured-textarea"
+                  value={styleNotesInput}
+                  onChange={(e) => setStyleNotesInput(e.target.value)}
+                  placeholder="例如：偏黑色科技发布会风格，中文标题要大，避免纯卡片布局，避免英文通用标题。"
+                  rows={3}
+                />
+              </Field>
+
+              <Field label="IP 安全策略" hint="默认关闭">
+                <Segmented
+                  options={IP_SAFETY_MODES}
+                  value={ipSafetyMode}
+                  onChange={(v) => setIpSafetyMode(v as IpSafetyMode)}
+                />
+              </Field>
+
+              <Field label="Spec-guided / Design lock" hint={specGuidedEnabled ? "已启用" : "关闭"}>
+                <label className="gen-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={specGuidedEnabled}
+                    onChange={(e) => setSpecGuidedEnabled(e.target.checked)}
+                  />
+                  <span>把 template_spec / slot_schema / reference_style_spec 作为结构化约束传给后端</span>
+                </label>
+              </Field>
+
+              {specGuidedEnabled && (
+                <div className="gen-spec-panel">
+                  <Field label="template_spec" hint="JSON">
+                    <textarea
+                      className="gen-structured-textarea"
+                      value={templateSpecInput}
+                      onChange={(e) => setTemplateSpecInput(e.target.value)}
+                      placeholder='{"schema":"drawai.ppt_template_spec.v1","slide_size":{"width_in":13.333,"height_in":7.5},"layouts":[...]}'
+                      rows={4}
+                    />
+                  </Field>
+                  <Field label="slot_schema" hint="JSON">
+                    <textarea
+                      className="gen-structured-textarea"
+                      value={slotSchemaInput}
+                      onChange={(e) => setSlotSchemaInput(e.target.value)}
+                      placeholder='{"slots":[{"id":"title","role":"headline"},{"id":"main_flow","role":"process"}]}'
+                      rows={3}
+                    />
+                  </Field>
+                  <Field label="reference_style_spec" hint="JSON">
+                    <textarea
+                      className="gen-structured-textarea"
+                      value={referenceStyleSpecInput}
+                      onChange={(e) => setReferenceStyleSpecInput(e.target.value)}
+                      placeholder='{"reference_roles":[{"role":"layout_reference"},{"role":"color_reference"}],"design_tokens":{...}}'
+                      rows={4}
+                    />
+                  </Field>
+                  <div className="gen-two-col">
+                    <Field label="design_tokens" hint="JSON">
+                      <textarea
+                        className="gen-structured-textarea"
+                        value={designTokensInput}
+                        onChange={(e) => setDesignTokensInput(e.target.value)}
+                        placeholder='{"palette":["yellow","white","charcoal"],"typography":"dense Chinese slide labels"}'
+                        rows={3}
+                      />
+                    </Field>
+                    <Field label="spec_lock" hint="JSON">
+                      <textarea
+                        className="gen-structured-textarea"
+                        value={specLockInput}
+                        onChange={(e) => setSpecLockInput(e.target.value)}
+                        placeholder='{"lock_canvas":true,"lock_layout_roles":true}'
+                        rows={3}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="reference_roles" hint="JSON 或逐行">
+                    <textarea
+                      className="gen-structured-textarea"
+                      value={referenceRolesInput}
+                      onChange={(e) => setReferenceRolesInput(e.target.value)}
+                      placeholder={"layout_reference\nstyle_reference\ncolor_reference\ntypography_reference"}
+                      rows={4}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              <Field label="参考图模式" hint={referenceImagePathInput.trim() ? referenceMode : "填参考图路径后生效"}>
+                <select className="gen-select" value={referenceMode} onChange={(e) => setReferenceMode(e.target.value as ReferenceMode)}>
+                  {REFERENCE_MODES.map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label} - {mode.sub}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="参考图路径" hint="Codex edit / LocalImageInput">
+                <input
+                  className="gen-input"
+                  value={referenceImagePathInput}
+                  onChange={(e) => setReferenceImagePathInput(e.target.value)}
+                  placeholder="C:\\Users\\...\\reference.png；填写后 Codex 使用真实 image edit 路径"
+                />
+              </Field>
+            </div>
+          )}
 
           <Field label="尺寸 / 比例" hint={effectiveSize}>
             <div className="gen-ratio-grid">
@@ -517,6 +1186,66 @@ export default function ImageGenStudio({
           </div>
         )}
       </section>
+      {galleryLightbox && (
+        <div
+          className="gen-gallery-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="模板效果大图"
+          onClick={() => setGalleryLightbox(null)}
+        >
+          <div className="gen-gallery-lightbox-panel" onClick={(event) => event.stopPropagation()}>
+            <header className="gen-gallery-lightbox-head">
+              <div>
+                <strong>{galleryLightbox.title}</strong>
+                <span>{galleryLightbox.item.category} · {galleryLightbox.item.ok_count}/{galleryLightbox.item.page_count} pages</span>
+              </div>
+              <div className="gen-gallery-lightbox-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectGalleryTemplate(galleryLightbox.item);
+                    setGalleryLightbox(null);
+                  }}
+                >
+                  使用模板
+                </button>
+                <button type="button" aria-label="关闭" onClick={() => setGalleryLightbox(null)}>
+                  ×
+                </button>
+              </div>
+            </header>
+            <div className="gen-gallery-lightbox-stage">
+              <img src={galleryLightbox.imageUrl} alt={galleryLightbox.title} />
+            </div>
+            <div className="gen-gallery-lightbox-strip">
+              {galleryLightbox.item.contact_sheet_url && (
+                <button
+                  type="button"
+                  className={galleryLightbox.imageUrl === galleryLightbox.item.contact_sheet_url ? "active" : ""}
+                  onClick={() => openGalleryLightbox(galleryLightbox.item)}
+                >
+                  <img src={galleryLightbox.item.contact_sheet_url} alt="contact sheet" />
+                  <span>总览</span>
+                </button>
+              )}
+              {galleryLightbox.item.pages.map((page) => (
+                page.image_url ? (
+                  <button
+                    key={page.page_id}
+                    type="button"
+                    className={galleryLightbox.imageUrl === page.image_url ? "active" : ""}
+                    onClick={() => openGalleryLightbox(galleryLightbox.item, page.image_url, page.page_title || page.page_id)}
+                  >
+                    <img src={page.image_url} alt={page.page_title} />
+                    <span>{page.page_title || page.page_id}</span>
+                  </button>
+                ) : null
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -531,6 +1260,29 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       {children}
     </label>
   );
+}
+
+function groupTemplateGallery(items: SlideTemplateGalleryItem[]): Array<{ category: string; items: SlideTemplateGalleryItem[] }> {
+  const groups = new Map<string, SlideTemplateGalleryItem[]>();
+  for (const item of items) {
+    const category = item.category || "uncategorized";
+    groups.set(category, [...(groups.get(category) || []), item]);
+  }
+  return Array.from(groups.entries()).map(([category, groupItems]) => ({ category, items: groupItems }));
+}
+
+function findLinkedTemplateCardId(templateId: string, cards: SlideTemplateCard[]): string {
+  if (!templateId || templateId === "auto") return "";
+  if (cards.some((card) => card.id === templateId)) return templateId;
+  const mapped = TEMPLATE_STRATEGY_CARD_LINKS[templateId] || "";
+  return mapped && cards.some((card) => card.id === mapped) ? mapped : "";
+}
+
+function provenanceLabel(card: SlideTemplateCard): string {
+  const sources = card.provenance
+    .map((item) => item.source)
+    .filter((value): value is string => typeof value === "string" && Boolean(value));
+  return sources[0] || "DrawAI";
 }
 
 function Segmented({
@@ -629,6 +1381,69 @@ function optionLabel<T extends string>(options: Array<{ value: T; label: string 
 
 function openAiSizeFromPreset(ratio: string, resolution: Resolution): string {
   return OPENAI_SIZE_BY_RATIO[resolution]?.[ratio] || "1024x1024";
+}
+
+function parseVisibleTextInput(value: string): { visible_text_blocks?: unknown; locked_visible_text?: string[] } {
+  const parsed = parseJsonInput(value);
+  if (parsed !== undefined) {
+    return { visible_text_blocks: parsed };
+  }
+  const lines = inputLines(value);
+  return lines.length ? { locked_visible_text: lines } : {};
+}
+
+function parseSourcesInput(value: string): unknown | undefined {
+  const parsed = parseJsonInput(value);
+  if (parsed !== undefined) return parsed;
+  const lines = inputLines(value);
+  if (!lines.length) return undefined;
+  return lines.map((line, index) => {
+    const url = line.match(/https?:\/\/\S+/)?.[0] || "";
+    return {
+      title: url || `source-${index + 1}`,
+      url,
+      evidence: line
+    };
+  });
+}
+
+function parseClaimsInput(value: string): unknown | undefined {
+  const parsed = parseJsonInput(value);
+  if (parsed !== undefined) return parsed;
+  const lines = inputLines(value);
+  return lines.length ? lines.map((claim) => ({ claim })) : undefined;
+}
+
+function parseJsonOrRawText(value: string): unknown | undefined {
+  const parsed = parseJsonInput(value);
+  if (parsed !== undefined) return parsed;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseReferenceRolesInput(value: string): unknown | undefined {
+  const parsed = parseJsonInput(value);
+  if (parsed !== undefined) return parsed;
+  const lines = inputLines(value);
+  return lines.length ? lines.map((role) => ({ role })) : undefined;
+}
+
+function parseJsonInput(value: string): unknown | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}
+
+function inputLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function imageModelForProvider(provider: ImageGenerationProvider, configuredModel: string): string {

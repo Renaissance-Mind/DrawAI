@@ -1049,6 +1049,97 @@ def test_api_health_reports_runtime_services(tmp_path: Path) -> None:
     assert payload["runtime_activity"]["codex"] == {"limit": 5, "queued": 0, "running": 0}
 
 
+def test_api_lists_slide_template_cards(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    settings = _settings(tmp_path, base_config)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.get("/api/slide-template-cards")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema"] == "drawai.workbench.slide_template_cards.v1"
+    assert payload["count"] >= 60
+    ids = {card["id"] for card in payload["cards"]}
+    assert {"swiss_international", "aurora_ui", "modern_newspaper", "project_progress_kanban"}.issubset(ids)
+
+
+def test_api_lists_slide_template_gallery_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    gallery_root = tmp_path / "gallery"
+    template_dir = gallery_root / "01_mckinsey_boardroom"
+    page_dir = template_dir / "01_01_overview"
+    page_dir.mkdir(parents=True)
+    Image.new("RGB", (640, 360), "white").save(gallery_root / "contact_sheet.jpg")
+    Image.new("RGB", (640, 360), "white").save(template_dir / "contact_sheet.jpg")
+    Image.new("RGB", (640, 360), "white").save(page_dir / "01_overview.png")
+    (page_dir / "prompt.txt").write_text("prompt\n", encoding="utf-8")
+    (page_dir / "payload.json").write_text("{}\n", encoding="utf-8")
+    (page_dir / "record.json").write_text("{}\n", encoding="utf-8")
+    (gallery_root / "summary.md").write_text("# summary\n", encoding="utf-8")
+    (gallery_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "user_prompt": "生成《AI Agent 工作流如何接入企业文档体系》的PPT",
+                "template_count": 1,
+                "pages_per_template": 1,
+                "contact_sheet_path": str(gallery_root / "contact_sheet.jpg"),
+                "templates": [
+                    {
+                        "template_id": "mckinsey_boardroom",
+                        "template_name": "McKinsey Boardroom",
+                        "category": "专业商务/咨询",
+                        "reason": "sample",
+                        "template_dir": str(template_dir),
+                        "contact_sheet_path": str(template_dir / "contact_sheet.jpg"),
+                        "pages": [
+                            {
+                                "page_id": "01_overview",
+                                "page_title": "接入总览",
+                                "page_index": 1,
+                                "page_count": 1,
+                                "status": "ok",
+                                "case_dir": str(page_dir),
+                                "image_path": str(page_dir / "01_overview.png"),
+                                "prompt_path": str(page_dir / "prompt.txt"),
+                                "payload_path": str(page_dir / "payload.json"),
+                            }
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DRAWAI_SLIDE_TEMPLATE_GALLERY_DIR", str(gallery_root))
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    settings = _settings(tmp_path, base_config)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.get("/api/slide-template-gallery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema"] == "drawai.workbench.slide_template_gallery.v1"
+    assert payload["status"] == "ok"
+    assert payload["count"] == 1
+    card = payload["templates"][0]
+    assert card["template_id"] == "mckinsey_boardroom"
+    assert card["contact_sheet_url"].startswith("/api/slide-template-gallery/files/")
+    assert card["pages"][0]["image_url"].endswith("01_overview.png")
+
+    image_response = client.get(card["pages"][0]["image_url"])
+    assert image_response.status_code == 200
+    assert image_response.headers["content-type"].startswith("image/png")
+    assert client.get("/api/slide-template-gallery/files/../secret.png").status_code in {400, 404}
+
+
 def test_api_health_is_degraded_when_any_runtime_service_is_offline(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
@@ -1362,6 +1453,8 @@ def test_image_generation_endpoint_proxies_upstream_request(tmp_path: Path, monk
             "output_format": "png",
             "n": 1,
             "ignored": "not forwarded",
+            "research_context": {"source": "not forwarded to raw image API"},
+            "locked_visible_text": ["not forwarded"],
         },
     )
 
@@ -1378,6 +1471,8 @@ def test_image_generation_endpoint_proxies_upstream_request(tmp_path: Path, monk
     assert payload["n"] == 1
     assert "resolution" not in payload
     assert "ignored" not in payload
+    assert "research_context" not in payload
+    assert "locked_visible_text" not in payload
 
 
 def test_image_generation_endpoint_accepts_request_connection_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1580,6 +1675,41 @@ def test_image_generation_endpoint_can_use_codex_provider(tmp_path: Path, monkey
             "moderation": "auto",
             "output_format": "png",
             "n": 2,
+            "research_context": {
+                "sources": [
+                    {
+                        "title": "Acme annual report",
+                        "url": "https://example.test/report",
+                        "evidence": "Acme shipped 42 reliable widgets in 2026.",
+                    }
+                ]
+            },
+            "claims": [
+                {
+                    "claim": "Acme shipped 42 reliable widgets in 2026.",
+                    "source_url": "https://example.test/report",
+                }
+            ],
+            "locked_visible_text": ["Acme shipped 42 widgets"],
+            "style": "Swiss editorial",
+            "language": "zh",
+            "template_id": "consulting_report",
+            "source_mode": "data_driven",
+            "text_density": "high",
+            "visible_text_blocks": {
+                "title": "Acme 业务进展",
+                "takeaway": "可靠部件交付形成增长基础",
+                "labels": ["交付", "可靠性", "增长"],
+            },
+            "data_sources": {
+                "metrics": [
+                    {
+                        "name": "reliable widgets shipped",
+                        "value": 42,
+                        "period": "2026",
+                    }
+                ]
+            },
         },
     )
 
@@ -1593,13 +1723,293 @@ def test_image_generation_endpoint_can_use_codex_provider(tmp_path: Path, monkey
     assert all(call["runtime_config"]["timeout_seconds"] == 300.0 for call in captured)
     assert all("model_name" not in call["runtime_config"] for call in captured)
     first_prompt = str(captured[0]["prompt"])
-    assert "Primary request: draw a clean green logo" in first_prompt
-    assert "Requested size/aspect: 2048x1152" in first_prompt
-    assert "Quality preference: high" in first_prompt
-    assert "Background preference: transparent" in first_prompt
-    assert "Requested image count: 2" in first_prompt
-    assert "image 1 of 2" in first_prompt
-    assert "image 2 of 2" in str(captured[1]["prompt"])
+    assert "Primary request:" in first_prompt
+    assert "draw a clean green logo" in first_prompt
+    assert "- size: 2048x1152" in first_prompt
+    assert "- quality: high" in first_prompt
+    assert "- background: transparent" in first_prompt
+    assert "SOURCE-GROUNDED" in first_prompt
+    assert "Acme shipped 42 reliable widgets in 2026." in first_prompt
+    assert "REQUIRED_VISIBLE_TEXT" in first_prompt
+    assert "Acme shipped 42 widgets" in first_prompt
+    assert "Swiss editorial" in first_prompt
+    assert "Template: consulting_report / Consulting Report" in first_prompt
+    assert "data_driven" in first_prompt
+    assert "main_language: Chinese" in first_prompt
+    assert "text_density: high" in first_prompt
+    assert "Acme 业务进展" in first_prompt
+    assert "reliable widgets shipped" in first_prompt
+    assert "Do not invent statistics" in first_prompt
+    assert "variant 1 of 2" in first_prompt
+    assert "variant 2 of 2" in str(captured[1]["prompt"])
+
+
+def test_image_generation_with_source_image_uses_codex_edit_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    base_config = _base_config(tmp_path)
+    store = WorkbenchStore(tmp_path / "workspace")
+    settings = _settings(tmp_path, base_config)
+    source_image = tmp_path / "reference.png"
+    Image.new("RGB", (16, 10), (240, 220, 120)).save(source_image)
+    captured: dict[str, object] = {}
+
+    def fake_invoke_codex_python_sdk_imagegen(**kwargs):  # pragma: no cover - should not be called.
+        raise AssertionError("text-to-image path should not be used when source_image_path is supplied")
+
+    def fake_invoke_codex_python_sdk_image_edit(**kwargs):
+        captured.update(kwargs)
+        output_dir = Path(kwargs["output_dir"])
+        output_stem = str(kwargs["output_stem"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_path = output_dir / f"{output_stem}.png"
+        Image.new("RGB", (16, 10), (60, 120, 220)).save(image_path)
+        image_bytes = image_path.read_bytes()
+        image = CodexGeneratedImage(
+            image_id=output_stem,
+            status="completed",
+            path=image_path,
+            source_path=str(image_path),
+            revised_prompt="reference edit revised prompt",
+            mime_type="image/png",
+            width=16,
+            height=10,
+            bytes=len(image_bytes),
+            sha256="test-sha",
+        )
+        return CodexImageGenResult(
+            schema="drawai.codex_python_sdk_imagegen_result.v1",
+            runner="codex_python_sdk_imagegen",
+            task_name=str(kwargs["task_name"]),
+            prompt=str(kwargs["prompt"]),
+            final_response='{"edited": true}',
+            output_dir=output_dir,
+            trace_path=None,
+            archive_dir=output_dir / "codex_session_log",
+            images=(image,),
+            operation="edit",
+            source_image_path=Path(kwargs["source_image_path"]).resolve(),
+        )
+
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_imagegen", fake_invoke_codex_python_sdk_imagegen)
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_image_edit", fake_invoke_codex_python_sdk_image_edit)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/imagegen/generations",
+        json={
+            "provider": "codex",
+            "model": "gpt-image-2",
+            "prompt": "use this reference layout to make a Chinese PPT flow page",
+            "source_image_path": str(source_image),
+            "size": "2048x1152",
+            "quality": "high",
+            "background": "opaque",
+            "output_format": "png",
+            "n": 1,
+            "language": "zh",
+            "template_id": "prisma_flow_diagram",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "codex"
+    assert payload["data"][0]["operation"] == "edit"
+    assert Path(payload["data"][0]["source_image_path"]) == source_image.resolve()
+    assert payload["codex"]["operations"] == ["edit"]
+    assert Path(payload["codex"]["source_image_paths"][0]) == source_image.resolve()
+    assert Path(captured["source_image_path"]) == source_image
+    assert "Reference image execution:" in str(captured["prompt"])
+    assert "LocalImageInput" in str(captured["prompt"])
+    assert "prisma_flow_diagram" in str(captured["prompt"])
+
+
+def test_image_generation_reference_context_uses_context_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_config = _base_config(tmp_path)
+    store = WorkbenchStore(tmp_path / "workspace")
+    settings = _settings(tmp_path, base_config)
+    source_image = tmp_path / "reference.png"
+    Image.new("RGB", (16, 10), (240, 220, 120)).save(source_image)
+    captured: dict[str, object] = {}
+
+    def fake_text_to_image(**kwargs):  # pragma: no cover - should not be called.
+        raise AssertionError("plain text-to-image path should not be used for reference_context")
+
+    def fake_edit(**kwargs):  # pragma: no cover - should not be called.
+        raise AssertionError("edit path should not be used for reference_context")
+
+    def fake_reference_context(**kwargs):
+        captured.update(kwargs)
+        output_dir = Path(kwargs["output_dir"])
+        output_stem = str(kwargs["output_stem"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_path = output_dir / f"{output_stem}.png"
+        Image.new("RGB", (16, 10), (20, 160, 120)).save(image_path)
+        image_bytes = image_path.read_bytes()
+        image = CodexGeneratedImage(
+            image_id=output_stem,
+            status="completed",
+            path=image_path,
+            source_path=str(image_path),
+            revised_prompt="reference context revised prompt",
+            mime_type="image/png",
+            width=16,
+            height=10,
+            bytes=len(image_bytes),
+            sha256="test-sha",
+        )
+        return CodexImageGenResult(
+            schema="drawai.codex_python_sdk_imagegen_result.v1",
+            runner="codex_python_sdk_imagegen",
+            task_name=str(kwargs["task_name"]),
+            prompt=str(kwargs["prompt"]),
+            final_response='{"generated": true}',
+            output_dir=output_dir,
+            trace_path=None,
+            archive_dir=output_dir / "codex_session_log",
+            images=(image,),
+            operation="reference_context",
+            source_image_path=Path(kwargs["source_image_path"]).resolve(),
+        )
+
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_imagegen", fake_text_to_image)
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_image_edit", fake_edit)
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_image_reference_context", fake_reference_context)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/imagegen/generations",
+        json={
+            "provider": "codex",
+            "model": "gpt-image-2",
+            "prompt": "use this reference layout to make a Chinese PPT flow page",
+            "source_image_path": str(source_image),
+            "reference_mode": "reference_context",
+            "size": "2048x1152",
+            "quality": "high",
+            "background": "opaque",
+            "output_format": "png",
+            "n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"][0]["operation"] == "reference_context"
+    assert payload["data"][0]["reference_mode"] == "reference_context"
+    assert payload["codex"]["reference_mode"] == "reference_context"
+    assert Path(captured["source_image_path"]) == source_image
+    assert "reference_mode: reference_context" in str(captured["prompt"])
+    assert "not a literal edit" in str(captured["prompt"])
+
+
+def test_image_generation_reference_tokens_only_does_not_pass_local_image_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_config = _base_config(tmp_path)
+    store = WorkbenchStore(tmp_path / "workspace")
+    settings = _settings(tmp_path, base_config)
+    source_image = tmp_path / "reference.png"
+    Image.new("RGB", (16, 10), (240, 220, 120)).save(source_image)
+    captured: dict[str, object] = {}
+
+    def fake_text_to_image(**kwargs):
+        captured.update(kwargs)
+        output_dir = Path(kwargs["output_dir"])
+        output_stem = str(kwargs["output_stem"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_path = output_dir / f"{output_stem}.png"
+        Image.new("RGB", (16, 10), (20, 160, 120)).save(image_path)
+        image_bytes = image_path.read_bytes()
+        image = CodexGeneratedImage(
+            image_id=output_stem,
+            status="completed",
+            path=image_path,
+            source_path=str(image_path),
+            revised_prompt="tokens-only revised prompt",
+            mime_type="image/png",
+            width=16,
+            height=10,
+            bytes=len(image_bytes),
+            sha256="test-sha",
+        )
+        return CodexImageGenResult(
+            schema="drawai.codex_python_sdk_imagegen_result.v1",
+            runner="codex_python_sdk_imagegen",
+            task_name=str(kwargs["task_name"]),
+            prompt=str(kwargs["prompt"]),
+            final_response='{"generated": true}',
+            output_dir=output_dir,
+            trace_path=None,
+            archive_dir=output_dir / "codex_session_log",
+            images=(image,),
+            operation="generate",
+            source_image_path=None,
+        )
+
+    def fake_edit(**kwargs):  # pragma: no cover - should not be called.
+        raise AssertionError("edit path should not be used for reference_tokens_only")
+
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_imagegen", fake_text_to_image)
+    monkeypatch.setattr(workbench_api, "invoke_codex_python_sdk_image_edit", fake_edit)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/imagegen/generations",
+        json={
+            "provider": "codex",
+            "model": "gpt-image-2",
+            "prompt": "use this reference layout to make a Chinese PPT flow page",
+            "source_image_path": str(source_image),
+            "reference_mode": "reference_tokens_only",
+            "size": "2048x1152",
+            "quality": "high",
+            "background": "opaque",
+            "output_format": "png",
+            "n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"][0]["operation"] == "generate"
+    assert payload["data"][0]["source_image_path"] is None
+    assert payload["data"][0]["reference_mode"] == "reference_tokens_only"
+    assert "reference_image_tokens" in str(captured["prompt"])
+    assert "reference_tokens_only" in str(captured["prompt"])
+    assert "LocalImageInput" not in str(captured["prompt"])
+
+
+def test_api_provider_rejects_reference_image_generation(tmp_path: Path) -> None:
+    base_config = _base_config(tmp_path)
+    store = WorkbenchStore(tmp_path / "workspace")
+    settings = _settings(tmp_path, base_config)
+    source_image = tmp_path / "reference.png"
+    Image.new("RGB", (16, 10), (240, 220, 120)).save(source_image)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/imagegen/generations",
+        json={
+            "provider": "api",
+            "model": "gpt-image-2",
+            "prompt": "use this reference image",
+            "source_image_path": str(source_image),
+            "size": "1024x1024",
+            "quality": "high",
+            "background": "opaque",
+            "output_format": "png",
+            "n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "reference image generation currently requires provider=codex"
 
 
 def test_image_edit_endpoint_uses_codex_local_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

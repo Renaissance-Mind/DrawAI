@@ -1,0 +1,81 @@
+{
+  "prompt": "用户输入：生成《AI Agent 工作流如何接入企业文档体系》的PPT\n请生成第 4/4 页：治理与上线闭环。\n治理页：展示权限控制、来源可信、风险拦截、效果评估、灰度上线和反馈复盘。可以做路线图、控制矩阵、闭环图或总结页。",
+  "size": "2048x1152",
+  "quality": "high",
+  "background": "opaque",
+  "output_format": "png",
+  "n": 1,
+  "template_id": "infographic_dashboard",
+  "candidate_count": 1,
+  "style_candidate_count": 1,
+  "rendering_mode": "baked_text",
+  "source_mode": "source_grounded",
+  "text_density": "medium-high",
+  "slide_type": "governance",
+  "intent": "template_gallery_deck",
+  "audience": "企业管理层、知识管理团队、AI 产品与技术团队",
+  "visible_text_blocks": {
+    "title": "治理与上线闭环",
+    "takeaway": "上线后要持续监控来源可信、权限越界、风险回答和失败样例。",
+    "labels": [
+      "来源可信",
+      "权限控制",
+      "风险拦截",
+      "效果评估",
+      "灰度上线",
+      "反馈复盘"
+    ]
+  },
+  "claims": [
+    "企业文档体系接入 Agent 的关键环节包括文档接入、知识治理、权限边界、检索增强、工作流编排和持续评估。",
+    "所有数值仅为测试样例数据，不代表真实业务结果。"
+  ],
+  "sources": [
+    {
+      "title": "测试主题约束",
+      "evidence": "The deck is a synthetic template-gallery comparison. Keep concrete metrics limited to the supplied test metrics, and avoid company names, market size, benchmarks, or customer case claims."
+    }
+  ],
+  "data_sources": {
+    "note": "Synthetic test metrics for template gallery comparison only.",
+    "metrics": [
+      {
+        "name": "文档覆盖率",
+        "value": 72,
+        "unit": "%"
+      },
+      {
+        "name": "检索命中率",
+        "value": 81,
+        "unit": "%"
+      },
+      {
+        "name": "人工复核通过率",
+        "value": 88,
+        "unit": "%"
+      },
+      {
+        "name": "高风险回答拦截率",
+        "value": 96,
+        "unit": "%"
+      }
+    ]
+  },
+  "visual_style": "使用模板 infographic_dashboard 的视觉系统。该模板用途：operations summaries, KPI overview, multi-factor explainers, status pages。视觉方向：template-specific slide design。本页是连续 deck 的第 4/4 页，必须与同模板其他页面保持色彩、字体层级、图形语言和边距一致。",
+  "composition_guidance": [
+    "这是一组模板图库横向测试，每张图都必须是完整 PPT 页面，不是海报或纯插画。",
+    "同一模板的 4 页需要有明显连续 deck 一致性：标题系统、色彩、模块风格、图标/线条语言一致。",
+    "只根据本页 page_brief 改变页面类型；不要改变总主题。",
+    "文字应跟随用户输入语言和 visible_text_blocks，不要生成随机英文栏目或伪文字。"
+  ],
+  "drawai_postprocess": [
+    "文本区域保持高对比，方便 OCR 识别。",
+    "模块边界清晰，方便 SAM/DrawAI 后续可编辑重建。",
+    "避免将语义文字压在复杂纹理、强噪声或低对比渐变上。"
+  ],
+  "quality_gates": [
+    "必须能看出这是连续 deck 的一页。",
+    "必须包含标题、核心结论/说明、结构化内容区。",
+    "不要编造公司名、真实客户案例、市场规模、年份、benchmark 或未给定数字。"
+  ]
+}

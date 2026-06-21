@@ -11,7 +11,7 @@ import shutil
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,14 +26,18 @@ from ..codex_python_sdk_imagegen import (
     CodexPythonSdkImageGenError,
     CodexImageGenResult,
     invoke_codex_python_sdk_image_edit,
+    invoke_codex_python_sdk_image_reference_context,
     invoke_codex_python_sdk_imagegen,
 )
 from ..config import load_drawai_config
 from ..http_utils import urlopen_direct_for_loopback
 from ..rmbg_client import RemoteRmbgClient
+from ..slide_image_prompt import build_slide_image_generation_prompt, merge_codex_imagegen_context
+from ..slide_template_library import list_template_cards, recommend_template_cards
 from .models import CaseRecord, WorkbenchSettings
 from .runner import WorkbenchRunner, create_case_config
 from .store import WorkbenchStore
+from PIL import Image
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ARCHIVE_EXTENSIONS = {".zip"}
@@ -64,7 +68,16 @@ IMAGEGEN_ALLOWED_FIELDS = {
     "n",
     "partial_images",
     "stream",
+    "source_image_path",
+    "reference_image_path",
+    "reference_image_paths",
+    "image_path",
 }
+SLIDE_TEMPLATE_GALLERY_SCHEMA = "drawai.workbench.slide_template_gallery.v1"
+SLIDE_TEMPLATE_GALLERY_DEFAULT_DIR = (
+    Path(__file__).resolve().parents[3] / "outputs" / "ppt_template_gallery_category_sample"
+)
+SLIDE_TEMPLATE_GALLERY_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".json", ".md", ".txt"}
 
 urlopen_external = urllib.request.urlopen
 
@@ -109,14 +122,51 @@ def create_app(
             "runtime_activity": resolved_runner.resource_activity(),
         }
 
+    @app.get("/api/slide-template-cards")
+    def slide_template_cards(q: str = "", limit: int = 0) -> dict[str, Any]:
+        cards = recommend_template_cards(q, limit=limit) if q.strip() and limit else list_template_cards()
+        if limit and not q.strip():
+            cards = cards[: max(1, int(limit))]
+        return {
+            "schema": "drawai.workbench.slide_template_cards.v1",
+            "count": len(cards),
+            "cards": cards,
+        }
+
+    @app.get("/api/slide-template-cards/recommend")
+    def recommended_slide_template_cards(q: str = "", limit: int = 8) -> dict[str, Any]:
+        cards = recommend_template_cards(q, limit=max(1, int(limit or 8)))
+        return {
+            "schema": "drawai.workbench.slide_template_card_recommendations.v1",
+            "query": q,
+            "count": len(cards),
+            "cards": cards,
+        }
+
+    @app.get("/api/slide-template-gallery")
+    def slide_template_gallery() -> dict[str, Any]:
+        return _slide_template_gallery_payload()
+
+    @app.get("/api/slide-template-gallery/files/{relative_path:path}")
+    def slide_template_gallery_file(relative_path: str) -> FileResponse:
+        root = _slide_template_gallery_root()
+        path = _resolve_slide_template_gallery_file(root, relative_path)
+        return FileResponse(path, media_type=_media_type(path), filename=path.name)
+
     @app.post("/api/imagegen/generations")
     async def generate_images(request: Request) -> dict[str, Any]:
         payload = await request.json()
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="image generation payload must be an object")
+        provider = _image_generation_provider(payload)
+        if provider != "codex" and _image_generation_source_image_path(payload):
+            raise HTTPException(status_code=400, detail="reference image generation currently requires provider=codex")
         normalized = _normalize_image_generation_payload(payload)
-        if _image_generation_provider(payload) == "codex":
-            return _call_codex_image_generation(normalized, store=resolved_store)
+        if provider == "codex":
+            return _call_codex_image_generation(
+                merge_codex_imagegen_context(normalized, payload),
+                store=resolved_store,
+            )
         api_url = _image_generation_api_url(payload.get("api_base_url") or payload.get("base_url"))
         api_key = str(payload.get("api_key") or "").strip() or None
         return _call_image_generation_upstream(normalized, api_url=api_url, api_key=api_key)
@@ -456,6 +506,127 @@ def create_app(
         return FileResponse(path, media_type=artifact.media_type, filename=path.name)
 
     return app
+
+
+def _slide_template_gallery_root() -> Path:
+    configured = str(os.environ.get("DRAWAI_SLIDE_TEMPLATE_GALLERY_DIR") or "").strip()
+    root = Path(configured).expanduser() if configured else SLIDE_TEMPLATE_GALLERY_DEFAULT_DIR
+    return root.resolve(strict=False)
+
+
+def _slide_template_gallery_payload() -> dict[str, Any]:
+    root = _slide_template_gallery_root()
+    summary_path = root / "summary.json"
+    if not summary_path.exists() or not summary_path.is_file():
+        return {
+            "schema": SLIDE_TEMPLATE_GALLERY_SCHEMA,
+            "status": "missing",
+            "output_dir": str(root),
+            "count": 0,
+            "templates": [],
+            "contact_sheet_url": "",
+            "summary_url": "",
+            "message": "template gallery summary.json is not available yet",
+        }
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"template gallery summary is invalid: {exc}") from exc
+
+    templates = [
+        _slide_template_gallery_card(root, template, index=index)
+        for index, template in enumerate(summary.get("templates") or [], start=1)
+        if isinstance(template, Mapping)
+    ]
+    return {
+        "schema": SLIDE_TEMPLATE_GALLERY_SCHEMA,
+        "status": str(summary.get("status") or "ok"),
+        "output_dir": str(root),
+        "user_prompt": str(summary.get("user_prompt") or ""),
+        "template_count": int(summary.get("template_count") or len(templates)),
+        "pages_per_template": int(summary.get("pages_per_template") or 0),
+        "count": len(templates),
+        "templates": templates,
+        "contact_sheet_url": _slide_template_gallery_file_url(root, summary.get("contact_sheet_path") or root / "contact_sheet.jpg"),
+        "summary_url": _slide_template_gallery_file_url(root, summary_path),
+        "summary_md_url": _slide_template_gallery_file_url(root, root / "summary.md"),
+    }
+
+
+def _slide_template_gallery_card(root: Path, template: Mapping[str, Any], *, index: int) -> dict[str, Any]:
+    template_id = str(template.get("template_id") or "").strip()
+    template_dir = Path(str(template.get("template_dir") or root / f"{index:02d}_{template_id}")).expanduser().resolve(strict=False)
+    pages = [
+        _slide_template_gallery_page(root, page)
+        for page in template.get("pages") or []
+        if isinstance(page, Mapping)
+    ]
+    ok_count = len([page for page in pages if page.get("status") == "ok"])
+    return {
+        "template_id": template_id,
+        "template_name": str(template.get("template_name") or template_id),
+        "category": str(template.get("category") or ""),
+        "reason": str(template.get("reason") or ""),
+        "template_dir": str(template_dir),
+        "page_count": len(pages),
+        "ok_count": ok_count,
+        "status": "ok" if pages and ok_count == len(pages) else "partial",
+        "contact_sheet_url": _slide_template_gallery_file_url(
+            root,
+            template.get("contact_sheet_path") or template_dir / "contact_sheet.jpg",
+        ),
+        "pages": pages,
+    }
+
+
+def _slide_template_gallery_page(root: Path, page: Mapping[str, Any]) -> dict[str, Any]:
+    image_path = page.get("image_path") or ""
+    prompt_path = page.get("prompt_path") or ""
+    payload_path = page.get("payload_path") or ""
+    case_dir = page.get("case_dir") or ""
+    record_path = Path(str(case_dir)).expanduser().resolve(strict=False) / "record.json" if case_dir else ""
+    return {
+        "page_id": str(page.get("page_id") or ""),
+        "page_title": str(page.get("page_title") or ""),
+        "page_index": int(page.get("page_index") or 0),
+        "page_count": int(page.get("page_count") or 0),
+        "status": str(page.get("status") or ""),
+        "image_url": _slide_template_gallery_file_url(root, image_path),
+        "prompt_url": _slide_template_gallery_file_url(root, prompt_path),
+        "payload_url": _slide_template_gallery_file_url(root, payload_path),
+        "record_url": _slide_template_gallery_file_url(root, record_path),
+    }
+
+
+def _slide_template_gallery_file_url(root: Path, raw_path: object) -> str:
+    if not raw_path:
+        return ""
+    path = Path(str(raw_path)).expanduser().resolve(strict=False)
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return ""
+    if path.suffix.lower() not in SLIDE_TEMPLATE_GALLERY_FILE_EXTENSIONS:
+        return ""
+    return "/api/slide-template-gallery/files/" + urllib.parse.quote(relative.as_posix())
+
+
+def _resolve_slide_template_gallery_file(root: Path, relative_path: str) -> Path:
+    if not relative_path:
+        raise HTTPException(status_code=404, detail="gallery file is missing")
+    posix = PurePosixPath(relative_path)
+    if posix.is_absolute() or ".." in posix.parts:
+        raise HTTPException(status_code=400, detail="invalid gallery file path")
+    path = (root / Path(*posix.parts)).resolve(strict=False)
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid gallery file path") from exc
+    if path.suffix.lower() not in SLIDE_TEMPLATE_GALLERY_FILE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="unsupported gallery file type")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="gallery file is missing")
+    return path
 
 
 def settings_from_env() -> WorkbenchSettings:
@@ -1124,6 +1295,12 @@ def _normalize_image_generation_payload(payload: Mapping[str, Any]) -> dict[str,
         normalized["partial_images"] = partial_images
     if "stream" in normalized:
         normalized["stream"] = bool(normalized["stream"])
+    source_image_path = _image_generation_source_image_path(normalized)
+    if source_image_path:
+        normalized["source_image_path"] = source_image_path
+        normalized["reference_image_path"] = source_image_path
+        normalized.pop("image_path", None)
+        normalized.pop("reference_image_paths", None)
     return normalized
 
 
@@ -1131,7 +1308,7 @@ def _normalize_image_edit_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
-    source_image_path = str(payload.get("source_image_path") or payload.get("image_path") or "").strip()
+    source_image_path = _image_generation_source_image_path(payload)
     if not source_image_path:
         raise HTTPException(status_code=400, detail="source_image_path is required")
     return {
@@ -1143,6 +1320,28 @@ def _normalize_image_edit_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "background": str(payload.get("background") or "").strip(),
         "output_format": str(payload.get("output_format") or "png").strip() or "png",
     }
+
+
+def _image_generation_source_image_path(payload: Mapping[str, Any]) -> str:
+    direct = str(
+        payload.get("source_image_path")
+        or payload.get("reference_image_path")
+        or payload.get("image_path")
+        or ""
+    ).strip()
+    if direct:
+        return direct
+    reference_paths = payload.get("reference_image_paths")
+    if reference_paths is None:
+        return ""
+    if isinstance(reference_paths, str):
+        return reference_paths.strip()
+    if not isinstance(reference_paths, Sequence) or isinstance(reference_paths, (bytes, bytearray)):
+        raise HTTPException(status_code=400, detail="reference_image_paths must be a string or an array of strings")
+    paths = [str(path).strip() for path in reference_paths if str(path).strip()]
+    if len(paths) > 1:
+        raise HTTPException(status_code=400, detail="only one reference image is supported for Codex image generation")
+    return paths[0] if paths else ""
 
 
 def _image_generation_provider(payload: Mapping[str, Any]) -> str:
@@ -1160,28 +1359,83 @@ def _call_codex_image_generation(payload: Mapping[str, Any], *, store: Workbench
     n = int(payload.get("n") or 1)
     output_root = _codex_imagegen_output_dir(store.workspace, "generations")
     runtime_config = _codex_imagegen_runtime_config(payload)
+    source_image_path = _image_generation_source_image_path(payload)
+    reference_mode = _codex_reference_mode(payload, has_source_image=bool(source_image_path))
     results: list[CodexImageGenResult] = []
     try:
         for index in range(1, n + 1):
-            prompt = _codex_generation_prompt(payload, variant_index=index, variant_count=n)
             output_dir = output_root / f"variant-{index:03d}"
             output_dir.mkdir(parents=True, exist_ok=True)
-            results.append(
-                invoke_codex_python_sdk_imagegen(
-                    prompt=prompt,
-                    output_dir=output_dir,
-                    task_name="drawai.workbench.imagegen.codex.generate.v1",
-                    output_stem=f"codex-generated-{index:03d}",
-                    runtime_config=runtime_config,
-                    isolated_cwd=store.workspace,
+            if source_image_path and reference_mode == "reference_tokens_only":
+                token_payload = dict(payload)
+                token_payload.pop("source_image_path", None)
+                token_payload.pop("reference_image_path", None)
+                token_payload.pop("reference_image_paths", None)
+                token_payload["reference_mode"] = reference_mode
+                token_payload["reference_image_tokens"] = _reference_image_tokens(source_image_path)
+                prompt = _codex_generation_prompt(token_payload, variant_index=index, variant_count=n)
+                results.append(
+                    invoke_codex_python_sdk_imagegen(
+                        prompt=prompt,
+                        output_dir=output_dir,
+                        task_name="drawai.workbench.imagegen.codex.reference_tokens_only.v1",
+                        output_stem=f"codex-reference-tokens-{index:03d}",
+                        runtime_config=runtime_config,
+                        isolated_cwd=store.workspace,
+                    )
                 )
-            )
+            elif source_image_path and reference_mode == "reference_context":
+                prompt = _codex_generation_prompt(payload, variant_index=index, variant_count=n)
+                results.append(
+                    invoke_codex_python_sdk_image_reference_context(
+                        source_image_path=source_image_path,
+                        prompt=_codex_reference_context_prompt(
+                            prompt,
+                            source_image_path=source_image_path,
+                        ),
+                        output_dir=output_dir,
+                        task_name="drawai.workbench.imagegen.codex.reference_context.v1",
+                        output_stem=f"codex-reference-context-{index:03d}",
+                        runtime_config=runtime_config,
+                        isolated_cwd=store.workspace,
+                    )
+                )
+            elif source_image_path:
+                prompt = _codex_generation_prompt(payload, variant_index=index, variant_count=n)
+                results.append(
+                    invoke_codex_python_sdk_image_edit(
+                        source_image_path=source_image_path,
+                        prompt=_codex_reference_generation_prompt(
+                            prompt,
+                            source_image_path=source_image_path,
+                            reference_mode=reference_mode,
+                        ),
+                        output_dir=output_dir,
+                        task_name=f"drawai.workbench.imagegen.codex.{reference_mode}.v1",
+                        output_stem=f"codex-{reference_mode.replace('_', '-')}-{index:03d}",
+                        runtime_config=runtime_config,
+                        isolated_cwd=store.workspace,
+                    )
+                )
+            else:
+                prompt = _codex_generation_prompt(payload, variant_index=index, variant_count=n)
+                results.append(
+                    invoke_codex_python_sdk_imagegen(
+                        prompt=prompt,
+                        output_dir=output_dir,
+                        task_name="drawai.workbench.imagegen.codex.generate.v1",
+                        output_stem=f"codex-generated-{index:03d}",
+                        runtime_config=runtime_config,
+                        isolated_cwd=store.workspace,
+                    )
+                )
     except CodexPythonSdkImageGenError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return _codex_imagegen_response(
         results,
         provider="codex",
         prompt=_codex_generation_prompt(payload, variant_index=1, variant_count=n),
+        reference_mode=reference_mode,
     )
 
 
@@ -1228,29 +1482,125 @@ def _codex_imagegen_model_name(payload: Mapping[str, Any]) -> str:
 
 
 def _codex_generation_prompt(payload: Mapping[str, Any], *, variant_index: int, variant_count: int) -> str:
-    lines = [
-        "DrawAI image generation request.",
-        f"Primary request: {str(payload.get('prompt') or '').strip()}",
-        "",
-        "Generation settings selected in the DrawAI UI:",
-        f"- Requested size/aspect: {payload.get('size')}",
-        f"- Quality preference: {payload.get('quality')}",
-        f"- Background preference: {payload.get('background')}",
-        f"- Output format preference: {payload.get('output_format')}",
-        f"- Requested image count: {variant_count}",
-    ]
-    if variant_count > 1:
-        lines.append(f"- This tool call should produce image {variant_index} of {variant_count}; create a distinct useful variant without making a collage.")
-    if str(payload.get("background") or "").lower() == "transparent":
-        lines.append(
-            "- Transparent background was requested. If true alpha is unavailable, keep the subject isolated on a clean removable background; do not draw a checkerboard pattern."
+    return build_slide_image_generation_prompt(
+        payload,
+        variant_index=variant_index,
+        variant_count=variant_count,
+    )
+
+
+def _codex_reference_mode(payload: Mapping[str, Any], *, has_source_image: bool) -> str:
+    raw = str(payload.get("reference_mode") or "").strip().lower().replace("-", "_")
+    aliases = {
+        "auto": "",
+        "edit": "reference_edit_high",
+        "reference": "reference_context",
+        "tokens": "reference_tokens_only",
+        "context": "reference_context",
+        "low": "reference_edit_low",
+        "high": "reference_edit_high",
+        "content": "content_edit",
+    }
+    normalized = aliases.get(raw, raw)
+    allowed = {
+        "reference_context",
+        "reference_tokens_only",
+        "reference_edit_low",
+        "reference_edit_high",
+        "content_edit",
+    }
+    if not normalized:
+        return "reference_edit_high" if has_source_image else "none"
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="reference_mode must be one of reference_context, reference_tokens_only, reference_edit_low, reference_edit_high, content_edit",
         )
-    lines.extend([
-        "",
-        "Use the built-in Codex image generation tool for exactly one output image.",
-        "Do not render these settings as visible text unless the primary request explicitly asks for text.",
-    ])
-    return "\n".join(lines)
+    return normalized
+
+
+def _reference_image_tokens(source_image_path: str) -> dict[str, Any]:
+    path = Path(source_image_path).expanduser().resolve(strict=False)
+    tokens: dict[str, Any] = {
+        "schema": "drawai.reference_image_tokens.v1",
+        "source_image_path": str(path),
+        "extraction": "local_pil_basic_tokens",
+        "roles": ["layout_reference", "style_reference", "color_reference"],
+    }
+    try:
+        with Image.open(path) as image:
+            rgb = image.convert("RGB")
+            width, height = rgb.size
+            thumb = rgb.resize((1, 1))
+            average = "#%02x%02x%02x" % thumb.getpixel((0, 0))
+            quantized = rgb.resize((96, 54)).quantize(colors=8).convert("RGB")
+            colors = quantized.getcolors(maxcolors=96 * 54) or []
+            top = sorted(colors, key=lambda item: item[0], reverse=True)[:6]
+            palette = ["#%02x%02x%02x" % color for _count, color in top]
+            tokens.update(
+                {
+                    "width": width,
+                    "height": height,
+                    "aspect_ratio": round(width / height, 4) if height else None,
+                    "average_color": average,
+                    "dominant_palette": palette,
+                }
+            )
+    except (OSError, ValueError) as exc:
+        tokens["error"] = str(exc)
+    tokens["layout_prompt_hint"] = (
+        "Use the extracted palette/aspect/layout roles as weak guidance only; the reference bitmap is not supplied "
+        "as an image input in reference_tokens_only mode."
+    )
+    return tokens
+
+
+def _codex_reference_context_prompt(prompt: str, *, source_image_path: str) -> str:
+    return "\n".join(
+        [
+            prompt,
+            "",
+            "Reference image execution:",
+            "- reference_mode: reference_context.",
+            "- A real local reference image is supplied to Codex as LocalImageInput, but the requested output is a new PPT image, not a literal edit of the original bitmap.",
+            f"- source_image_path: {source_image_path}",
+            "- Use the supplied image for layout/style/color/typography context only unless the primary request explicitly asks for content preservation.",
+            "- Replace the visible topic and slide copy with the user's requested content.",
+        ]
+    )
+
+
+def _codex_reference_generation_prompt(prompt: str, *, source_image_path: str, reference_mode: str) -> str:
+    mode_lines = {
+        "reference_edit_low": [
+            "- reference_mode: reference_edit_low.",
+            "- Treat the source as a loose visual reference; substantial regeneration is allowed.",
+            "- Preserve only broad composition, palette, and hierarchy; replace subject matter and visible text.",
+        ],
+        "reference_edit_high": [
+            "- reference_mode: reference_edit_high.",
+            "- Treat the source as a strong layout/style reference.",
+            "- Preserve structure, spacing rhythm, major visual regions, and slide hierarchy unless they conflict with the requested topic.",
+        ],
+        "content_edit": [
+            "- reference_mode: content_edit.",
+            "- The source image is the actual edit target.",
+            "- Preserve unchanged regions and local identity as much as possible; modify only the content requested by the user.",
+        ],
+    }.get(reference_mode, [f"- reference_mode: {reference_mode}."])
+    return "\n".join(
+        [
+            prompt,
+            "",
+            "Reference image execution:",
+            *mode_lines,
+            "- A real local reference/source image is supplied to Codex as LocalImageInput through the image edit path.",
+            f"- source_image_path: {source_image_path}",
+            "- Current Codex SDK path does not expose a model-native input_fidelity flag; low/high strength is enforced by this prompt policy.",
+            "- Do not copy logos, protected characters, trademarks, exact UI, or source visible text from the reference image.",
+            "- Keep the user's requested topic, language, visible text, factual policy, and DrawAI PPT constraints as the source of truth.",
+        ]
+    )
 
 
 def _codex_edit_prompt(payload: Mapping[str, Any]) -> str:
@@ -1279,6 +1629,7 @@ def _codex_imagegen_response(
     *,
     provider: str,
     prompt: str,
+    reference_mode: str = "none",
 ) -> dict[str, Any]:
     data: list[dict[str, Any]] = []
     for result in results:
@@ -1295,6 +1646,8 @@ def _codex_imagegen_response(
                 "path": str(image.path),
                 "revised_prompt": image.revised_prompt,
                 "operation": result.operation,
+                "source_image_path": str(result.source_image_path) if result.source_image_path is not None else None,
+                "reference_mode": reference_mode,
             })
     return {
         "created": int(time.time()),
@@ -1306,6 +1659,13 @@ def _codex_imagegen_response(
             "image_count": len(data),
             "output_dirs": [str(result.output_dir) for result in results],
             "archives": [str(result.archive_dir) for result in results],
+            "operations": [result.operation for result in results],
+            "reference_mode": reference_mode,
+            "reference_modes": [reference_mode for _result in results],
+            "source_image_paths": [
+                str(result.source_image_path) if result.source_image_path is not None else None
+                for result in results
+            ],
         },
     }
 

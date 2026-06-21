@@ -11,6 +11,7 @@ from drawai.codex_python_sdk_imagegen import (
     CodexPythonSdkImageGenError,
     check_codex_python_sdk_imagegen_capability,
     invoke_codex_python_sdk_image_edit,
+    invoke_codex_python_sdk_image_reference_context,
     invoke_codex_python_sdk_imagegen,
 )
 
@@ -290,6 +291,96 @@ def test_codex_python_sdk_image_edit_uses_local_image_input(monkeypatch, tmp_pat
     assert seen["run_input"][0] == ("local_image", str(source_image.resolve()))
     assert "Edit the supplied image" in seen["run_input"][1][1]
     assert "image editing runner" in seen["thread_start_kwargs"]["developer_instructions"]
+
+
+def test_codex_python_sdk_reference_context_uses_local_image_without_edit_instruction(monkeypatch, tmp_path):
+    source_image = tmp_path / "source.png"
+    Image.new("RGB", (10, 12), (255, 0, 255)).save(source_image)
+    seen = {}
+
+    class FakeItem:
+        type = "imageGeneration"
+
+        def __init__(self, saved_path):
+            self.id = "turn-image-reference-context"
+            self.status = "completed"
+            self.saved_path = FakeAbsolutePathBuf(saved_path)
+            self.result = ""
+            self.revised_prompt = "reference context revised prompt"
+
+    class FakeResult:
+        id = "turn"
+        status = "completed"
+        started_at = "start"
+        completed_at = "end"
+        duration_ms = 1
+        final_response = '{"generated": true}'
+        usage = {}
+
+        def __init__(self, saved_path):
+            self.items = [FakeItem(saved_path)]
+
+    class FakeClient:
+        def request(self, method, params, *, response_model):
+            return SimpleNamespace(
+                image_generation=True,
+                model_dump=lambda **_kwargs: {"imageGeneration": True},
+            )
+
+    class FakeThread:
+        id = "thread-image-reference-context"
+
+        def run(self, run_input, **kwargs):
+            seen["run_input"] = run_input
+            seen["run_kwargs"] = kwargs
+            generated_path = tmp_path / "reference_context.png"
+            Image.new("RGB", (13, 11), (0, 120, 255)).save(generated_path)
+            return FakeResult(generated_path)
+
+    class FakeCodex:
+        def __init__(self, config):
+            seen["config"] = config
+            self._client = FakeClient()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def thread_start(self, **kwargs):
+            seen["thread_start_kwargs"] = kwargs
+            return FakeThread()
+
+    fake_openai_codex = SimpleNamespace(
+        ApprovalMode=SimpleNamespace(deny_all="deny_all"),
+        Sandbox=SimpleNamespace(full_access="full_access"),
+        Codex=FakeCodex,
+        CodexConfig=lambda **kwargs: kwargs,
+        TextInput=lambda text: ("text", text),
+        LocalImageInput=lambda path: ("local_image", path),
+        generated=SimpleNamespace(
+            v2_all=SimpleNamespace(ModelProviderCapabilitiesReadResponse=object)
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "openai_codex", fake_openai_codex)
+
+    result = invoke_codex_python_sdk_image_reference_context(
+        source_image_path=source_image,
+        prompt="use this slide as style reference for a new Transformer page",
+        output_dir=tmp_path / "out",
+        output_stem="reference-context",
+        runtime_config={"timeout_seconds": 1},
+        isolated_cwd=tmp_path / "cwd",
+    )
+
+    assert result.operation == "reference_context"
+    assert result.source_image_path == source_image.resolve()
+    assert result.images[0].path.name == "reference-context.png"
+    assert seen["run_input"][0] == ("local_image", str(source_image.resolve()))
+    assert "Generate one new image using the supplied image as visual context/reference" in seen["run_input"][1][1]
+    assert "image generation runner with a visual reference image" in seen["thread_start_kwargs"]["developer_instructions"]
+    assert "image editing runner" not in seen["thread_start_kwargs"]["developer_instructions"]
 
 
 def test_codex_python_sdk_imagegen_capability_probe_reports_runtime(monkeypatch, tmp_path):

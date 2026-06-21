@@ -1,0 +1,163 @@
+DrawAI high-quality PPT slide image request.
+
+Goal:
+- Produce one premium slide-ready bitmap image for a PPT workflow.
+- The image may be non-editable; it will later pass through DrawAI's editable reconstruction pipeline.
+- Optimize for visual quality, factual restraint, clear structure, OCR-readability, and downstream segmentation.
+- Default rendering mode is baked_text: render complete title, body copy, diagrams, charts, and visual structure directly inside the final bitmap.
+- Do not trade away presentation beauty for caution: keep the slide visually memorable, premium, and finished while staying source-grounded.
+
+Mandatory tool behavior:
+- Use the built-in Codex image generation tool for exactly one output image.
+- Do not call OpenAI Images API manually.
+- Do not use shell commands, web search, MCP tools, or multi-agent delegation in this image-generation turn.
+
+Primary request:
+用户输入：生成《AI Agent 工作流如何接入企业文档体系》的PPT
+请生成第 3/4 页：Agent 工作流架构。
+架构页：展示用户问题如何经过意图识别、RAG 检索、工具调用、答案生成、引用回溯和反馈。结构要能看出工作流，不要只做抽象装饰。
+
+Generation settings:
+- size: 2048x1152
+- quality: high
+- background: opaque
+- output_format: png
+
+Slide intent:
+- mode: image_first_ppt_slide
+- type: architecture
+- audience: 企业管理层、知识管理团队、AI 产品与技术团队
+
+Design direction:
+- style: 使用模板 blue_robot_learning 的视觉系统。该模板用途：children-friendly learning decks, playful AI lessons, classroom explainers with blue robot atmosphere。视觉方向：template-specific slide design。本页是连续 deck 的第 3/4 页，必须与同模板其他页面保持色彩、字体层级、图形语言和边距一致。
+- template_id: blue_robot_learning
+- design_principles: ["finished PPT explanation page, not a bare layout scaffold", "balanced narrative text and visuals", "source-grounded factual content", "clear hierarchy with readable body copy", "high visual ambition with a polished first-glance impact"]
+
+Template effect card:
+- none: use the selected strategy template only.
+
+Reference execution mode:
+- reference_mode: auto
+
+PPT image strategy and selected template:
+{"candidate_stage": {"count": 1, "enabled": false, "index": 1, "templates": [{"best_for": "children-friendly learning decks, playful AI lessons, classroom explainers with blue robot atmosphere", "id": "blue_robot_learning", "name": "Blue Robot Learning", "rationale": "Blue Robot Learning is a ip_safe_cartoon candidate for intent=document; best for children-friendly learning decks, playful AI lessons, classroom explainers with blue robot atmosphere under source_mode=data_driven."}]}, "continuity_lock": {"lock_after_selection": ["selected_template.id", "palette", "typography", "layout_archetypes", "text_density", "image_policy", "data_policy", "language policy"], "policy": "After the user selects a first-slide direction, keep the selected template and visual system consistent across all slides."}, "intent": "document", "ip_safety_mode": "off", "prior_research_features": ["Codex built-in image generation tool exactly once per image; never call OpenAI Images API manually in Codex mode.", "Source-grounded claim control: facts, numbers, dates, citations, logos, benchmarks, and named entities must come from supplied context.", "Chinese-first language policy: preserve Chinese slide copy when the user prompt is Chinese; keep proper nouns and technical terms in English only when appropriate.", "Baked-text default: text, charts, diagrams, and layout are generated directly into the final bitmap because DrawAI handles downstream editing.", "Multi-option style selection: generate multiple first-slide candidates instead of assuming one universal best style.", "Template-driven variation: choose a visual system based on intent, audience, source/data mode, and user preference.", "Continuity lock across slides: selected style, density, visual motifs, palette, and typography remain consistent through the deck.", "Post-generation QA: check text presence, language, factual safety, data-source fidelity, visual polish, and page-to-page consistency."], "qa_policy": {"check": ["requested language is present", "slide has enough baked text", "no mojibake or pseudo-writing", "no unsupported numbers, citations, dates, or rankings", "template visual direction is respected", "data-like visuals are source-grounded or deliberately abstract", "multi-slide rhythm remains consistent"], "failure_action": "Regenerate or revise prompt before accepting the slide image."}, "rendering_mode": "baked_text", "requested_template": "blue_robot_learning", "schema": "drawai.slide_image_strategy.v1", "selected_template": {"best_for": "children-friendly learning decks, playful AI lessons, classroom explainers with blue robot atmosphere", "category": "ip_safe_cartoon", "data_policy": "teaching examples should be generic or source-supplied", "id": "blue_robot_learning", "image_policy": "use an original rounded blue-white educational robot and generic future gadgets; do not copy protected characters", "layout_archetypes": ["comic learning panels", "robot tutor + concept cards", "future gadget explanation", "step-by-step classroom", "story problem"], "name": "Blue Robot Learning", "palette": "blue-white base, soft red/yellow accents, clean cartoon outlines", "qa_gates": ["robot is original", "Chinese teaching text is readable", "safe cartoon style does not copy an IP character"], "template_enforcement": "Use a friendly original blue-white rounded robot tutor, future small gadgets, and Japanese children's manga panel feel while keeping the slide educational.", "text_density": "medium", "typography": "large readable Chinese teaching copy, playful labels, no pseudo-Japanese filler", "visual_direction": "blue-white rounded educational robot learning style with future gadgets, manga-panel pacing, and safe original character design"}, "source_mode": {"description": "Tables, CSVs, metrics, or structured data are supplied.", "id": "data_driven", "policy": "Charts and numeric statements must follow supplied data; do not let the image model invent chart values."}, "strategy_version": "v2_multi_option_baked_text", "workflow": ["1. Intent router: identify audience, deck type, factual risk, source/data availability, and expected visual genre.", "2. Source planner: decide whether content is prompt-only, source-grounded, data-driven, brand/template-driven, or web-research-backed.", "3. Template selector: choose a deck visual system instead of forcing every request into one house style.", "4. Style candidate stage: for new topics, offer 3 first-slide directions before expanding to a full deck.", "5. Baked-text image generation: generate a complete slide bitmap with readable in-image text.", "6. Continuity lock: keep palette, typography, icon language, density, and page rhythm consistent after a candidate is selected.", "7. QA gate: reject missing text, mojibake, unsupported facts, fake metrics, template mismatch, and weak deck continuity."]}
+
+Spec-guided design lock:
+- disabled: use the selected prompt template strategy only.
+
+Selected template enforcement:
+- Template: blue_robot_learning / Blue Robot Learning
+- Category: ip_safe_cartoon
+- Visual direction: blue-white rounded educational robot learning style with future gadgets, manga-panel pacing, and safe original character design
+- Palette: blue-white base, soft red/yellow accents, clean cartoon outlines
+- Typography: large readable Chinese teaching copy, playful labels, no pseudo-Japanese filler
+- Text density: medium
+- Image policy: use an original rounded blue-white educational robot and generic future gadgets; do not copy protected characters
+- Data policy: teaching examples should be generic or source-supplied
+- Template-specific enforcement: Use a friendly original blue-white rounded robot tutor, future small gadgets, and Japanese children's manga panel feel while keeping the slide educational.
+- Layout archetypes to choose from: ["comic learning panels", "robot tutor + concept cards", "future gadget explanation", "step-by-step classroom", "story problem"]
+- Template QA gates: ["robot is original", "Chinese teaching text is readable", "safe cartoon style does not copy an IP character"]
+- Blue-robot visual enforcement: blue-white palette, rounded educational robot mood, future gadgets, and Japanese children's manga panel rhythm.
+
+Baked text directive:
+- rendering_mode: baked_text
+- Generate the final PPT slide as a complete bitmap with readable in-image text.
+- Do not leave empty placeholders assuming a later text overlay pass.
+- DrawAI may reconstruct/edit the generated bitmap later, but this generation step must already be useful to read as a slide.
+
+Grounding policy:
+- SOURCE-GROUNDED: use the supplied source context as factual authority.
+- source_policy: Use only provided sources and primary-request facts; never invent facts, dates, numbers, logos, citations, maps, UI, or named-entity details.
+- If a real-world detail is not supplied in the source context, keep it generic or omit it.
+- Do not infer a scientific domain from words like Nature-style, academic, or high-impact; those describe publication polish unless a domain is explicitly supplied.
+- Do not invent statistics, citations, dates, product UI, maps, charts, rankings, logos, or named-entity details.
+- Generated decorative visuals may be imaginative, but factual content must stay source-bound.
+
+Source-grounded context:
+{"claims": ["企业文档体系接入 Agent 的关键环节包括文档接入、知识治理、权限边界、检索增强、工作流编排和持续评估。", "所有数值仅为测试样例数据，不代表真实业务结果。"], "data_sources": {"metrics": [{"name": "文档覆盖率", "unit": "%", "value": 72}, {"name": "检索命中率", "unit": "%", "value": 81}, {"name": "人工复核通过率", "unit": "%", "value": 88}, {"name": "高风险回答拦截率", "unit": "%", "value": 96}], "note": "Synthetic test metrics for template gallery comparison only."}, "research_context": null, "source_policy": "Use only provided sources and primary-request facts; never invent facts, dates, numbers, logos, citations, maps, UI, or named-entity details.", "sources": [{"evidence": "The deck is a synthetic template-gallery comparison. Keep concrete metrics limited to the supplied test metrics, and avoid company names, market size, benchmarks, or customer case claims.", "title": "测试主题约束"}]}
+
+Visible text and body-copy policy:
+- Render a normal PPT explanation page: include required visible content, then add concise source-grounded body copy from the primary request, claims, and visible_text_blocks. Text must be readable, useful, and large enough for a slide thumbnail. Preserve the user's language unless the user explicitly asks for another language.
+- text_density: medium
+- main_language: Chinese. Use Chinese for the main title, subtitle, section headers, bullets, callouts, captions, warnings, and takeaway text.
+- Keep English only for model/product/API names, acronyms, code identifiers, benchmark names, and standard technical terms where Chinese translation would be unnatural.
+- Do not render generic English section headings. Use Chinese headings such as 核心结论、来源质量、威胁模型、记忆分层、状态表示、技术栈、风险边界.
+- If REQUIRED_VISIBLE_TEXT contains English generic descriptors, treat them as semantic hints and render concise Chinese equivalents unless they also appear in EXACT_TEXT_DO_NOT_TRANSLATE.
+- A mixed Chinese/English technical slide is acceptable only when the Chinese text remains dominant and explanatory.
+- Match the language of the primary request and supplied visible text. If the request is Chinese, render Chinese slide copy; preserve model names, APIs, metrics, and technical terms in English only where they are proper nouns or standard terms.
+- Do not translate Chinese headings, bullets, or speaker-facing explanations into English unless the user explicitly requests English.
+- Required visible text is a floor, not a ceiling: do not reduce the slide to labels and layout only.
+- Minimum useful text: a clear title, subtitle or takeaway when supplied, readable section/module labels, and 3-6 concise explanatory bullets or callouts.
+- For medium-density technical PPT pages, use normal slide copy density: enough text to explain the idea at a glance while preserving spacing.
+- Body copy may paraphrase only the primary request, supplied claims, visible_text_blocks, and source-grounded context.
+- Avoid tiny text, gibberish, pseudo-writing, watermark-like marks, signatures, random labels, and unreadable micro-captions.
+- If exact long text rendering is risky, split it into shorter readable bullets or callouts; never leave the slide textless.
+REQUIRED_VISIBLE_TEXT:
+["Agent 工作流架构", "Agent 需要在意图识别、检索增强、工具调用和引用回溯之间保持状态。", "用户问题", "意图识别", "检索增强", "工具调用", "答案生成", "引用回溯", "人工反馈"]
+EXACT_TEXT_DO_NOT_TRANSLATE:
+none
+VISIBLE_TEXT_BLOCKS:
+{"labels": ["用户问题", "意图识别", "检索增强", "工具调用", "答案生成", "引用回溯", "人工反馈"], "takeaway": "Agent 需要在意图识别、检索增强、工具调用和引用回溯之间保持状态。", "title": "Agent 工作流架构"}
+PERMITTED_BODY_COPY_SOURCES:
+{"claims": ["企业文档体系接入 Agent 的关键环节包括文档接入、知识治理、权限边界、检索增强、工作流编排和持续评估。", "所有数值仅为测试样例数据，不代表真实业务结果。"], "primary_request": "用户输入：生成《AI Agent 工作流如何接入企业文档体系》的PPT\n请生成第 3/4 页：Agent 工作流架构。\n架构页：展示用户问题如何经过意图识别、RAG 检索、工具调用、答案生成、引用回溯和反馈。结构要能看出工作流，不要只做抽象装饰。", "research_context": null}
+
+Quality gates to satisfy visually:
+- 必须能看出这是连续 deck 的一页。
+- 必须包含标题、核心结论/说明、结构化内容区。
+- 不要编造公司名、真实客户案例、市场规模、年份、benchmark 或未给定数字。
+- single coherent slide, not a collage of unrelated panels
+- use the full 16:9 canvas with balanced density; avoid large accidental empty regions
+- presentation polish should be comparable to a manually designed high-impact academic overview slide
+- contains enough readable explanatory text to be useful as a PPT slide: title, takeaway, section labels, and concise body copy
+- must not look like a layout-only wireframe or unlabeled component scaffold
+- clear focal hierarchy with generous margins and no overcrowding
+- high contrast between foreground and background
+- no overlapping text or visual elements
+- no cropped important content near slide edges
+- no unreadable microtext, mojibake, pseudo-letters, or random captions
+- data-like visuals must be source-grounded or deliberately abstract
+- when verified metrics are unavailable, use unlabeled abstract mini-charts or schematic indicators rather than fake numbers
+- professional typography and spacing suitable for a 16:9 presentation
+
+Visual richness guidance:
+- do not reduce the slide to five plain cards; add source-safe visual substance inside and around the pipeline
+- synthetic thumbnails are allowed when they are clearly generic: microscopy-like panels, figure crops, mask overlays, charts, asset swatches, vector nodes, and editable-canvas previews
+- unlabeled charts may show abstract trends, bars, or scatter patterns for visual metaphor only; do not add axis labels, numeric values, legends with unsupported method names, or performance claims
+- avoid domain-specific imagery such as biomedical cells, molecules, organs, maps, hardware, company products, or clinical scenes unless provided by the source context
+- for generic AI/pipeline topics, use neutral paper-figure thumbnails, document crops, layout grids, chart placeholders, mask overlays, UI-free vector diagrams, and editable-canvas previews
+- show process transformation visually: raw figure -> detected text/regions -> separated assets -> native shapes -> editable slide output
+- use varied panel scale, subtle shadows, thin rules, and accent color blocks to create depth and a finished editorial look
+- include enough small visual detail to feel premium, while keeping semantic modules cleanly separable for DrawAI
+- if a subtitle is useful, derive it only from the primary request and avoid unsupported claims
+
+Composition guidance:
+- 这是一组模板图库横向测试，每张图都必须是完整 PPT 页面，不是海报或纯插画。
+- 同一模板的 4 页需要有明显连续 deck 一致性：标题系统、色彩、模块风格、图标/线条语言一致。
+- 只根据本页 page_brief 改变页面类型；不要改变总主题。
+- 文字应跟随用户输入语言和 visible_text_blocks，不要生成随机英文栏目或伪文字。
+- compose like a finished slide, not a sparse wireframe or UI mockup
+- use a rich overview structure when appropriate: title plus subtitle, left input bookend, central pipeline, right output bookend, and compact bottom overview band
+- for academic or technical topics, prefer a left-to-right pipeline, method/results overview, or evidence hierarchy
+- use abstract, source-safe visual evidence when exact datasets are unavailable: synthetic figure thumbnails, module cards, flow arrows, masks, crop examples, schematic charts without numeric labels
+- maintain Swiss/editorial discipline: aligned columns, consistent spacing, restrained color accents, and clear typographic scale
+- keep every visible label purposeful; do not add decorative pseudo-text to fill space
+- make the result feel publication/presentation ready at first glance while preserving factual restraint
+
+DrawAI post-processing constraints:
+- 文本区域保持高对比，方便 OCR 识别。
+- 模块边界清晰，方便 SAM/DrawAI 后续可编辑重建。
+- 避免将语义文字压在复杂纹理、强噪声或低对比渐变上。
+- use crisp object boundaries and clean layer separation where possible
+- keep text regions high contrast and OCR-friendly if text appears
+- avoid textured noise directly behind text or chart labels
+- avoid excessive glow, blur, transparency, and low-contrast gradients over semantic content
+- prefer simple geometric regions for tables, charts, cards, arrows, and panels
+- leave enough spacing for DrawAI to segment text, icons, charts, and decorative assets
+
+Variant instruction:
+Create the strongest single version; do not make a collage or compare alternatives inside the image.
+
+Negative constraints:
+none
+
+Final response contract: reply only {"generated": true}.

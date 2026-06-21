@@ -152,6 +152,33 @@ def invoke_codex_python_sdk_image_edit(
     )
 
 
+def invoke_codex_python_sdk_image_reference_context(
+    *,
+    source_image_path: str | Path,
+    prompt: str,
+    output_dir: str | Path,
+    task_name: str = "drawai.codex_imagegen.reference_context.v1",
+    output_stem: str = "codex-image-reference-context",
+    runtime_config: Mapping[str, Any] | None = None,
+    trace_path: str | Path | None = None,
+    isolated_cwd: str | Path | None = None,
+    config_overrides: Sequence[str] | None = None,
+) -> CodexImageGenResult:
+    source_path = _normalize_source_image_path(source_image_path)
+    return _invoke_codex_python_sdk_image_tool(
+        operation="reference_context",
+        prompt=prompt,
+        source_image_path=source_path,
+        output_dir=output_dir,
+        task_name=task_name,
+        output_stem=output_stem,
+        runtime_config=runtime_config,
+        trace_path=trace_path,
+        isolated_cwd=isolated_cwd,
+        config_overrides=config_overrides,
+    )
+
+
 def _invoke_codex_python_sdk_image_tool(
     *,
     operation: str,
@@ -398,11 +425,25 @@ def _capability_enabled(capabilities: Mapping[str, Any], python_name: str) -> bo
 
 
 def _imagegen_developer_instructions(operation: str) -> str:
+    if operation == "reference_context":
+        return (
+            "Internal DrawAI image generation runner with a visual reference image.\n"
+            "When the user provides an image input and prompt, use the built-in image generation tool exactly once "
+            "to generate a new image using the supplied image only as context/reference. Do not perform a literal "
+            "content edit unless the prompt explicitly asks for it. Do not treat filesystem paths written in text "
+            "as image inputs. Follow any source-grounding, visible-text, quality-gate, and DrawAI post-processing "
+            "constraints in the prompt. Do not invent facts, labels, citations, dates, numbers, logos, or "
+            "named-entity details not supplied by the prompt. Do not call OpenAI Images API manually, do not use "
+            "shell commands, do not use web search, and do not use MCP tools or multi-agent delegation. "
+            "The imageGeneration thread item is the source of truth. After the tool finishes, reply with compact JSON only."
+        )
     if operation == "edit":
         return (
             "Internal DrawAI image editing runner.\n"
             "When the user provides an image input and edit prompt, use the built-in image generation tool exactly once "
             "to edit the supplied image. Do not treat filesystem paths written in text as image inputs. "
+            "Follow any source-grounding, visible-text, quality-gate, and DrawAI post-processing constraints in the prompt. "
+            "Do not invent facts, labels, citations, dates, numbers, logos, or named-entity details not supplied by the prompt. "
             "Do not call OpenAI Images API manually, do not use shell commands, do not use web search, "
             "and do not use MCP tools or multi-agent delegation. The imageGeneration thread item is the source of truth. "
             "After the tool finishes, reply with compact JSON only."
@@ -410,6 +451,8 @@ def _imagegen_developer_instructions(operation: str) -> str:
     return (
         "Internal DrawAI text-to-image runner.\n"
         "When the user provides an image prompt, use the built-in image generation tool exactly once. "
+        "Follow any source-grounding, visible-text, quality-gate, and DrawAI post-processing constraints in the prompt. "
+        "Do not invent facts, labels, citations, dates, numbers, logos, or named-entity details not supplied by the prompt. "
         "Do not call OpenAI Images API manually, do not use shell commands, do not use web search, "
         "and do not use MCP tools or multi-agent delegation. The imageGeneration thread item is the source of truth. "
         "After the tool finishes, reply with compact JSON only."
@@ -430,12 +473,21 @@ def _imagegen_turn_input(
             sdk.LocalImageInput(str(source_image_path)),
             sdk.TextInput(_image_edit_user_prompt(prompt)),
         ]
+    if operation == "reference_context":
+        if source_image_path is None:
+            raise CodexPythonSdkImageGenError("source_image_path is required for reference-context image generation")
+        return [
+            sdk.LocalImageInput(str(source_image_path)),
+            sdk.TextInput(_image_reference_context_user_prompt(prompt)),
+        ]
     return [sdk.TextInput(_imagegen_user_prompt(prompt))]
 
 
 def _imagegen_user_prompt(prompt: str) -> str:
     return (
         "Generate one image from this prompt using the built-in image generation tool.\n\n"
+        "The prompt may contain a DrawAI source-grounded slide-image brief. Treat that brief as binding: "
+        "respect its factual sources, visible-text policy, quality gates, and downstream DrawAI constraints.\n\n"
         f"Image prompt:\n{prompt}\n\n"
         'Final response contract: reply only {"generated": true}.'
     )
@@ -444,8 +496,23 @@ def _imagegen_user_prompt(prompt: str) -> str:
 def _image_edit_user_prompt(prompt: str) -> str:
     return (
         "Edit the supplied image using the built-in image generation tool.\n\n"
+        "The edit prompt may contain a DrawAI source-grounded image brief. Treat that brief as binding: "
+        "respect its factual sources, visible-text policy, quality gates, and downstream DrawAI constraints.\n\n"
         f"Edit prompt:\n{prompt}\n\n"
         'Final response contract: reply only {"edited": true}.'
+    )
+
+
+def _image_reference_context_user_prompt(prompt: str) -> str:
+    return (
+        "Generate one new image using the supplied image as visual context/reference.\n\n"
+        "The supplied image is not a literal edit target unless the prompt explicitly says so. "
+        "Use it for layout, style, palette, typography rhythm, composition, or other reference roles named "
+        "in the prompt, while replacing the topic and visible content according to the DrawAI brief.\n\n"
+        "The prompt may contain a DrawAI source-grounded slide-image brief. Treat that brief as binding: "
+        "respect its factual sources, visible-text policy, quality gates, and downstream DrawAI constraints.\n\n"
+        f"Image prompt:\n{prompt}\n\n"
+        'Final response contract: reply only {"generated": true}.'
     )
 
 
