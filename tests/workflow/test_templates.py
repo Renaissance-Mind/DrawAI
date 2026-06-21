@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS
 from drawai.workflow.schema import WorkflowNode, WorkflowTemplate
 from drawai.workflow.templates import (
     copy_builtin_template_to_workspace,
@@ -86,8 +87,9 @@ def test_asset_refine_and_svg_are_agent_node_presets() -> None:
     assert nodes["run0_agent"].title == "Asset Refine Agent"
     assert nodes["run0_agent"].config["provider_id"] == "codex_sdk"
     assert nodes["run0_agent"].config["reasoning_effort"] == "high"
-    assert nodes["run0_agent"].config["timeout_seconds"] == 900
+    assert nodes["run0_agent"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
     assert nodes["svg_agent"].config["provider_id"] == "codex_sdk"
+    assert nodes["svg_agent"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
     assert nodes["run0_agent"].config["preset_id"] == "run0_element_refine"
     assert nodes["svg_agent"].config["preset_id"] == "svg_generation"
     assert "DrawAI asset post-processing and source analysis task." in nodes["run0_agent"].config["task"]

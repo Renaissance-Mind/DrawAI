@@ -15,6 +15,7 @@ from .agent_prompt_defaults import (
     SVG_GENERATION_CONSTRAINTS,
     SVG_GENERATION_TASK,
 )
+from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS
 from .schema import (
     WORKFLOW_TEMPLATE_SCHEMA,
     WorkflowEdge,
@@ -122,7 +123,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     "preset_id": "run0_element_refine",
                     "provider_id": "codex_sdk",
                     "reasoning_effort": "high",
-                    "timeout_seconds": 900,
+                    "timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
                     "task": RUN0_ELEMENT_REFINE_TASK,
                     "constraints": list(RUN0_ELEMENT_REFINE_CONSTRAINTS),
                     "outputs": [
@@ -214,6 +215,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 config={
                     "preset_id": "svg_generation",
                     "provider_id": "codex_sdk",
+                    "timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
                     "task": SVG_GENERATION_TASK,
                     "constraints": list(SVG_GENERATION_CONSTRAINTS),
                     "outputs": [
@@ -500,7 +502,8 @@ def _normalized_node_config(node_type: str, config: dict[str, Any]) -> dict[str,
         normalized["constraints"] = list(_AGENT_CONSTRAINT_DEFAULTS[preset_id])
     if preset_id == "run0_element_refine":
         normalized.setdefault("reasoning_effort", "high")
-        normalized.setdefault("timeout_seconds", 900)
+    if preset_id in _AGENT_TASK_DEFAULTS:
+        normalized.setdefault("timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
     return normalized
 
 

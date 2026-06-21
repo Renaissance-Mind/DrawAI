@@ -28,6 +28,7 @@ DANGEROUS_AGENT_CONFIG_KEYS = (
     "executable",
     "shell_command",
 )
+DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
 
 TYPE_CONTRACTS = {
     "image": "Raster image file. Use it as visual evidence; do not rewrite it unless this node declares an image output.",

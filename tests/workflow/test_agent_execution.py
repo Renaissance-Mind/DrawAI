@@ -15,9 +15,14 @@ from drawai.workflow.agent_execution import (
     _execute_kimi_cli_agent,
     _execute_subprocess_agent,
     _run_codex_sdk_thread_until_done_or_outputs,
+    _timeout_seconds,
     AgentExecutionResult,
 )
-from drawai.workflow.agents import AgentPrompt
+from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
+
+
+def test_agent_execution_default_timeout_is_thirty_minutes() -> None:
+    assert _timeout_seconds({}) == DEFAULT_AGENT_TIMEOUT_SECONDS
 
 
 def test_agent_execution_requires_declared_input_files(tmp_path: Path) -> None:

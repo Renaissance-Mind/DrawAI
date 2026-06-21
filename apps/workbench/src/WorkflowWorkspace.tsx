@@ -137,6 +137,7 @@ const WORKFLOW_TEMPLATE_SCHEMA = "drawai.workflow_template.v1";
 const BUILTIN_WORKFLOW_FOLDER_ID = "builtin";
 const CUSTOM_WORKFLOW_FOLDER_ID = "custom";
 const WORKFLOW_FOLDERS_STORAGE_KEY = "drawai.workflow.folders";
+const DEFAULT_AGENT_TIMEOUT_SECONDS = 1800;
 const DEFAULT_WORKFLOW_FOLDERS: WorkflowFolder[] = [
   { folder_id: BUILTIN_WORKFLOW_FOLDER_ID, name: "DrawAI默认工作流", builtin: true },
   { folder_id: CUSTOM_WORKFLOW_FOLDER_ID, name: "自定义工作流" }
@@ -393,7 +394,7 @@ const NODE_PRESETS: NodePreset[] = [
       preset_id: "run0_element_refine",
       provider_id: "codex_sdk",
       reasoning_effort: "high",
-      timeout_seconds: 900,
+      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.run0_element_refine,
       constraints: AGENT_DEFAULT_CONSTRAINTS.run0_element_refine,
       scripts: [
@@ -430,6 +431,7 @@ const NODE_PRESETS: NodePreset[] = [
     config: {
       preset_id: "svg_generation",
       provider_id: "codex_sdk",
+      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,
       constraints: AGENT_DEFAULT_CONSTRAINTS.svg_generation,
       outputs: [
@@ -454,6 +456,7 @@ const NODE_PRESETS: NodePreset[] = [
     config: {
       preset_id: "custom_agent",
       provider_id: "codex_sdk",
+      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.custom_agent,
       constraints: AGENT_DEFAULT_CONSTRAINTS.custom_agent,
       outputs: [

@@ -24,7 +24,7 @@ from drawai.codex_python_sdk_svg import (
     controlled_codex_config_overrides,
 )
 
-from .agents import AgentPrompt
+from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
 from .formats import validate_format_file
 
 
@@ -851,7 +851,7 @@ def _developer_instructions(request: AgentExecutionRequest) -> str:
 
 
 def _timeout_seconds(options: Mapping[str, Any]) -> float:
-    raw = options.get("timeout_seconds", 600)
+    raw = options.get("timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
     timeout = float(raw)
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
