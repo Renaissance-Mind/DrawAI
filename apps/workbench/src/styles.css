@@ -3986,10 +3986,8 @@ button.asset-status-unsupported {
 }
 
 .element-filter-menu {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
+  z-index: 10000;
   display: grid;
   gap: 2px;
   min-width: 168px;

@@ -2471,29 +2471,41 @@ function MultiFilterDropdown({
   onOpenChange: (open: boolean) => void;
   onToggle: (value: string) => void;
 }) {
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number; minWidth: number } | null>(null);
+
+  function updateMenuPosition() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuWidth = Math.max(168, rect.width);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+    setMenuPosition({
+      left,
+      top: rect.bottom + 6,
+      minWidth: menuWidth
+    });
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, options.length]);
+
   if (options.length === 0) return null;
-  return (
-    <div className={open ? "element-filter-select open" : "element-filter-select"} data-filter-id={id}>
-      <button
-        type="button"
-        className="element-filter-trigger"
-        aria-label={`${label}筛选`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpenChange(!open);
-        }}
-      >
-        <span>{label}</span>
-        <strong>{multiFilterSummary(selected, options)}</strong>
-      </button>
-      {open && (
+  const menu = open && menuPosition && typeof document !== "undefined"
+    ? createPortal(
         <div
           className="element-filter-menu"
+          data-filter-id={id}
           role="menu"
           aria-label={label}
+          style={{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px`, minWidth: `${menuPosition.minWidth}px` }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -2519,8 +2531,31 @@ function MultiFilterDropdown({
               </label>
             );
           })}
-        </div>
-      )}
+        </div>,
+        document.body
+      )
+    : null;
+  return (
+    <div className={open ? "element-filter-select open" : "element-filter-select"} data-filter-id={id}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="element-filter-trigger"
+        aria-label={`${label}筛选`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          const nextOpen = !open;
+          if (nextOpen) updateMenuPosition();
+          onOpenChange(nextOpen);
+        }}
+      >
+        <span>{label}</span>
+        <strong>{multiFilterSummary(selected, options)}</strong>
+      </button>
+      {menu}
     </div>
   );
 }
