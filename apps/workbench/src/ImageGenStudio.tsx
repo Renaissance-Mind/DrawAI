@@ -39,6 +39,7 @@ type GalleryLightbox = {
   imageUrl: string;
   title: string;
 };
+type TemplateLibraryMode = "all" | string;
 
 const SIZE_PRESETS = [
   "auto",
@@ -328,8 +329,11 @@ export default function ImageGenStudio({
   const [templateCardsError, setTemplateCardsError] = useState("");
   const [templateGallery, setTemplateGallery] = useState<SlideTemplateGalleryItem[]>([]);
   const [templateGalleryError, setTemplateGalleryError] = useState("");
-  const [expandedGalleryTemplateId, setExpandedGalleryTemplateId] = useState("");
   const [galleryLightbox, setGalleryLightbox] = useState<GalleryLightbox | null>(null);
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
+  const [templateLibraryCategory, setTemplateLibraryCategory] = useState<TemplateLibraryMode>("all");
+  const [templateLibraryQuery, setTemplateLibraryQuery] = useState("");
+  const [templateLibraryFocusId, setTemplateLibraryFocusId] = useState("");
   const [sourceMode, setSourceMode] = useState("prompt_only");
   const [textDensity, setTextDensity] = useState("medium-high");
   const [styleCandidateCount, setStyleCandidateCount] = useState(3);
@@ -407,6 +411,18 @@ export default function ImageGenStudio({
   }, [provider]);
 
   const templateGalleryGroups = useMemo(() => groupTemplateGallery(templateGallery), [templateGallery]);
+  const selectedTemplateOption = useMemo(() => findTemplateOption(templateId), [templateId]);
+  const selectedGalleryItem = useMemo(
+    () => templateGallery.find((item) => item.template_id === templateId),
+    [templateGallery, templateId]
+  );
+  const focusedGalleryItem = useMemo(
+    () =>
+      templateGallery.find((item) => item.template_id === templateLibraryFocusId)
+      || selectedGalleryItem
+      || templateGallery[0],
+    [selectedGalleryItem, templateGallery, templateLibraryFocusId]
+  );
   const linkedTemplateCardId = useMemo(
     () => findLinkedTemplateCardId(templateId, templateCards),
     [templateId, templateCards]
@@ -415,15 +431,25 @@ export default function ImageGenStudio({
     () => templateCards.find((card) => card.id === (templateCardId || linkedTemplateCardId)),
     [linkedTemplateCardId, templateCardId, templateCards]
   );
-  const syncTemplateSelection = useCallback((nextTemplateId: string, options?: { expandGallery?: boolean }) => {
+  const syncTemplateSelection = useCallback((nextTemplateId: string) => {
     setTemplateId(nextTemplateId);
     setTemplateCardId(findLinkedTemplateCardId(nextTemplateId, templateCards));
-    if (nextTemplateId !== "auto" && options?.expandGallery !== false) {
-      setExpandedGalleryTemplateId(nextTemplateId);
-    }
   }, [templateCards]);
   const selectGalleryTemplate = useCallback((item: SlideTemplateGalleryItem) => {
     syncTemplateSelection(item.template_id || "auto");
+  }, [syncTemplateSelection]);
+  const useGalleryTemplate = useCallback((item: SlideTemplateGalleryItem) => {
+    selectGalleryTemplate(item);
+    setTemplateLibraryOpen(false);
+  }, [selectGalleryTemplate]);
+  const openTemplateLibrary = useCallback(() => {
+    setTemplateLibraryFocusId(selectedGalleryItem?.template_id || templateGallery[0]?.template_id || "");
+    setTemplateLibraryCategory(selectedGalleryItem?.category || "all");
+    setTemplateLibraryOpen(true);
+  }, [selectedGalleryItem, templateGallery]);
+  const selectAutoTemplate = useCallback(() => {
+    syncTemplateSelection("auto");
+    setTemplateLibraryFocusId("");
   }, [syncTemplateSelection]);
   const openGalleryLightbox = useCallback((item: SlideTemplateGalleryItem, imageUrl?: string, title?: string) => {
     const nextImageUrl = imageUrl || item.contact_sheet_url;
@@ -451,6 +477,15 @@ export default function ImageGenStudio({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [galleryLightbox]);
+
+  useEffect(() => {
+    if (!templateLibraryOpen || galleryLightbox) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setTemplateLibraryOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [galleryLightbox, templateLibraryOpen]);
 
   const request = useMemo<ImageGenerationRequest>(() => {
     const model = imageModelForProvider(provider, connection.model);
@@ -710,17 +745,33 @@ export default function ImageGenStudio({
               </div>
 
               <Field label="模板选择 / 策略说明" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "视觉系统"}>
-                <select className="gen-select" value={templateId} onChange={(e) => syncTemplateSelection(e.target.value)}>
-                  {PPT_TEMPLATE_GROUPS.map((group) => (
-                    <optgroup key={group.group} label={group.group}>
-                      {group.options.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label} - {option.sub}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                <div className="gen-template-picker-summary">
+                  <div className="gen-template-picker-current">
+                    <span className="gen-template-picker-kicker">
+                      {templateId === "auto" ? "AUTO ROUTING" : selectedGalleryItem?.category || selectedTemplateOption?.group || "TEMPLATE"}
+                    </span>
+                    <strong>
+                      {templateId === "auto"
+                        ? "自动选择视觉系统"
+                        : selectedGalleryItem?.template_name || selectedTemplateOption?.label || templateId}
+                    </strong>
+                    <p>
+                      {templateId === "auto"
+                        ? "后端会按 prompt 意图自动挑选候选模板。"
+                        : selectedGalleryItem?.reason || selectedTemplateOption?.sub || "使用选中的模板策略拼接 Codex 提示词。"}
+                    </p>
+                  </div>
+                  <div className="gen-template-picker-actions">
+                    <button type="button" className="gen-template-library-open" onClick={openTemplateLibrary}>
+                      打开模板库
+                    </button>
+                    {templateId !== "auto" && (
+                      <button type="button" className="gen-template-auto" onClick={selectAutoTemplate}>
+                        自动
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
                 {activeTemplateCard && (
                   <div className="gen-template-card-preview">
@@ -738,73 +789,6 @@ export default function ImageGenStudio({
                       <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
                       <span>{provenanceLabel(activeTemplateCard)}</span>
                     </div>
-                  </div>
-                )}
-              </Field>
-
-              <Field label="模板效果库" hint={`${templateGallery.length || 0} templates，点击即选中模板`}>
-                {templateGalleryError && <p className="gen-inline-error">{templateGalleryError}</p>}
-                {!templateGalleryError && templateGallery.length === 0 && (
-                  <p className="gen-gallery-empty">还没有可展示的真实生成样例。</p>
-                )}
-                {templateGalleryGroups.length > 0 && (
-                  <div className="gen-template-gallery">
-                    {templateGalleryGroups.map((group) => (
-                      <section className="gen-gallery-group" key={group.category}>
-                        <div className="gen-gallery-group-title">{group.category}</div>
-                        <div className="gen-gallery-grid">
-                          {group.items.map((item) => {
-                            const selectedGallery = templateId === item.template_id;
-                            const expanded = expandedGalleryTemplateId === item.template_id;
-                            return (
-                              <div className={`gen-gallery-card${selectedGallery ? " active" : ""}`} key={item.template_id}>
-                                <div className="gen-gallery-card-main">
-                                  <button
-                                    type="button"
-                                    className="gen-gallery-thumb-button"
-                                    disabled={!item.contact_sheet_url}
-                                    onClick={() => openGalleryLightbox(item)}
-                                  >
-                                    {item.contact_sheet_url ? (
-                                      <img src={item.contact_sheet_url} alt={`${item.template_name} preview`} loading="lazy" />
-                                    ) : (
-                                      <span className="gen-gallery-placeholder">No preview</span>
-                                    )}
-                                    <span className="gen-gallery-zoom">
-                                      <ExpandIcon />
-                                      <span>查看大图</span>
-                                    </span>
-                                  </button>
-                                  <button type="button" className="gen-gallery-info-button" onClick={() => selectGalleryTemplate(item)}>
-                                    <strong>{item.template_name || item.template_id}</strong>
-                                    <em>{item.ok_count}/{item.page_count} pages</em>
-                                    <small>{item.reason}</small>
-                                  </button>
-                                </div>
-                                {expanded && (
-                                  <div className="gen-gallery-pages">
-                                    {item.pages.map((page) => (
-                                      <figure key={`${item.template_id}-${page.page_id}`}>
-                                        {page.image_url && (
-                                          <button
-                                            className="gen-gallery-page-thumb"
-                                            type="button"
-                                            onClick={() => openGalleryLightbox(item, page.image_url, page.page_title || page.page_id)}
-                                          >
-                                            <img src={page.image_url} alt={page.page_title} loading="lazy" />
-                                          </button>
-                                        )}
-                                        <figcaption>{page.page_title || page.page_id}</figcaption>
-                                      </figure>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    ))}
                   </div>
                 )}
               </Field>
@@ -1186,6 +1170,23 @@ export default function ImageGenStudio({
           </div>
         )}
       </section>
+      {templateLibraryOpen && (
+        <TemplateLibraryOverlay
+          items={templateGallery}
+          groups={templateGalleryGroups}
+          selectedTemplateId={templateId}
+          focusedItem={focusedGalleryItem}
+          category={templateLibraryCategory}
+          query={templateLibraryQuery}
+          error={templateGalleryError}
+          onCategoryChange={setTemplateLibraryCategory}
+          onQueryChange={setTemplateLibraryQuery}
+          onClose={() => setTemplateLibraryOpen(false)}
+          onFocusTemplate={setTemplateLibraryFocusId}
+          onPreview={openGalleryLightbox}
+          onSelect={useGalleryTemplate}
+        />
+      )}
       {galleryLightbox && (
         <div
           className="gen-gallery-lightbox"
@@ -1269,6 +1270,199 @@ function groupTemplateGallery(items: SlideTemplateGalleryItem[]): Array<{ catego
     groups.set(category, [...(groups.get(category) || []), item]);
   }
   return Array.from(groups.entries()).map(([category, groupItems]) => ({ category, items: groupItems }));
+}
+
+function findTemplateOption(templateId: string): (PPTTemplateOption & { group: string }) | null {
+  for (const group of PPT_TEMPLATE_GROUPS) {
+    const option = group.options.find((item) => item.value === templateId);
+    if (option) return { ...option, group: group.group };
+  }
+  return null;
+}
+
+function TemplateLibraryOverlay({
+  items,
+  groups,
+  selectedTemplateId,
+  focusedItem,
+  category,
+  query,
+  error,
+  onCategoryChange,
+  onQueryChange,
+  onClose,
+  onFocusTemplate,
+  onPreview,
+  onSelect
+}: {
+  items: SlideTemplateGalleryItem[];
+  groups: Array<{ category: string; items: SlideTemplateGalleryItem[] }>;
+  selectedTemplateId: string;
+  focusedItem?: SlideTemplateGalleryItem;
+  category: TemplateLibraryMode;
+  query: string;
+  error: string;
+  onCategoryChange: (category: TemplateLibraryMode) => void;
+  onQueryChange: (query: string) => void;
+  onClose: () => void;
+  onFocusTemplate: (templateId: string) => void;
+  onPreview: (item: SlideTemplateGalleryItem, imageUrl?: string, title?: string) => void;
+  onSelect: (item: SlideTemplateGalleryItem) => void;
+}) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredItems = items.filter((item) => {
+    const matchesCategory = category === "all" || item.category === category;
+    if (!matchesCategory) return false;
+    if (!normalizedQuery) return true;
+    return [
+      item.template_id,
+      item.template_name,
+      item.category,
+      item.reason,
+      ...item.pages.map((page) => page.page_title || page.page_id)
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+  const categoryTabs = [
+    { category: "all", label: "全部模板", count: items.length },
+    ...groups.map((group) => ({ category: group.category, label: group.category, count: group.items.length }))
+  ];
+  const detailItem = focusedItem && filteredItems.some((item) => item.template_id === focusedItem.template_id)
+    ? focusedItem
+    : filteredItems[0] || focusedItem;
+
+  return (
+    <div className="gen-template-library" role="dialog" aria-modal="true" aria-label="模板库">
+      <div className="gen-template-library-shell">
+        <header className="gen-template-library-head">
+          <div>
+            <span>DrawAI Template Library</span>
+            <h2>选择一个 PPT 视觉系统</h2>
+          </div>
+          <div className="gen-template-library-search">
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="搜索模板、场景或页面"
+              autoFocus
+            />
+            <button type="button" aria-label="关闭模板库" onClick={onClose}>
+              ×
+            </button>
+          </div>
+        </header>
+
+        <div className="gen-template-library-layout">
+          <nav className="gen-template-library-nav" aria-label="模板分类">
+            {categoryTabs.map((tab) => (
+              <button
+                key={tab.category}
+                type="button"
+                className={category === tab.category ? "active" : ""}
+                onClick={() => onCategoryChange(tab.category)}
+              >
+                <span>{tab.label}</span>
+                <em>{tab.count}</em>
+              </button>
+            ))}
+          </nav>
+
+          <main className="gen-template-library-main">
+            {error && <p className="gen-inline-error">{error}</p>}
+            {!error && items.length === 0 && (
+              <div className="gen-template-library-empty">还没有可展示的真实模板样例。</div>
+            )}
+            {items.length > 0 && filteredItems.length === 0 && (
+              <div className="gen-template-library-empty">没有匹配的模板。</div>
+            )}
+            <div className="gen-template-showcase">
+              {filteredItems.map((item, index) => {
+                const active = item.template_id === selectedTemplateId;
+                const focused = detailItem?.template_id === item.template_id;
+                return (
+                  <article
+                    key={item.template_id}
+                    className={`gen-template-showcase-item${active ? " active" : ""}${focused ? " focused" : ""}`}
+                    onMouseEnter={() => onFocusTemplate(item.template_id)}
+                  >
+                    <button
+                      type="button"
+                      className="gen-template-showcase-preview"
+                      onClick={() => onFocusTemplate(item.template_id)}
+                    >
+                      {item.contact_sheet_url ? (
+                        <img src={item.contact_sheet_url} alt={`${item.template_name} preview`} loading={index < 4 ? "eager" : "lazy"} />
+                      ) : (
+                        <span>No preview</span>
+                      )}
+                    </button>
+                    <div className="gen-template-showcase-copy">
+                      <span>{item.category}</span>
+                      <strong>{item.template_name || item.template_id}</strong>
+                      <p>{item.reason}</p>
+                      <div className="gen-template-showcase-meta">
+                        <em>{item.ok_count}/{item.page_count} pages</em>
+                        {active && <em>已选中</em>}
+                      </div>
+                    </div>
+                    <div className="gen-template-showcase-actions">
+                      <button type="button" onClick={() => onSelect(item)}>
+                        使用模板
+                      </button>
+                      <button type="button" disabled={!item.contact_sheet_url} onClick={() => onPreview(item)}>
+                        预览大图
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </main>
+
+          <aside className="gen-template-library-detail">
+            {detailItem ? (
+              <>
+                <div className="gen-template-detail-hero">
+                  {detailItem.contact_sheet_url ? (
+                    <button type="button" onClick={() => onPreview(detailItem)}>
+                      <img src={detailItem.contact_sheet_url} alt={`${detailItem.template_name} contact sheet`} />
+                    </button>
+                  ) : (
+                    <span>No preview</span>
+                  )}
+                </div>
+                <div className="gen-template-detail-copy">
+                  <span>{detailItem.category}</span>
+                  <h3>{detailItem.template_name || detailItem.template_id}</h3>
+                  <p>{detailItem.reason}</p>
+                </div>
+                <div className="gen-template-detail-pages">
+                  {detailItem.pages.map((page) => (
+                    <button
+                      key={page.page_id}
+                      type="button"
+                      disabled={!page.image_url}
+                      onClick={() => onPreview(detailItem, page.image_url, page.page_title || page.page_id)}
+                    >
+                      {page.image_url && <img src={page.image_url} alt={page.page_title || page.page_id} loading="lazy" />}
+                      <span>{page.page_title || page.page_id}</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="gen-template-detail-use" onClick={() => onSelect(detailItem)}>
+                  使用这个模板
+                </button>
+              </>
+            ) : (
+              <div className="gen-template-library-empty">选择一个模板查看详情。</div>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function findLinkedTemplateCardId(templateId: string, cards: SlideTemplateCard[]): string {
