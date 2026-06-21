@@ -4,7 +4,6 @@ import json
 import os
 import shutil
 import subprocess
-import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -13,19 +12,17 @@ from typing import Any
 
 from drawai.codex_cli import resolve_codex_executable
 from drawai.codex_python_sdk_svg import (
-    CodexPythonSdkSvgError,
     _archive_codex_session_logs,
-    _close_timed_out_thread_client,
     _codex_sdk_env,
     _isolated_codex_home,
     _load_openai_codex_sdk,
     _normalize_codex_model_name,
     _normalize_codex_reasoning_effort,
+    _run_thread_with_timeout,
     controlled_codex_config_overrides,
 )
 
 from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
-from .formats import validate_format_file
 
 
 @dataclass(frozen=True)
@@ -47,19 +44,6 @@ class AgentExecutionResult:
     session_log_path: Path | None = None
     execution_manifest_path: Path | None = None
     exit_code: int = 0
-
-
-@dataclass(frozen=True)
-class _CodexSdkThreadOutcome:
-    result: Any | None
-    completed_by_outputs: bool = False
-
-
-@dataclass(frozen=True)
-class _DeclaredOutputReadiness:
-    ready: bool
-    signature: tuple[tuple[str, int, int], ...] = ()
-    errors: tuple[str, ...] = ()
 
 
 class AgentExecutionError(RuntimeError):
@@ -129,7 +113,6 @@ def _execute_codex_sdk_agent(
     started_at = time.monotonic()
     result: Any | None = None
     archive: Mapping[str, Any] | None = None
-    completed_by_outputs = False
     try:
         with _isolated_codex_home(request.workdir) as prepared_codex_home:
             try:
@@ -171,11 +154,9 @@ def _execute_codex_sdk_agent(
                             "timeout_seconds": timeout_seconds,
                         },
                     )
-                    thread_outcome = _run_codex_sdk_thread_until_done_or_outputs(
+                    result = _run_thread_with_timeout(
                         thread,
                         codex_inputs,
-                        request=request,
-                        trace_path=trace_path,
                         timeout_seconds=timeout_seconds,
                         approval_mode=sdk.ApprovalMode.deny_all,
                         cwd=str(_agent_cwd(request)),
@@ -183,14 +164,7 @@ def _execute_codex_sdk_agent(
                         model=model_name,
                         sandbox=sdk.Sandbox.full_access,
                     )
-                    result = thread_outcome.result
-                    completed_by_outputs = thread_outcome.completed_by_outputs
                     final_response = str(getattr(result, "final_response", "") or "")
-                    if thread_outcome.completed_by_outputs and not final_response.strip():
-                        final_response = (
-                            "Done: declared output files were present, stable, and format-valid "
-                            "before the Codex SDK turn returned."
-                        )
                     stdout_path.write_text(final_response, encoding="utf-8")
             except Exception as exc:
                 archive = _archive_codex_session_logs(
@@ -240,7 +214,6 @@ def _execute_codex_sdk_agent(
             "duration_ms": int((time.monotonic() - started_at) * 1000),
             "session_log_archive": archive,
             "output_paths": [str(_declared_output_path(request, output)) for output in request.prompt.outputs],
-            "completed_by_outputs": completed_by_outputs,
         },
     )
     return AgentExecutionResult(
@@ -251,102 +224,6 @@ def _execute_codex_sdk_agent(
         trace_path=trace_path,
         session_log_path=session_log_path,
     )
-
-
-def _run_codex_sdk_thread_until_done_or_outputs(
-    thread: Any,
-    run_input: Any,
-    *,
-    request: AgentExecutionRequest,
-    trace_path: Path,
-    timeout_seconds: float,
-    **kwargs: Any,
-) -> _CodexSdkThreadOutcome:
-    timeout = float(timeout_seconds)
-    if timeout <= 0:
-        raise CodexPythonSdkSvgError("runtime_config.timeout_seconds must be positive")
-    poll_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_poll_seconds",
-        default=0.5,
-    )
-    stable_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_stable_seconds",
-        default=2.0,
-    )
-    close_wait_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_close_wait_seconds",
-        default=5.0,
-    )
-    done = threading.Event()
-    state: dict[str, Any] = {}
-
-    def _target() -> None:
-        try:
-            state["result"] = thread.run(run_input, **kwargs)
-        except BaseException as exc:  # noqa: BLE001 - propagate SDK worker failure.
-            state["error"] = exc
-        finally:
-            done.set()
-
-    worker = threading.Thread(
-        target=_target,
-        name=f"drawai-codex-sdk-agent-{request.node_id}",
-        daemon=True,
-    )
-    started_at = time.monotonic()
-    deadline = started_at + timeout
-    ready_since: float | None = None
-    ready_signature: tuple[tuple[str, int, int], ...] = ()
-    last_readiness = _DeclaredOutputReadiness(ready=False)
-    worker.start()
-
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            _close_timed_out_thread_client(thread)
-            raise CodexPythonSdkSvgError(
-                f"Codex Python SDK run exceeded timeout_seconds={timeout:g}"
-            )
-        if done.wait(min(poll_seconds, remaining)):
-            if "error" in state:
-                raise state["error"]
-            return _CodexSdkThreadOutcome(result=state.get("result"))
-
-        readiness = _declared_outputs_readiness(request)
-        last_readiness = readiness
-        if not readiness.ready:
-            ready_since = None
-            ready_signature = ()
-            continue
-        if readiness.signature != ready_signature:
-            ready_signature = readiness.signature
-            ready_since = time.monotonic()
-            continue
-        if ready_since is not None and time.monotonic() - ready_since >= stable_seconds:
-            _close_timed_out_thread_client(thread)
-            done.wait(close_wait_seconds)
-            _append_trace(
-                trace_path,
-                {
-                    "type": "agent_outputs_satisfied_before_sdk_turn_finished",
-                    "provider_id": "codex_sdk",
-                    "node_id": request.node_id,
-                    "duration_ms": int((time.monotonic() - started_at) * 1000),
-                    "output_paths": [
-                        str(_declared_output_path(request, output))
-                        for output in request.prompt.outputs
-                    ],
-                    "readiness_errors": list(last_readiness.errors),
-                },
-            )
-            if "result" in state:
-                return _CodexSdkThreadOutcome(result=state["result"], completed_by_outputs=True)
-            return _CodexSdkThreadOutcome(result=None, completed_by_outputs=True)
-
-
 def _execute_codex_cli_agent(
     request: AgentExecutionRequest,
     *,
@@ -511,26 +388,18 @@ def _execute_subprocess_agent(
     )
     try:
         with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
-            process = subprocess.Popen(
+            completed = subprocess.run(
                 list(command),
-                stdin=subprocess.PIPE,
+                input=request.prompt.text,
                 text=True,
                 cwd=str(_agent_cwd(request)),
                 env=env,
                 stdout=stdout_handle,
                 stderr=stderr_handle,
+                timeout=timeout_seconds,
+                check=False,
             )
-            if process.stdin is None:
-                raise RuntimeError("Agent subprocess stdin pipe was not created")
-            process.stdin.write(request.prompt.text)
-            process.stdin.close()
-            returncode, completed_by_outputs = _wait_for_subprocess_until_done_or_outputs(
-                process,
-                request=request,
-                trace_path=trace_path,
-                provider_id=provider_id,
-                timeout_seconds=timeout_seconds,
-            )
+            returncode = completed.returncode
     except Exception as exc:
         _append_trace(
             trace_path,
@@ -560,7 +429,6 @@ def _execute_subprocess_agent(
             "returncode": returncode,
             "duration_ms": int((time.monotonic() - started_at) * 1000),
             "output_paths": [str(_declared_output_path(request, output)) for output in request.prompt.outputs],
-            "completed_by_outputs": completed_by_outputs,
         },
     )
     if returncode != 0:
@@ -580,94 +448,6 @@ def _execute_subprocess_agent(
         trace_path=trace_path,
         exit_code=returncode,
     )
-
-
-def _wait_for_subprocess_until_done_or_outputs(
-    process: subprocess.Popen[str],
-    *,
-    request: AgentExecutionRequest,
-    trace_path: Path,
-    provider_id: str,
-    timeout_seconds: float,
-) -> tuple[int, bool]:
-    timeout = float(timeout_seconds)
-    if timeout <= 0:
-        raise ValueError("timeout_seconds must be positive")
-    poll_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_poll_seconds",
-        default=0.5,
-    )
-    stable_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_stable_seconds",
-        default=2.0,
-    )
-    close_wait_seconds = _positive_float_option(
-        request.prompt.options,
-        "output_completion_close_wait_seconds",
-        default=5.0,
-    )
-    started_at = time.monotonic()
-    deadline = started_at + timeout
-    ready_since: float | None = None
-    ready_signature: tuple[tuple[str, int, int], ...] = ()
-
-    while True:
-        readiness = _declared_outputs_readiness(request)
-        if readiness.ready:
-            if readiness.signature != ready_signature:
-                ready_signature = readiness.signature
-                ready_since = time.monotonic()
-            elif ready_since is not None and time.monotonic() - ready_since >= stable_seconds:
-                _terminate_process(process, timeout=close_wait_seconds)
-                _append_trace(
-                    trace_path,
-                    {
-                        "type": "agent_outputs_satisfied_before_process_finished",
-                        "provider_id": provider_id,
-                        "node_id": request.node_id,
-                        "duration_ms": int((time.monotonic() - started_at) * 1000),
-                        "output_paths": [
-                            str(_declared_output_path(request, output))
-                            for output in request.prompt.outputs
-                        ],
-                    },
-                )
-                return 0, True
-        else:
-            ready_since = None
-            ready_signature = ()
-
-        returncode = process.poll()
-        if returncode is not None:
-            return int(returncode), False
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            _terminate_process(process, timeout=close_wait_seconds, kill=True)
-            raise subprocess.TimeoutExpired(process.args, timeout)
-        time.sleep(min(poll_seconds, remaining))
-
-
-def _terminate_process(
-    process: subprocess.Popen[str],
-    *,
-    timeout: float,
-    kill: bool = False,
-) -> None:
-    if process.poll() is not None:
-        return
-    if kill:
-        process.kill()
-    else:
-        process.terminate()
-    try:
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=timeout)
-
-
 def _write_execution_manifest(
     request: AgentExecutionRequest,
     result: AgentExecutionResult,
@@ -768,28 +548,6 @@ def _validate_declared_output_paths(request: AgentExecutionRequest) -> None:
         _declared_output_path(request, output)
 
 
-def _declared_outputs_readiness(request: AgentExecutionRequest) -> _DeclaredOutputReadiness:
-    signatures: list[tuple[str, int, int]] = []
-    errors: list[str] = []
-    for output in request.prompt.outputs:
-        output_path = _declared_output_path(request, output)
-        if not output_path.is_file():
-            errors.append(f"missing: {output_path}")
-            continue
-        stat = output_path.stat()
-        signatures.append((str(output_path), stat.st_size, stat.st_mtime_ns))
-        format_id = output.get("format_id")
-        if isinstance(format_id, str) and format_id:
-            validation = validate_format_file(format_id, output_path)
-            if not validation.ok:
-                errors.extend(f"{output_path}: {error}" for error in validation.errors)
-    return _DeclaredOutputReadiness(
-        ready=not errors and len(signatures) == len(request.prompt.outputs),
-        signature=tuple(signatures),
-        errors=tuple(errors),
-    )
-
-
 def _declared_output_path(
     request: AgentExecutionRequest,
     output: Mapping[str, Any],
@@ -836,19 +594,6 @@ def _timeout_seconds(options: Mapping[str, Any]) -> float:
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
     return timeout
-
-
-def _positive_float_option(
-    options: Mapping[str, Any],
-    key: str,
-    *,
-    default: float,
-) -> float:
-    raw = options.get(key, default)
-    value = float(raw)
-    if value <= 0:
-        raise ValueError(f"{key} must be positive")
-    return value
 
 
 def _input_paths(request: AgentExecutionRequest) -> tuple[Path, ...]:
