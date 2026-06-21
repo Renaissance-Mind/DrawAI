@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from drawai.workflow.agent_execution import AgentExecutionRequest, AgentExecutionResult
+from drawai.workflow.node_runs import begin_node_run
+from drawai.workflow.runner import NodeRunContext
+from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
 from drawai.workbench.runner import WorkbenchRunner
@@ -212,6 +215,130 @@ def test_workbench_workflow_export_node_converts_connected_svg_without_run_packa
         (run_root / "nodes" / "output" / "runs" / "001" / "output" / "final_outputs.json").read_text(encoding="utf-8")
     )
     assert final_outputs["outputs"][0]["format_id"] == "drawai.pptx.v1"
+
+
+def test_workflow_export_node_uses_canonical_svg_dir_for_page_spec_assets(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "single.png"
+    Image.new("RGB", (32, 32), "white").save(source)
+    batch = store.create_batch(
+        name="workflow asset href export",
+        input_mode="local_dir",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=True,
+        config_path=base_config,
+        workflow_template_id="default_drawai_dag",
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name=source.name,
+        source_image_path=source,
+        config_path=base_config,
+    )
+    run_root = Path(case.run_root)
+    page_spec_dir = run_root / "nodes" / "asset_prepare" / "runs" / "001" / "output"
+    asset_dir = page_spec_dir / "assets" / "E001"
+    asset_dir.mkdir(parents=True)
+    Image.new("RGBA", (8, 8), (40, 120, 220, 255)).save(asset_dir / "active.png")
+    page_spec_path = page_spec_dir / "page_spec.json"
+    page_spec_path.write_text(
+        json.dumps(
+            {
+                "schema": "drawai.page_spec.v1",
+                "page_id": case.case_id,
+                "source": {"image": "inputs/figure.png", "width_px": 32, "height_px": 32},
+                "canvas": {"width_px": 32, "height_px": 32},
+                "background": {},
+                "elements": [
+                    {
+                        "id": "E001",
+                        "kind": "image",
+                        "role": "picture",
+                        "box_px": [4, 4, 8, 8],
+                        "build": {"mode": "asset_ref", "processing_type": "crop"},
+                        "materialization": {
+                            "status": "ok",
+                            "outputs": {
+                                "active": {
+                                    "path": "assets/E001/active.png",
+                                    "media_type": "image/png",
+                                    "width_px": 8,
+                                    "height_px": 8,
+                                }
+                            },
+                        },
+                    }
+                ],
+                "metadata": {},
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    svg_dir = run_root / "nodes" / "svg_compose" / "runs" / "001" / "output"
+    svg_dir.mkdir(parents=True)
+    svg_path = svg_dir / "semantic.svg"
+    svg_path.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect x="0" y="0" width="32" height="32" fill="#ffffff"/>
+  <rect x="17" y="6" width="10" height="8" fill="#dceeff" stroke="#2563eb"/>
+  <text x="17" y="24" font-size="5" fill="#111827">DrawAI</text>
+  <image id="image-E001" href="../nodes/asset_prepare/runs/001/output/assets/E001/active.png" x="4" y="4" width="8" height="8"/>
+</svg>
+""",
+        encoding="utf-8",
+    )
+    node = WorkflowNode(
+        node_id="svg_to_ppt",
+        node_type="export",
+        title="SVG to PPT",
+        inputs=(
+            WorkflowPort("semantic_svg", "Semantic SVG", ("semantic_svg",), formats=("drawai.semantic_svg.v1",)),
+            WorkflowPort("page_spec", "PageSpec", ("page_spec",), formats=("drawai.page_spec.v1",), required=False),
+        ),
+        outputs=(WorkflowPort("pptx", "PPTX", ("pptx",), formats=("drawai.pptx.v1",)),),
+        config={"exporter_id": "svg_to_ppt"},
+    )
+    template = WorkflowTemplate(
+        template_id="direct_export",
+        name="Direct Export",
+        nodes=(node,),
+        edges=(),
+    )
+    record = begin_node_run(run_root, "svg_to_ppt", node_type="export")
+    context = NodeRunContext(template=template, node=node, run_root=run_root, record=record)
+    runner = WorkbenchRunner(store, _settings(tmp_path, base_config), stage_executor=lambda _case, _stage: None)
+
+    outputs = runner._run_workflow_export_node(
+        case,
+        context,
+        (
+            {
+                "port_id": "semantic_svg",
+                "path": str(svg_path.relative_to(run_root)),
+                "type": "semantic_svg",
+                "format_id": "drawai.semantic_svg.v1",
+            },
+            {
+                "port_id": "page_spec",
+                "path": str(page_spec_path.relative_to(run_root)),
+                "type": "page_spec",
+                "format_id": "drawai.page_spec.v1",
+            },
+        ),
+        {},
+    )
+
+    assert outputs[0]["format_id"] == "drawai.pptx.v1"
+    assert (run_root / "svg" / "semantic.svg").is_file()
+    assert (run_root / "svg_to_ppt" / "semantic.svg_to_ppt.pptx").is_file()
+    report = json.loads((run_root / "reports" / "svg_to_ppt_export_report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "ok"
+    manifest = json.loads((run_root / "svg_to_ppt" / "assets" / "asset_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["assets"][0]["svg_href"] == "../nodes/asset_prepare/runs/001/output/assets/E001/active.png"
 
 
 def _client(tmp_path: Path) -> TestClient:

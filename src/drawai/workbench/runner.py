@@ -746,6 +746,7 @@ class WorkbenchRunner:
             raise ValueError(f"unsupported export node: {exporter_id or context.node.node_id}")
         paths = prepare_artifact_paths(case.run_root)
         svg_source = _first_input_path(case.run_root, inputs)
+        canonical_svg = paths.semantic_svg
         if not stage_state.get("export"):
             self.store.update_case_status(
                 case.case_id,
@@ -753,6 +754,7 @@ class WorkbenchRunner:
                 phase="reconstruction",
                 stage="export",
             )
+            canonical_svg = _copy_workflow_file(svg_source, paths.semantic_svg)
             page_spec_source = _optional_input_path_by_type(
                 case.run_root,
                 inputs,
@@ -760,14 +762,14 @@ class WorkbenchRunner:
                 format_id="drawai.page_spec.v1",
             )
             asset_manifest = (
-                page_spec_asset_manifest(page_spec_source, svg_dir=Path(case.run_root) / "svg")
+                page_spec_asset_manifest(page_spec_source, svg_dir=canonical_svg.parent)
                 if page_spec_source is not None
                 else {"schema": "drawai.page_spec_asset_manifest.v1", "assets": []}
             )
             asset_manifest, manifest_extension = extend_asset_manifest_for_svg_export(paths.root, asset_manifest)
             write_json(paths.asset_manifest_json, asset_manifest)
             report = check_svg_to_ppt_compatibility(
-                svg_source,
+                canonical_svg,
                 output_dir=paths.root,
                 export_pptx=True,
                 asset_manifest=asset_manifest,
@@ -777,7 +779,6 @@ class WorkbenchRunner:
             if report.get("status") != "ok":
                 raise RuntimeError(_svg_to_ppt_report_error(report))
             stage_state["export"] = True
-        _copy_workflow_file(svg_source, paths.semantic_svg)
         pptx_path = paths.root / "svg_to_ppt" / "semantic.svg_to_ppt.pptx"
         output_path = _copy_workflow_file(pptx_path, context.output_dir / "semantic.svg_to_ppt.pptx")
         return (_workflow_output(context, "pptx", output_path, "pptx", "drawai.pptx.v1", deliverable=True),)
