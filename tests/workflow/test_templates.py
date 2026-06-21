@@ -92,15 +92,15 @@ def test_asset_refine_and_svg_are_agent_node_presets() -> None:
     assert nodes["svg_agent"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
     assert nodes["run0_agent"].config["preset_id"] == "run0_element_refine"
     assert nodes["svg_agent"].config["preset_id"] == "svg_generation"
-    assert "DrawAI asset post-processing and source analysis task." in nodes["run0_agent"].config["task"]
+    assert "DrawAI asset post-processing and element-plans task." in nodes["run0_agent"].config["task"]
     assert "Task 2: repeat a bounded visualization/refinement loop" in nodes["run0_agent"].config["task"]
     assert nodes["run0_agent"].config["constraints"]
-    assert nodes["run0_agent"].config["outputs"][0]["format_id"] == "drawai.codex_element_analysis.v1"
+    assert nodes["run0_agent"].config["outputs"][0]["format_id"] == "drawai.element_plans.v1"
     assert [port.port_id for port in nodes["run0_agent"].inputs] == ["image", "elements"]
     assert nodes["run0_agent"].inputs[0].types == ("image",)
     assert nodes["run0_agent"].inputs[1].types == ("element_plans",)
-    assert nodes["run0_agent"].outputs[0].types == ("element_analysis",)
-    assert nodes["asset_planner"].inputs[0].types == ("element_analysis",)
+    assert nodes["run0_agent"].outputs[0].types == ("element_plans",)
+    assert nodes["asset_planner"].inputs[0].types == ("element_plans",)
     assert "IMAGE VECTORIZATION TASK" in nodes["svg_agent"].config["task"]
     assert "REFINE LOOP / MAX 3 ROUNDS" in nodes["svg_agent"].config["task"]
     assert "OVERALL SVG/PPT PROFILE" in nodes["svg_agent"].config["task"]
@@ -202,7 +202,7 @@ def test_load_workflow_template_upgrades_legacy_agent_default_prompts(tmp_path: 
     loaded = load_workflow_template(path)
     nodes = {node.node_id: node for node in loaded.nodes}
 
-    assert "DrawAI asset post-processing and source analysis task." in nodes["run0_agent"].config["task"]
+    assert "DrawAI asset post-processing and element-plans task." in nodes["run0_agent"].config["task"]
     assert nodes["run0_agent"].config["constraints"]
     assert "IMAGE VECTORIZATION TASK" in nodes["svg_agent"].config["task"]
     assert "prompt_fragments" not in nodes["svg_agent"].config

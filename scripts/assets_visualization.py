@@ -24,6 +24,8 @@ ACTION_COLORS = {
     "adjusted": "#f59e0b",
     "split": "#8b5cf6",
     "added": "#ef4444",
+    "agent_refined": "#0891b2",
+    "user_confirmed": "#16a34a",
     "unknown": "#64748b",
 }
 
@@ -184,7 +186,12 @@ def extract_records(payload: Any) -> list[Mapping[str, Any]]:
 
 def bbox_from_record(record: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
     for key in ("bbox", "box", "bounds", "rect"):
-        bbox = normalize_bbox(record.get(key), allow_line=True)
+        raw_bbox = record.get(key)
+        bbox = (
+            normalize_xywh_bbox(raw_bbox, allow_line=True)
+            if is_element_plan_record(record)
+            else normalize_bbox(raw_bbox, allow_line=True)
+        )
         if bbox is not None:
             return bbox
     x = number(record.get("x"))
@@ -194,6 +201,34 @@ def bbox_from_record(record: Mapping[str, Any]) -> tuple[float, float, float, fl
     if x is not None and y is not None and width is not None and height is not None:
         return normalize_bbox([x, y, x + width, y + height], allow_line=True)
     return None
+
+
+def is_element_plan_record(record: Mapping[str, Any]) -> bool:
+    schema = text(record.get("schema"))
+    if schema == "drawai.element_plan.v1":
+        return True
+    return bool(record.get("processing_intent")) and bool(record.get("element_id")) and bool(record.get("element_type"))
+
+
+def normalize_xywh_bbox(raw: Any, *, allow_line: bool) -> tuple[float, float, float, float] | None:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        return None
+    try:
+        left, top, width, height = [float(item) for item in raw]
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(item) for item in (left, top, width, height)):
+        return None
+    if allow_line:
+        if width == 0:
+            left -= 0.5
+            width = 1.0
+        if height == 0:
+            top -= 0.5
+            height = 1.0
+    if width <= 0 or height <= 0:
+        return None
+    return left, top, left + width, top + height
 
 
 def normalize_bbox(raw: Any, *, allow_line: bool) -> tuple[float, float, float, float] | None:
@@ -236,8 +271,12 @@ def normalize_drawable_record(
     label_mode: str,
 ) -> dict[str, Any]:
     element_id = text(record.get("box_id") or record.get("element_id") or record.get("id") or record.get("asset_id")) or f"E{index + 1:03d}"
-    category = normalize_category(record.get("category") or record.get("method") or record.get("current_pipeline_method"))
-    action = normalize_action(record.get("refinement_action") or record.get("action"))
+    intent = record.get("processing_intent")
+    processing_type = intent.get("processing_type") if isinstance(intent, Mapping) else ""
+    category = normalize_category(
+        record.get("category") or record.get("method") or record.get("current_pipeline_method") or processing_type
+    )
+    action = normalize_action(record.get("refinement_action") or record.get("action") or record.get("review_status"))
     element_type = text(record.get("type") or record.get("element_type") or record.get("role") or "")
     color = record_color(record, category=category, action=action, color_mode=color_mode)
     return {

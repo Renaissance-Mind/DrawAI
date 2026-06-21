@@ -88,7 +88,7 @@ def test_workflow_prompt_cli_renders_agent_prompt(tmp_path: Path, capsys) -> Non
     assert status == 0
     assert payload["provider_id"] == "kimi_cli"
     assert "Fused candidates." in payload["text"]
-    assert "output/element_analysis.json" in payload["text"]
+    assert "output/elements.json" in payload["text"]
 
 
 def test_workflow_inspect_node_run_cli_reads_latest_manifest(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

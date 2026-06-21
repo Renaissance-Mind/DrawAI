@@ -22,7 +22,6 @@ from drawai.pipeline import run_drawai_pipeline_from_stage
 from drawai.rmbg_client import RemoteRmbgClient
 from drawai.svg_to_ppt_check import check_svg_to_ppt_compatibility
 from drawai.v2.packages import write_element_plan
-from drawai.v2.refine import codex_analysis_to_v2_element_plans
 from drawai.v2.schema import RUN_PACKAGE_SCHEMA, AssetPackage, ElementPlan, utc_now
 from drawai.workflow.agent_execution import (
     AgentExecutionRequest,
@@ -30,12 +29,14 @@ from drawai.workflow.agent_execution import (
     execute_agent_prompt,
 )
 from drawai.workflow.agents import agent_preset_by_id, render_agent_prompt
+from drawai.workflow.formats import element_plans_from_payload
 from drawai.workflow.runner import NodeRunContext, WorkflowRunner
 from drawai.workflow.schema import WorkflowEdge, WorkflowTemplate
 from drawai.workflow.templates import load_workflow_template_by_id
 
 from .assets import (
     approve_asset_plan,
+    draft_from_element_plans,
     draft_from_run0_analysis,
     materialize_approved_assets,
     read_asset_draft,
@@ -521,17 +522,15 @@ class WorkbenchRunner:
         processor_id = str(context.node.config.get("processor_id") or "")
         paths = prepare_artifact_paths(case.run_root)
         if processor_id == "asset_planner":
-            analysis_source = _first_input_path(case.run_root, inputs)
-            _copy_workflow_json(
-                analysis_source,
-                paths.element_analysis_json,
-            )
-            draft = draft_from_run0_analysis(case.run_root, case_id=case.case_id)
+            elements_source = Path(_first_input_path(case.run_root, inputs)).expanduser().resolve(strict=False)
+            if not elements_source.is_file():
+                raise FileNotFoundError(f"Run0 Agent element plans output is missing: {elements_source}")
+            payload = json.loads(elements_source.read_text(encoding="utf-8"))
+            if not isinstance(payload, Mapping | list):
+                raise ValueError("Run0 Agent output must be a JSON object or array of element plans")
+            plans = element_plans_from_payload(payload)
+            draft = draft_from_element_plans(case.run_root, plans, case_id=case.case_id)
             write_asset_draft(case.run_root, draft)
-            analysis = json.loads(paths.element_analysis_json.read_text(encoding="utf-8"))
-            if not isinstance(analysis, Mapping):
-                raise ValueError("Run0 Agent output must be a JSON object")
-            plans = codex_analysis_to_v2_element_plans(analysis)
             _write_workflow_run_package(case, plans, last_stage="plan_assets")
             output_path = _copy_workflow_json(paths.run_package_json, context.output_dir / "elements.json")
             return (_workflow_output(context, "elements", output_path, "element_plans", "drawai.element_plans.v1"),)

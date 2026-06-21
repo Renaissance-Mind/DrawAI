@@ -143,14 +143,14 @@ const DEFAULT_WORKFLOW_FOLDERS: WorkflowFolder[] = [
   { folder_id: CUSTOM_WORKFLOW_FOLDER_ID, name: "自定义工作流" }
 ];
 const AGENT_DEFAULT_TASKS: Record<string, string> = {
-  run0_element_refine: `DrawAI asset post-processing and source analysis task.
+  run0_element_refine: `DrawAI asset post-processing and element-plans task.
 
 We are performing an image vectorization task: a bitmap image will eventually be transformed into an editable representation. The whole process has three parts:
 - Asset parsing: divide the image into independent assets. Each asset may be text, an icon, table, frame, arrow, and so on.
 - Asset post-processing: refine the pre-parsed assets.
 - Editable reconstruction: combine assets and finish the final visual result.
 
-Some assets should become editable forms, such as text, frames, arrows, and simple vector graphics. Some assets should instead be cropped from the original image and pasted back into their original positions. The parser/OCR/fusion outputs are evidence, not truth. Execute the second stage, asset post-processing, and produce the refined element/source analysis that later asset materialization and SVG generation will consume.
+Some assets should become editable forms, such as text, frames, arrows, and simple vector graphics. Some assets should instead be cropped from the original image and pasted back into their original positions. The parser/OCR/fusion outputs are evidence, not truth. Execute the second stage, asset post-processing, and produce refined DrawAI element plans that later asset materialization and SVG generation will consume.
 
 Task 1: refine the connected candidates into minimum independent assets.
 Each output element should be the smallest independent visual part, such as one icon, image, frame, arrow, text line, chart mark, chart block, or diagram component.
@@ -163,25 +163,26 @@ Each output element should be the smallest independent visual part, such as one 
 - For geometry_kind="mask", use mask_preview PNGs and the mask preview sheet as visual evidence. Do not adjust or resize the mask region; preserve its bbox/geometry when keeping it.
 
 Task 2: run a bounded visualization/refinement loop, at most 3 iterations.
-1. Write reports/element_analysis_codex/refine_iteration_<N>.json.
+1. Write reports/element_plans_codex/refine_iteration_<N>.json.
 2. Run assets_visualization.py with the original image and that iteration JSON.
-3. Inspect reports/element_analysis_codex/assets_visualization_iteration_<N>.png.
+3. Inspect reports/element_plans_codex/assets_visualization_iteration_<N>.png.
 4. Correct assets, splits/merges, removals, and bbox coordinates.
-5. Save reports/element_analysis_codex/refined_assets_final.json.
+5. Save the final refined element-plans JSON to the declared output path, normally output/elements.json.
 
-Task 3: classify every final retained element into exactly one source category.
+Task 3: classify every final retained element into exactly one processing intent.
 - svg_self_draw: editable SVG primitives/text/paths for text, arrows, boxes, lines, charts, simple diagrams, and simple icons.
 - crop: precise source-image crop with local background preserved for screenshots, photos, dense textures, heatmaps, complex small raster icons, or background-coupled details.
 - crop_nobg: crop after background removal/transparent subject extraction when foreground should sit over reconstructed SVG background.
 
 Important coverage rules:
 - Treat SAM/OCR/current asset plan as evidence, not truth.
-- Do not skip candidates. Every original candidate must be represented by retained output elements or removed/merged records.
-- The type field must be a concrete DrawAI element type: text, icon, picture, table, chart, diagram, arrow, frame, grid, symbol, content_box, or unknown.
+- Output only retained final element plans. Do not output removal_records, strategy_summary, refinement_summary, categories, notes, or old element_analysis fields.
+- Do not skip real visual assets. Every retained or merged original candidate should appear in source_candidate_ids on at least one output element. Clearly duplicate/noise candidates may be omitted.
+- The element_type field must be a concrete DrawAI element type: text, icon, picture, table, chart, diagram, arrow, frame, grid, symbol, content_box, or unknown.
 - New IDs are allowed only for split or added refined elements.
 - If uncertain, choose the most faithful final-source strategy and mark confidence low or medium.
 
-Final JSON schema: drawai.codex_element_analysis.v1. Include strategy_summary, refinement_summary, refinement_iterations, category counts, refinement_action counts, retained elements, optional removal records, and notes. Also write reports/element_analysis_codex/analysis_notes.md. The JSON file is the source of truth.`,
+Final JSON format: drawai.element_plans.v1. Write a top-level schema="drawai.element_plans.v1" and an elements array of retained element plans only. Each element plan must include schema="drawai.element_plan.v1", element_id, source_candidate_ids, element_type, bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent {object_type, processing_type svg_self_draw|crop|crop_nobg, parameters}, review_status="agent_refined", created_by_stage="refine_elements", and concise change_reason. The declared JSON file is the source of truth.`,
   svg_generation: `IMAGE VECTORIZATION TASK
 Goal: convert one bitmap figure into an editable, PPT-stable SVG.
 
@@ -244,7 +245,7 @@ const AGENT_DEFAULT_CONSTRAINTS: Record<string, string[]> = {
     "Do not render final SVG/PPT and do not modify repository code. This node only refines/classifies assets.",
     "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
     "Do not print full request JSON to the terminal or logs; start from compact candidate tables and read exact details only when needed.",
-    "Every source candidate must be represented by retained output elements or explicit removed/merged records.",
+    "Output only drawai.element_plans.v1 JSON; do not output codex element analysis, summaries, notes, or removal records.",
     "Write the declared output files exactly, in UTF-8 JSON or markdown according to the output declaration."
   ],
   svg_generation: [
@@ -268,7 +269,7 @@ const WORKFLOW_TYPE_CONTRACTS: Record<string, string> = {
   element_plans:
     "Refined/planned DrawAI elements. JSON contains elements with element_id, source_candidate_ids, element_type, bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent {object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason.",
   element_analysis:
-    "Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
+    "Legacy Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
   asset_packages:
     "Processed asset package collection. JSON contains asset_packages with asset_id, element_id, processor_type, status pending|running|ok|failed|unsupported, files, metadata, processor_runs, all_results, active_result, editable_payload, and failure.",
   semantic_svg: "Editable SVG file with an <svg> root following the DrawAI semantic SVG/PPT profile.",
@@ -319,7 +320,7 @@ const WORKFLOW_FORMAT_OPTIONS: WorkflowFormatOption[] = [
     format_id: "drawai.codex_element_analysis.v1",
     type: "element_analysis",
     label: "Element Analysis",
-    description: "Run0 asset/source analysis JSON."
+    description: "Legacy Run0 asset/source analysis JSON."
   },
   {
     format_id: "drawai.asset_packages.v1",
@@ -389,7 +390,7 @@ const NODE_PRESETS: NodePreset[] = [
       port("image", "Image", ["image"], "drawai.image.v1"),
       port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1")
     ],
-    outputs: [port("analysis", "Element Analysis", ["element_analysis"], "drawai.codex_element_analysis.v1", false)],
+    outputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1", false)],
     config: {
       preset_id: "run0_element_refine",
       provider_id: "codex_sdk",
@@ -401,18 +402,18 @@ const NODE_PRESETS: NodePreset[] = [
         {
           script_id: "assets_visualization",
           path: "scripts/assets_visualization.py",
-          description: "Renders asset-refinement bbox JSON over the source image for Run0 visual QA iterations.",
+          description: "Renders Run0 element-plan bbox JSON over the source image for visual QA iterations.",
           usage:
             "python {script} --image <image> --json <iteration_json> --output <png> --summary-output <summary_json> --color-mode action --label-mode id_type"
         }
       ],
       outputs: [
         {
-          port_id: "analysis",
-          path: "output/element_analysis.json",
-          format_id: "drawai.codex_element_analysis.v1",
-          type: "element_analysis",
-          description: "Run0 refined asset/source analysis in the standard DrawAI Codex element analysis JSON format."
+          port_id: "elements",
+          path: "output/elements.json",
+          format_id: "drawai.element_plans.v1",
+          type: "element_plans",
+          description: "Run0 refined DrawAI element plans for asset materialization and SVG generation."
         }
       ]
     }
@@ -475,8 +476,8 @@ const NODE_PRESETS: NodePreset[] = [
     node_type: "processor",
     title: "Asset Planner",
     icon: "R",
-    description: "Convert Run0 element analysis into DrawAI element plans and asset draft.",
-    inputs: [port("analysis", "Element Analysis", ["element_analysis"], "drawai.codex_element_analysis.v1")],
+    description: "Validate Run0 element plans and generate the asset draft.",
+    inputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1")],
     outputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1", false)],
     config: { processor_id: "asset_planner" }
   },
@@ -1313,7 +1314,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     const defaultOption = presetId === "custom_agent"
       ? workflowFormatOption("drawai.image.v1")
       : presetId === "run0_element_refine"
-        ? workflowFormatOption("drawai.codex_element_analysis.v1")
+        ? workflowFormatOption("drawai.element_plans.v1")
         : workflowFormatOption("drawai.element_plans.v1");
     const output: AgentOutputConfig = {
       port_id: portId,

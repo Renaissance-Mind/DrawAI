@@ -15,7 +15,7 @@ from .agent_prompt_defaults import (
     SVG_GENERATION_CONSTRAINTS,
     SVG_GENERATION_TASK,
 )
-from .formats import default_format_contract_descriptions
+from .formats import default_format_contract_descriptions, default_format_registry
 
 AgentProviderKind = Literal["sdk", "cli"]
 
@@ -42,7 +42,7 @@ TYPE_CONTRACTS = {
         "{object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason."
     ),
     "element_analysis": (
-        "Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, "
+        "Legacy Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, "
         "source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional "
         "removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, "
         "refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, "
@@ -201,11 +201,11 @@ def run0_agent_preset() -> AgentPreset:
         task=RUN0_ELEMENT_REFINE_TASK,
         outputs=(
             AgentOutputDeclaration(
-                port_id="analysis",
-                path="output/element_analysis.json",
-                format_id="drawai.codex_element_analysis.v1",
-                type="element_analysis",
-                description="Run0 refined asset/source analysis in the standard DrawAI Codex element analysis JSON format.",
+                port_id="elements",
+                path="output/elements.json",
+                format_id="drawai.element_plans.v1",
+                type="element_plans",
+                description="Run0 refined DrawAI element plans for asset materialization and SVG generation.",
             ),
         ),
         constraints=(*RUN0_ELEMENT_REFINE_CONSTRAINTS,),
@@ -213,7 +213,7 @@ def run0_agent_preset() -> AgentPreset:
             AgentScriptSpec(
                 script_id="assets_visualization",
                 path="scripts/assets_visualization.py",
-                description="Renders asset-refinement bbox JSON over the source image for Run0 visual QA iterations.",
+                description="Renders Run0 element-plan bbox JSON over the source image for visual QA iterations.",
                 usage=(
                     "python {script} --image <image> --json <iteration_json> --output <png> "
                     "--summary-output <summary_json> --color-mode action --label-mode id_type"
@@ -579,21 +579,21 @@ def _configured_outputs(
     for index, raw_output in enumerate(raw_outputs):
         if not isinstance(raw_output, Mapping):
             raise ValueError(f"Agent outputs[{index}] must be an object")
-        output_path = _required_string(
-            raw_output.get("path"), f"outputs[{index}].path"
+        port_id = _required_string(raw_output.get("port_id"), f"outputs[{index}].port_id")
+        format_id = _required_string(
+            raw_output.get("format_id"), f"outputs[{index}].format_id"
         )
+        output_path = _default_output_path(port_id, format_id)
         _validate_relative_output_path(output_path, f"outputs[{index}].path")
         outputs.append(
             {
-                "port_id": _required_string(
-                    raw_output.get("port_id"), f"outputs[{index}].port_id"
-                ),
+                "port_id": port_id,
                 "path": output_path,
-                "format_id": _required_string(
-                    raw_output.get("format_id"), f"outputs[{index}].format_id"
-                ),
-                "type": _required_string(
-                    raw_output.get("type"), f"outputs[{index}].type"
+                "format_id": format_id,
+                "type": _type_for_format(
+                    format_id,
+                    raw_output.get("type"),
+                    f"outputs[{index}].type",
                 ),
                 "description": _required_string(
                     raw_output.get("description"),
@@ -602,6 +602,36 @@ def _configured_outputs(
             }
         )
     return tuple(outputs)
+
+
+def _type_for_format(format_id: str, fallback: object, field_name: str) -> str:
+    spec = default_format_registry().get(format_id)
+    if spec is not None:
+        return spec.artifact_type
+    return _required_string(fallback, field_name)
+
+
+def _default_output_path(port_id: str, format_id: str) -> str:
+    return f"output/{_safe_output_stem(port_id)}.{_extension_for_format(format_id)}"
+
+
+def _safe_output_stem(value: str) -> str:
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_")
+    stem = "".join(
+        char if char in allowed else "_" for char in value.strip().lower()
+    )
+    stem = stem.strip("_")
+    return stem or "output"
+
+
+def _extension_for_format(format_id: str) -> str:
+    if "svg" in format_id:
+        return "svg"
+    if "pptx" in format_id:
+        return "pptx"
+    if "image" in format_id:
+        return "png"
+    return "json"
 
 
 def _configured_scripts(

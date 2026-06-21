@@ -2910,7 +2910,26 @@ def _deterministic_agent_executor(request: AgentExecutionRequest) -> AgentExecut
         path = request.workdir / str(output["path"])
         path.parent.mkdir(parents=True, exist_ok=True)
         format_id = str(output["format_id"])
-        if format_id == "drawai.codex_element_analysis.v1":
+        if format_id == "drawai.element_plans.v1":
+            plan = ElementPlan(
+                element_id="E001",
+                source_candidate_ids=("fixture:E001",),
+                element_type="picture",
+                bbox=(2.0, 2.0, 12.0, 12.0),
+                geometry={"kind": "bbox", "bbox": [2, 2, 12, 12], "coordinate_system": "figure_image_pixels"},
+                z_order=1,
+                confidence="high",
+                processing_intent=ProcessingIntent(
+                    object_type="picture",
+                    processing_type="crop",
+                    parameters={},
+                ),
+                review_status="agent_refined",
+                created_by_stage="refine_elements",
+                change_reason="Workbench test fixture.",
+            )
+            _write_json(path, {"schema": "drawai.element_plans.v1", "elements": [plan.to_dict()]})
+        elif format_id == "drawai.codex_element_analysis.v1":
             _write_json(
                 path,
                 {

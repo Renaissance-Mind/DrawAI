@@ -157,7 +157,7 @@ def test_workbench_workflow_export_node_converts_connected_svg_without_run_packa
     _write_direct_svg_export_template(store.workspace, template_id)
 
     def agent_executor(request: AgentExecutionRequest) -> AgentExecutionResult:
-        output_path = request.workdir / "output" / "semantic.svg"
+        output_path = request.workdir / str(request.prompt.outputs[0]["path"])
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">

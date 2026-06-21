@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-RUN0_ELEMENT_REFINE_TASK = """DrawAI asset post-processing and source analysis task.
+RUN0_ELEMENT_REFINE_TASK = """DrawAI asset post-processing and element-plans task.
 
 We are performing an image vectorization task: a bitmap image will eventually be transformed into an editable representation. The whole process has three parts:
 - Asset parsing: divide the image into independent assets. Each asset may be text, an icon, table, frame, arrow, and so on.
 - Asset post-processing: refine the pre-parsed assets.
 - Editable reconstruction: combine assets and finish the final visual result.
 
-Some assets should become editable forms, such as text, frames, arrows, and simple vector graphics. Some assets should instead be cropped from the original image and pasted back into their original positions. The parser/OCR/fusion outputs are evidence, not truth. Execute the second stage, asset post-processing, and produce the refined element/source analysis that later asset materialization and SVG generation will consume.
+Some assets should become editable forms, such as text, frames, arrows, and simple vector graphics. Some assets should instead be cropped from the original image and pasted back into their original positions. The parser/OCR/fusion outputs are evidence, not truth. Execute the second stage, asset post-processing, and produce refined DrawAI element plans that later asset materialization and SVG generation will consume.
 
 Required evidence:
 - Original image from the connected input, when available.
@@ -29,46 +29,53 @@ Each output element should be the smallest independent visual part, such as one 
 - For geometry_kind="mask", use mask_preview PNGs and the mask preview sheet as visual evidence. Do not adjust or resize the mask region; preserve its bbox/geometry when keeping it. Remove or merge a mask candidate only when it is clearly duplicate or noise. Do not read or rely on raw mask files.
 
 Task 2: repeat a bounded visualization/refinement loop until the asset parsing quality is good enough, all elements are reasonable assets, and bbox coordinates are accurate. Run at most 3 iterations.
-1. Write the current refined assets JSON for the iteration to reports/element_analysis_codex/refine_iteration_<N>.json, where <N> starts at 1.
+1. Write the current element-plans JSON for the iteration to reports/element_plans_codex/refine_iteration_<N>.json, where <N> starts at 1.
 2. Run assets_visualization.py with the original image and that iteration JSON, using color-mode action and label-mode id_type.
-3. Inspect reports/element_analysis_codex/assets_visualization_iteration_<N>.png.
+3. Inspect reports/element_plans_codex/assets_visualization_iteration_<N>.png.
 4. Correct Task 1 results from the visualization. You may add assets, remove assets, split assets, merge accidental duplicates, and adjust bbox coordinates. One iteration may change any number of assets.
 5. Repeat until the assets are correct or 3 iterations have completed.
-6. Save the final refined asset list used for classification to reports/element_analysis_codex/refined_assets_final.json.
+6. Save the final refined element-plans JSON to the declared output path, normally output/elements.json.
 
-Task 3: classify every final retained output element into exactly one source category.
+Task 3: classify every final retained output element into exactly one processing intent.
 - svg_self_draw: use editable SVG primitives/text/paths directly. Use this for text, arrows, boxes, lines, charts, simple geometric diagrams, and visually simple icons that can be faithfully redrawn.
 - crop: use a precise source-image crop with local background preserved. Use this for screenshots, photographs, dense texture, heatmaps, complex small raster icons, or visual details whose background is coupled with the object.
 - crop_nobg: use a precise crop after background removal/transparent subject extraction. Use this when the foreground object is separable and should sit over reconstructed SVG background.
 
 Important classification and coverage rules:
 - Treat SAM/OCR/current asset plan as evidence, not truth. You may disagree with current_pipeline_method if the image supports it.
-- Do not skip candidates. Every original request/candidate item must be represented by at least one output element through source_candidate_ids, or by a removal/merge record.
-- The type field must be a concrete DrawAI element type: text, icon, picture, table, chart, diagram, arrow, frame, grid, symbol, content_box, or unknown. For newly added elements, do not use a meta type such as added_asset.
+- Output only retained final element plans. Do not output removal_records, strategy_summary, refinement_summary, categories, notes, or old element_analysis fields.
+- Do not skip real visual assets. Every retained or merged original candidate should appear in source_candidate_ids on at least one output element. Clearly duplicate/noise candidates may be omitted.
+- The element_type field must be a concrete DrawAI element type: text, icon, picture, table, chart, diagram, arrow, frame, grid, symbol, content_box, or unknown. For newly added elements, do not use a meta type such as added_asset.
 - New IDs are allowed only for split or added refined elements. Keep IDs short and stable.
 - If uncertain, choose the most faithful final-source strategy and mark confidence as low or medium.
-- After the visualization loop, complete classification in one pass. Write the final JSON file first, then write the markdown note. Keep reasons concise.
+- After the visualization loop, complete classification in one pass. Write the final JSON file first. Keep change_reason concise.
 
-The final JSON must use schema drawai.codex_element_analysis.v1 and contain:
-- case_dir
-- source="codex"
-- strategy_summary
-- refinement_summary
-- refinement_iterations with iteration, json_path, visualization_path, and changes
-- categories counts for svg_self_draw/crop/crop_nobg
-- refinement_actions counts for unchanged/adjusted/split/added/removed/merged
-- elements containing box_id, source_candidate_ids, refinement_action, category, confidence, visual_role, reason, evidence, bbox, type, current_pipeline_method, recommended_asset_source, and optional geometry fields
-- optional removal_records or removal-style elements for removed/merged candidates. Top-level removal_records must use action or refinement_action removed|merged, include source_candidate_ids or removed_source_candidate_ids, include reason or removal_reason, and may include merged_into/evidence/diagnostic bbox/type fields. Do not put retained output elements in removal_records.
-- notes
+The final JSON must use format drawai.element_plans.v1 and contain:
+- top-level schema="drawai.element_plans.v1"
+- elements: array of retained element plans only
 
-Also write a concise markdown audit note to reports/element_analysis_codex/analysis_notes.md. The JSON file is the source of truth."""
+Each element plan must contain:
+- schema="drawai.element_plan.v1"
+- element_id: stable short ID
+- source_candidate_ids: list of source candidate IDs; [] only for newly added visual assets
+- element_type: text|icon|picture|table|chart|diagram|arrow|frame|grid|symbol|content_box|unknown
+- bbox: [x, y, width, height] in image pixels, with positive width and height
+- geometry: object; for ordinary boxes use {"kind":"bbox","bbox":[x,y,width,height],"coordinate_system":"figure_image_pixels"}
+- z_order: integer, lower values behind higher values
+- confidence: low|medium|high
+- processing_intent: {"object_type": element_type or a more specific object name, "processing_type": svg_self_draw|crop|crop_nobg, "parameters": {}}
+- review_status: agent_refined
+- created_by_stage: refine_elements
+- change_reason: concise explanation of keep/split/merge/add/bbox/source decision
+
+The declared output JSON file is the source of truth."""
 
 RUN0_ELEMENT_REFINE_CONSTRAINTS = (
     "Use only the connected input files listed in this prompt and explicitly declared built-in script files.",
     "Do not render final SVG/PPT and do not modify repository code. This node only refines/classifies assets.",
     "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
     "Do not print full request JSON to the terminal or logs; start from compact candidate tables and read exact details only when needed.",
-    "Every source candidate must be represented by retained output elements or explicit removed/merged records.",
+    "Output only drawai.element_plans.v1 JSON; do not output codex element analysis, summaries, notes, or removal records.",
     "Write the declared output files exactly, in UTF-8 JSON or markdown according to the output declaration.",
 )
 

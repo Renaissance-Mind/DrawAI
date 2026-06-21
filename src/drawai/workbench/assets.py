@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 from drawai.artifacts import prepare_artifact_paths, write_json
 from drawai.asset_geometry import geometry_crop, normalize_asset_geometry
 from drawai.asset_materialization import _cleanup_cutout_border_background, materialize_run0_refined_assets
+from drawai.v2.schema import ElementPlan
 from PIL import Image
 
 from .models import SOURCE_STRATEGIES, SourceStrategy, utc_now
@@ -53,6 +54,25 @@ def draft_from_run0_analysis(case_dir: str | Path, *, case_id: str = "") -> dict
         "case_id": case_id,
         "case_dir": str(root),
         "source": "run0",
+        "created_at": utc_now(),
+        "elements": draft_elements,
+        "categories": dict(Counter(item["source_strategy"] for item in draft_elements)),
+    }
+
+
+def draft_from_element_plans(
+    case_dir: str | Path,
+    plans: Sequence[ElementPlan],
+    *,
+    case_id: str = "",
+) -> dict[str, Any]:
+    root = Path(case_dir).expanduser().resolve()
+    draft_elements = [_draft_element_plan(plan) for plan in plans]
+    return {
+        "schema": WORKBENCH_ASSET_PLAN_SCHEMA,
+        "case_id": case_id,
+        "case_dir": str(root),
+        "source": "element_plans",
         "created_at": utc_now(),
         "elements": draft_elements,
         "categories": dict(Counter(item["source_strategy"] for item in draft_elements)),
@@ -301,6 +321,29 @@ def _draft_element(raw: Any, index: int) -> dict[str, Any]:
     return element
 
 
+def _draft_element_plan(plan: ElementPlan) -> dict[str, Any]:
+    source_strategy = plan.processing_intent.processing_type
+    bbox = _xywh_to_xyxy_bbox(plan.bbox, plan.element_id)
+    element = {
+        "box_id": plan.element_id,
+        "source_candidate_ids": [str(item) for item in plan.source_candidate_ids],
+        "refinement_action": plan.review_status,
+        "bbox": bbox,
+        "source_strategy": source_strategy,
+        "visual_role": plan.processing_intent.object_type or plan.element_type,
+        "type": plan.element_type,
+        "confidence": plan.confidence,
+        "reason": plan.change_reason,
+        "evidence": [],
+        "current_pipeline_method": source_strategy,
+        "recommended_asset_source": _recommended_asset_source(source_strategy),
+    }
+    geometry = _element_plan_geometry_for_asset_draft(plan.geometry, fallback_bbox=bbox)
+    if geometry is not None:
+        element["geometry"] = geometry
+    return element
+
+
 def _source_strategy(raw: Mapping[str, Any]) -> SourceStrategy:
     for key in ("source_strategy", "category", "recommended_asset_source", "method", "current_pipeline_method"):
         value = raw.get(key)
@@ -335,6 +378,33 @@ def _valid_bbox(value: Any, element_id: str) -> list[float]:
     if right <= left or bottom <= top:
         raise ValueError(f"{element_id} bbox must have positive area")
     return [left, top, right, bottom]
+
+
+def _xywh_to_xyxy_bbox(value: Any, element_id: str) -> list[float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise ValueError(f"{element_id} bbox must contain four numbers")
+    try:
+        left, top, width, height = [float(item) for item in value]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{element_id} bbox must contain finite numbers") from exc
+    if not all(math.isfinite(item) for item in (left, top, width, height)):
+        raise ValueError(f"{element_id} bbox must contain finite numbers")
+    if width <= 0 or height <= 0:
+        raise ValueError(f"{element_id} bbox must have positive area")
+    return [left, top, left + width, top + height]
+
+
+def _element_plan_geometry_for_asset_draft(
+    geometry: Mapping[str, Any],
+    *,
+    fallback_bbox: Sequence[float],
+) -> dict[str, Any] | None:
+    kind = str(geometry.get("kind") or geometry.get("type") or "").strip().lower()
+    if kind in {"", "bbox", "mask"}:
+        raw_geometry = {**geometry, "kind": kind or "bbox", "bbox": list(fallback_bbox)}
+    else:
+        raw_geometry = dict(geometry)
+    return normalize_asset_geometry(raw_geometry, fallback_bbox=fallback_bbox)
 
 
 def _recommended_asset_source(source_strategy: str) -> str:

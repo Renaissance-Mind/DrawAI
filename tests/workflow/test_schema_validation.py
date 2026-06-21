@@ -253,7 +253,7 @@ def test_rejects_agent_declared_output_that_does_not_match_node_port() -> None:
                 node_type="agent",
                 title="Agent",
                 inputs=(),
-                outputs=(_port("elements", ("element_plans",), required=False),),
+                outputs=(_port("asset_packages", ("asset_packages",), required=False),),
                 config={
                     "preset_id": "run0_element_refine",
                 },

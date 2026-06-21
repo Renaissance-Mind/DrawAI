@@ -154,6 +154,18 @@ def default_format_registry() -> dict[str, FormatSpec]:
     }
 
 
+def element_plans_from_payload(payload: Any) -> tuple[ElementPlan, ...]:
+    raw_plans = _raw_element_plans(payload)
+    plans: list[ElementPlan] = []
+    for index, raw_plan in enumerate(raw_plans):
+        if not isinstance(raw_plan, Mapping):
+            raise ValueError(f"elements[{index}] must be a mapping")
+        plan = _element_plan_from_payload(raw_plan)
+        validate_element_plan(plan)
+        plans.append(plan)
+    return tuple(plans)
+
+
 def default_format_contract_descriptions(
     *,
     registry: Mapping[str, FormatSpec] | None = None,
@@ -230,9 +242,10 @@ def _validate_element_plans(path: Path) -> tuple[str, ...]:
     payload, errors = _read_json_object_or_list(path)
     if errors:
         return errors
-    raw_plans = payload.get("elements") if isinstance(payload, Mapping) else payload
-    if isinstance(raw_plans, str) or not isinstance(raw_plans, Sequence):
-        return ("element plans payload must contain an elements list",)
+    try:
+        raw_plans = _raw_element_plans(payload)
+    except ValueError as exc:
+        return (str(exc),)
     validation_errors: list[str] = []
     for index, raw_plan in enumerate(raw_plans):
         if not isinstance(raw_plan, Mapping):
@@ -243,6 +256,13 @@ def _validate_element_plans(path: Path) -> tuple[str, ...]:
         except Exception as exc:
             validation_errors.append(f"elements[{index}]: {exc}")
     return tuple(validation_errors)
+
+
+def _raw_element_plans(payload: Any) -> Sequence[Any]:
+    raw_plans = payload.get("elements") if isinstance(payload, Mapping) else payload
+    if isinstance(raw_plans, str) or not isinstance(raw_plans, Sequence):
+        raise ValueError("element plans payload must contain an elements list")
+    return raw_plans
 
 
 def _validate_element_analysis(path: Path) -> tuple[str, ...]:
