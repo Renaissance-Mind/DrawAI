@@ -117,6 +117,16 @@ RERUN_STAGE_ALIASES = {
 }
 
 
+def _agent_provider_concurrency_limit(
+    provider_id: str,
+    settings: WorkbenchSettings,
+) -> int:
+    if provider_id in {"codex_sdk", "codex_cli"}:
+        return max(1, settings.codex_concurrency)
+    provider = default_agent_provider_registry()[provider_id]
+    return max(1, provider.default_max_concurrent)
+
+
 def _canonical_rerun_stage(stage: str) -> str:
     return RERUN_STAGE_ALIASES.get(stage, stage)
 
@@ -155,7 +165,7 @@ class WorkbenchRunner:
             "export": threading.Semaphore(max(1, settings.export_concurrency)),
         }
         for provider in default_agent_provider_registry().values():
-            limit = max(1, provider.default_max_concurrent)
+            limit = _agent_provider_concurrency_limit(provider.provider_id, settings)
             self._resource_activity[provider.resource_key] = {"limit": limit, "queued": 0, "running": 0}
             self._resource_locks[provider.resource_key] = threading.Semaphore(limit)
         self._mark_interrupted_running_cases()
@@ -336,18 +346,32 @@ class WorkbenchRunner:
             run_template = template if batch.auto_run_svg_after_analysis or review_template is None else review_template
             parser_ids = _workflow_parser_ids(run_template)
             stage_state: dict[str, bool] = {}
+            stage_state_lock = threading.Lock()
             runner = WorkflowRunner(
                 run_template,
                 handlers={
-                    "input": lambda context, inputs: self._run_workflow_input_node(case, context, inputs, stage_state),
+                    "input": lambda context, inputs: self._run_workflow_input_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        stage_state_lock,
+                    ),
                     "parser": lambda context, inputs: self._run_workflow_parser_node(
                         case,
                         context,
                         inputs,
                         stage_state,
+                        stage_state_lock,
                         parser_ids=parser_ids,
                     ),
-                    "fusion": lambda context, inputs: self._run_workflow_fusion_node(case, context, inputs, stage_state),
+                    "fusion": lambda context, inputs: self._run_workflow_fusion_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        stage_state_lock,
+                    ),
                     "agent": lambda context, inputs: self._run_workflow_agent_node(
                         case,
                         context,
@@ -355,14 +379,26 @@ class WorkbenchRunner:
                         stage_state,
                         agent_settings=agent_settings,
                     ),
-                    "processor": lambda context, inputs: self._run_workflow_processor_node(case, context, inputs, stage_state),
+                    "processor": lambda context, inputs: self._run_workflow_processor_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        stage_state_lock,
+                    ),
                     "human_review": lambda context, inputs: self._run_workflow_review_node(
                         case,
                         context,
                         inputs,
                         auto_approve=batch.auto_run_svg_after_analysis,
                     ),
-                    "export": lambda context, inputs: self._run_workflow_export_node(case, context, inputs, stage_state),
+                    "export": lambda context, inputs: self._run_workflow_export_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        stage_state_lock,
+                    ),
                 },
             )
             result = runner.run(case.run_root)
@@ -400,8 +436,14 @@ class WorkbenchRunner:
         context: NodeRunContext,
         _inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
-        self._ensure_workflow_stage(case, "prepare", stage_state)
+        self._ensure_workflow_stage(
+            case,
+            "prepare",
+            stage_state,
+            stage_state_lock=stage_state_lock,
+        )
         paths = prepare_artifact_paths(case.run_root)
         source = paths.figure_image if paths.figure_image.exists() else Path(case.source_image_path)
         output_path = _copy_workflow_file(source, context.output_dir / f"image{source.suffix or '.png'}")
@@ -413,13 +455,15 @@ class WorkbenchRunner:
         context: NodeRunContext,
         _inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        stage_state_lock: threading.Lock,
         *,
         parser_ids: frozenset[str],
     ) -> tuple[Mapping[str, Any], ...]:
-        self._ensure_workflow_stage(case, "prepare", stage_state)
-        if not stage_state.get("parse_elements"):
-            self._run_workflow_parse_elements(case, parser_ids)
-            stage_state["parse_elements"] = True
+        with stage_state_lock:
+            self._ensure_workflow_stage_unlocked(case, "prepare", stage_state)
+            if not stage_state.get("parse_elements"):
+                self._run_workflow_parse_elements(case, parser_ids)
+                stage_state["parse_elements"] = True
         paths = prepare_artifact_paths(case.run_root)
         parser_id = str(context.node.config.get("parser_id") or "")
         if parser_id == "sam3_structure_parser":
@@ -479,8 +523,14 @@ class WorkbenchRunner:
         context: NodeRunContext,
         _inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
-        self._ensure_workflow_stage(case, "fuse_elements", stage_state)
+        self._ensure_workflow_stage(
+            case,
+            "fuse_elements",
+            stage_state,
+            stage_state_lock=stage_state_lock,
+        )
         paths = prepare_artifact_paths(case.run_root)
         output_path = _copy_workflow_json(paths.run_package_json, context.output_dir / "elements.json")
         return (_workflow_output(context, "elements", output_path, "element_plans", "drawai.element_plans.v1"),)
@@ -555,16 +605,27 @@ class WorkbenchRunner:
         context: NodeRunContext,
         inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
         processor_id = str(context.node.config.get("processor_id") or "")
         paths = prepare_artifact_paths(case.run_root)
         if processor_id == "sam_parse":
-            self._ensure_workflow_stage(case, "prepare", stage_state)
+            self._ensure_workflow_stage(
+                case,
+                "prepare",
+                stage_state,
+                stage_state_lock=stage_state_lock,
+            )
             page_spec = self._run_sam_parse_page_spec(case)
             output_path = write_page_spec(context.output_dir / "sam_page_spec.json", page_spec)
             return (_workflow_output(context, "sam_page_spec", output_path, "page_spec", "drawai.page_spec.v1"),)
         if processor_id == "ocr_parse":
-            self._ensure_workflow_stage(case, "prepare", stage_state)
+            self._ensure_workflow_stage(
+                case,
+                "prepare",
+                stage_state,
+                stage_state_lock=stage_state_lock,
+            )
             page_spec = self._run_ocr_parse_page_spec(case)
             output_path = write_page_spec(context.output_dir / "ocr_page_spec.json", page_spec)
             return (_workflow_output(context, "ocr_page_spec", output_path, "page_spec", "drawai.page_spec.v1"),)
@@ -632,9 +693,10 @@ class WorkbenchRunner:
             output_path = _copy_workflow_json(paths.run_package_json, context.output_dir / "elements.json")
             return (_workflow_output(context, "elements", output_path, "element_plans", "drawai.element_plans.v1"),)
         if processor_id == "asset_processors":
-            if not stage_state.get("process_assets"):
-                self._run_stage(case.case_id, "process_assets")
-                stage_state["process_assets"] = True
+            with stage_state_lock:
+                if not stage_state.get("process_assets"):
+                    self._run_stage(case.case_id, "process_assets")
+                    stage_state["process_assets"] = True
             output_path = _write_asset_packages_artifact(
                 paths.run_package_json,
                 context.output_dir / "asset_packages.json",
@@ -761,6 +823,7 @@ class WorkbenchRunner:
         context: NodeRunContext,
         inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        stage_state_lock: threading.Lock | None = None,
     ) -> tuple[Mapping[str, Any], ...]:
         exporter_id = str(context.node.config.get("exporter_id") or "")
         if exporter_id != "svg_to_ppt":
@@ -768,43 +831,66 @@ class WorkbenchRunner:
         paths = prepare_artifact_paths(case.run_root)
         svg_source = _first_input_path(case.run_root, inputs)
         canonical_svg = paths.semantic_svg
-        if not stage_state.get("export"):
-            self.store.update_case_status(
-                case.case_id,
-                status="svg_running",
-                phase="reconstruction",
-                stage="export",
-            )
-            canonical_svg = _copy_workflow_file(svg_source, paths.semantic_svg)
-            page_spec_source = _optional_input_path_by_type(
-                case.run_root,
-                inputs,
-                "page_spec",
-                format_id="drawai.page_spec.v1",
-            )
-            asset_manifest = (
-                page_spec_asset_manifest(page_spec_source, svg_dir=canonical_svg.parent)
-                if page_spec_source is not None
-                else {"schema": "drawai.page_spec_asset_manifest.v1", "assets": []}
-            )
-            asset_manifest, manifest_extension = extend_asset_manifest_for_svg_export(paths.root, asset_manifest)
-            write_json(paths.asset_manifest_json, asset_manifest)
-            report = check_svg_to_ppt_compatibility(
-                canonical_svg,
-                output_dir=paths.root,
-                export_pptx=True,
-                asset_manifest=asset_manifest,
-            )
-            report["asset_manifest_extension"] = manifest_extension
-            write_json(paths.svg_to_ppt_export_report_json, report)
-            if report.get("status") != "ok":
-                raise RuntimeError(_svg_to_ppt_report_error(report))
-            stage_state["export"] = True
+
+        def run_export_once() -> None:
+            nonlocal canonical_svg
+            if not stage_state.get("export"):
+                self.store.update_case_status(
+                    case.case_id,
+                    status="svg_running",
+                    phase="reconstruction",
+                    stage="export",
+                )
+                canonical_svg = _copy_workflow_file(svg_source, paths.semantic_svg)
+                page_spec_source = _optional_input_path_by_type(
+                    case.run_root,
+                    inputs,
+                    "page_spec",
+                    format_id="drawai.page_spec.v1",
+                )
+                asset_manifest = (
+                    page_spec_asset_manifest(page_spec_source, svg_dir=canonical_svg.parent)
+                    if page_spec_source is not None
+                    else {"schema": "drawai.page_spec_asset_manifest.v1", "assets": []}
+                )
+                asset_manifest, manifest_extension = extend_asset_manifest_for_svg_export(paths.root, asset_manifest)
+                write_json(paths.asset_manifest_json, asset_manifest)
+                report = check_svg_to_ppt_compatibility(
+                    canonical_svg,
+                    output_dir=paths.root,
+                    export_pptx=True,
+                    asset_manifest=asset_manifest,
+                )
+                report["asset_manifest_extension"] = manifest_extension
+                write_json(paths.svg_to_ppt_export_report_json, report)
+                if report.get("status") != "ok":
+                    raise RuntimeError(_svg_to_ppt_report_error(report))
+                stage_state["export"] = True
+
+        if stage_state_lock is None:
+            run_export_once()
+        else:
+            with stage_state_lock:
+                run_export_once()
         pptx_path = paths.root / "svg_to_ppt" / "semantic.svg_to_ppt.pptx"
         output_path = _copy_workflow_file(pptx_path, context.output_dir / "semantic.svg_to_ppt.pptx")
         return (_workflow_output(context, "pptx", output_path, "pptx", "drawai.pptx.v1", deliverable=True),)
 
     def _ensure_workflow_stage(
+        self,
+        case: CaseRecord,
+        stage: str,
+        stage_state: dict[str, bool],
+        *,
+        stage_state_lock: threading.Lock | None = None,
+    ) -> None:
+        if stage_state_lock is not None:
+            with stage_state_lock:
+                self._ensure_workflow_stage_unlocked(case, stage, stage_state)
+            return
+        self._ensure_workflow_stage_unlocked(case, stage, stage_state)
+
+    def _ensure_workflow_stage_unlocked(
         self,
         case: CaseRecord,
         stage: str,

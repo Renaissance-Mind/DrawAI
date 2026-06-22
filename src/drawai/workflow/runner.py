@@ -4,6 +4,7 @@ import json
 import shutil
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,13 @@ class WorkflowRunResult:
         }
 
 
+@dataclass(frozen=True)
+class _NodeExecutionResult:
+    summary: NodeRunSummary
+    outputs: tuple[Mapping[str, Any], ...] = ()
+    final_outputs: tuple[Mapping[str, Any], ...] = ()
+
+
 class WorkflowRunner:
     def __init__(
         self,
@@ -94,11 +102,13 @@ class WorkflowRunner:
         handlers: Mapping[str, NodeHandler],
         acquire_resource: ResourceAcquirer | None = None,
         format_registry: Mapping[str, FormatSpec] | None = None,
+        max_workers: int | None = None,
     ) -> None:
         self.template = template
         self.handlers = dict(handlers)
         self.acquire_resource = acquire_resource
         self.format_registry = format_registry or default_format_registry()
+        self.max_workers = max_workers
 
     def run(self, run_root: str | Path) -> WorkflowRunResult:
         validation = validate_workflow_template(self.template)
@@ -109,114 +119,180 @@ class WorkflowRunner:
         root = Path(run_root).expanduser().resolve()
         root.mkdir(parents=True, exist_ok=True)
         order = _topological_nodes(self.template)
+        node_by_id = {node.node_id: node for node in order}
+        node_order = {node.node_id: index for index, node in enumerate(order)}
         incoming_edges = _incoming_edges_by_node(self.template)
+        outgoing_edges = _outgoing_edges_by_node(self.template)
+        remaining_dependencies = {
+            node.node_id: len(incoming_edges.get(node.node_id, ()))
+            for node in order
+        }
+        ready = deque(
+            node
+            for node in order
+            if remaining_dependencies[node.node_id] == 0
+        )
         node_status: dict[str, str] = {}
         outputs_by_port: dict[tuple[str, str], tuple[Mapping[str, Any], ...]] = {}
-        summaries: list[NodeRunSummary] = []
-        failed_node_ids: list[str] = []
-        blocked_node_ids: list[str] = []
+        summaries_by_node: dict[str, NodeRunSummary] = {}
         final_outputs: tuple[Mapping[str, Any], ...] = ()
 
-        for node in order:
-            blocked_sources = tuple(
-                edge.source_node_id
-                for edge in incoming_edges.get(node.node_id, ())
-                if node_status.get(edge.source_node_id) in {"failed", "blocked"}
-            )
-            provider_id = _node_provider_id(node)
-            resource_id = ""
-            if not blocked_sources and self.acquire_resource and _node_needs_resource(node):
-                resource_id = str(self.acquire_resource(node) or "")
-            record = begin_node_run(
-                root,
-                node.node_id,
-                node_type=node.node_type,
-                provider_id=provider_id,
-                resource_id=resource_id,
-            )
-            inputs = _collect_node_inputs(self.template, node, incoming_edges, outputs_by_port)
+        with ThreadPoolExecutor(
+            max_workers=_runner_worker_count(order, self.max_workers)
+        ) as executor:
+            running: dict[Future[_NodeExecutionResult], WorkflowNode] = {}
+            while ready or running:
+                while ready:
+                    node = ready.popleft()
+                    blocked_sources = tuple(
+                        edge.source_node_id
+                        for edge in incoming_edges.get(node.node_id, ())
+                        if node_status.get(edge.source_node_id) in {"failed", "blocked"}
+                    )
+                    inputs = _collect_node_inputs(
+                        self.template,
+                        node,
+                        incoming_edges,
+                        outputs_by_port,
+                    )
+                    future = executor.submit(
+                        self._execute_node_once,
+                        root,
+                        node,
+                        inputs,
+                        blocked_sources,
+                    )
+                    running[future] = node
+                completed, _pending = wait(running, return_when=FIRST_COMPLETED)
+                for future in sorted(
+                    completed,
+                    key=lambda item: node_order[running[item].node_id],
+                ):
+                    node = running.pop(future)
+                    node_result = future.result()
+                    summaries_by_node[node.node_id] = node_result.summary
+                    node_status[node.node_id] = node_result.summary.status
 
-            if blocked_sources:
-                error = "blocked by upstream node failure"
-                finish_node_run_blocked(record, inputs=inputs, error=error)
-                node_status[node.node_id] = "blocked"
-                blocked_node_ids.append(node.node_id)
-                summaries.append(_summary(record, "blocked", error=error))
-                continue
+                    if node_result.summary.status == "ok":
+                        for port_id, port_outputs in _outputs_by_port(
+                            node_result.outputs
+                        ).items():
+                            outputs_by_port[(node.node_id, port_id)] = port_outputs
+                        if node.node_type == "output":
+                            final_outputs = node_result.final_outputs
 
-            missing_input = _missing_required_input(node, inputs)
-            if missing_input:
-                error = f"required input not produced: {missing_input}"
-                finish_node_run_blocked(record, inputs=inputs, error=error)
-                node_status[node.node_id] = "blocked"
-                blocked_node_ids.append(node.node_id)
-                summaries.append(_summary(record, "blocked", error=error))
-                continue
-
-            context = NodeRunContext(
-                template=self.template,
-                node=node,
-                run_root=root,
-                record=record,
-            )
-            try:
-                raw_outputs = self._run_node(context, inputs)
-                outputs = _normalize_outputs(
-                    context,
-                    raw_outputs,
-                    format_registry=self.format_registry,
+                    for edge in sorted(
+                        outgoing_edges.get(node.node_id, ()),
+                        key=lambda item: node_order[item.target_node_id],
+                    ):
+                        remaining_dependencies[edge.target_node_id] -= 1
+                        if remaining_dependencies[edge.target_node_id] == 0:
+                            ready.append(node_by_id[edge.target_node_id])
+                ready = deque(
+                    sorted(ready, key=lambda item: node_order[item.node_id])
                 )
-            except Exception as exc:  # Node boundary: persist failure and keep downstream state explicit.
-                error = f"{type(exc).__name__}: {exc}"
-                finish_node_run_failed(
-                    record,
-                    inputs=inputs,
-                    error=error,
-                    prompt_path=_exception_metadata_path(exc, "prompt_path", root),
-                    stdout_path=_exception_metadata_path(exc, "stdout_path", root),
-                    stderr_path=_exception_metadata_path(exc, "stderr_path", root),
-                    trace_path=_exception_metadata_path(exc, "trace_path", root),
-                    session_log_path=_exception_metadata_path(exc, "session_log_path", root),
-                    execution_manifest_path=_exception_metadata_path(exc, "execution_manifest_path", root),
-                    exit_code=_exception_exit_code(exc),
-                )
-                node_status[node.node_id] = "failed"
-                failed_node_ids.append(node.node_id)
-                summaries.append(_summary(record, "failed", error=error))
-                continue
 
-            run_metadata = _node_run_metadata(outputs)
-            finish_node_run_ok(
-                record,
-                inputs=inputs,
-                outputs=outputs,
-                prompt_path=run_metadata["prompt_path"],
-                stdout_path=run_metadata["stdout_path"],
-                stderr_path=run_metadata["stderr_path"],
-                trace_path=run_metadata["trace_path"],
-                session_log_path=run_metadata["session_log_path"],
-                execution_manifest_path=run_metadata["execution_manifest_path"],
-                exit_code=run_metadata["exit_code"],
-            )
-            for port_id, port_outputs in _outputs_by_port(outputs).items():
-                outputs_by_port[(node.node_id, port_id)] = port_outputs
-            if node.node_type == "output":
-                final_outputs = tuple(
-                    output
-                    for output in _read_final_outputs(root, outputs)
-                    if isinstance(output, Mapping)
-                )
-            node_status[node.node_id] = "ok"
-            summaries.append(_summary(record, "ok", outputs=outputs))
+        failed_node_ids = tuple(
+            node.node_id for node in order if node_status.get(node.node_id) == "failed"
+        )
+        blocked_node_ids = tuple(
+            node.node_id for node in order if node_status.get(node.node_id) == "blocked"
+        )
+        summaries = tuple(summaries_by_node[node.node_id] for node in order)
 
         return WorkflowRunResult(
             ok=not failed_node_ids and not blocked_node_ids,
             template_id=self.template.template_id,
             run_root=str(root),
-            node_runs=tuple(summaries),
+            node_runs=summaries,
             final_outputs=final_outputs,
-            failed_node_ids=tuple(failed_node_ids),
-            blocked_node_ids=tuple(blocked_node_ids),
+            failed_node_ids=failed_node_ids,
+            blocked_node_ids=blocked_node_ids,
+        )
+
+    def _execute_node_once(
+        self,
+        root: Path,
+        node: WorkflowNode,
+        inputs: tuple[Mapping[str, Any], ...],
+        blocked_sources: tuple[str, ...],
+    ) -> _NodeExecutionResult:
+        provider_id = _node_provider_id(node)
+        resource_id = ""
+        if not blocked_sources and self.acquire_resource and _node_needs_resource(node):
+            resource_id = str(self.acquire_resource(node) or "")
+        record = begin_node_run(
+            root,
+            node.node_id,
+            node_type=node.node_type,
+            provider_id=provider_id,
+            resource_id=resource_id,
+        )
+
+        if blocked_sources:
+            error = "blocked by upstream node failure"
+            finish_node_run_blocked(record, inputs=inputs, error=error)
+            return _NodeExecutionResult(_summary(record, "blocked", error=error))
+
+        missing_input = _missing_required_input(node, inputs)
+        if missing_input:
+            error = f"required input not produced: {missing_input}"
+            finish_node_run_blocked(record, inputs=inputs, error=error)
+            return _NodeExecutionResult(_summary(record, "blocked", error=error))
+
+        context = NodeRunContext(
+            template=self.template,
+            node=node,
+            run_root=root,
+            record=record,
+        )
+        try:
+            raw_outputs = self._run_node(context, inputs)
+            outputs = _normalize_outputs(
+                context,
+                raw_outputs,
+                format_registry=self.format_registry,
+            )
+        except Exception as exc:  # Node boundary: persist failure and keep downstream state explicit.
+            error = f"{type(exc).__name__}: {exc}"
+            finish_node_run_failed(
+                record,
+                inputs=inputs,
+                error=error,
+                prompt_path=_exception_metadata_path(exc, "prompt_path", root),
+                stdout_path=_exception_metadata_path(exc, "stdout_path", root),
+                stderr_path=_exception_metadata_path(exc, "stderr_path", root),
+                trace_path=_exception_metadata_path(exc, "trace_path", root),
+                session_log_path=_exception_metadata_path(exc, "session_log_path", root),
+                execution_manifest_path=_exception_metadata_path(exc, "execution_manifest_path", root),
+                exit_code=_exception_exit_code(exc),
+            )
+            return _NodeExecutionResult(_summary(record, "failed", error=error))
+
+        run_metadata = _node_run_metadata(outputs)
+        finish_node_run_ok(
+            record,
+            inputs=inputs,
+            outputs=outputs,
+            prompt_path=run_metadata["prompt_path"],
+            stdout_path=run_metadata["stdout_path"],
+            stderr_path=run_metadata["stderr_path"],
+            trace_path=run_metadata["trace_path"],
+            session_log_path=run_metadata["session_log_path"],
+            execution_manifest_path=run_metadata["execution_manifest_path"],
+            exit_code=run_metadata["exit_code"],
+        )
+        final_outputs: tuple[Mapping[str, Any], ...] = ()
+        if node.node_type == "output":
+            final_outputs = tuple(
+                output
+                for output in _read_final_outputs(root, outputs)
+                if isinstance(output, Mapping)
+            )
+        return _NodeExecutionResult(
+            _summary(record, "ok", outputs=outputs),
+            outputs=outputs,
+            final_outputs=final_outputs,
         )
 
     def _run_node(
@@ -392,6 +468,22 @@ def _incoming_edges_by_node(template: WorkflowTemplate) -> dict[str, tuple[Workf
     for edge in template.edges:
         grouped[edge.target_node_id].append(edge)
     return {node_id: tuple(edges) for node_id, edges in grouped.items()}
+
+
+def _outgoing_edges_by_node(template: WorkflowTemplate) -> dict[str, tuple[WorkflowEdge, ...]]:
+    grouped: dict[str, list[WorkflowEdge]] = defaultdict(list)
+    for edge in template.edges:
+        grouped[edge.source_node_id].append(edge)
+    return {node_id: tuple(edges) for node_id, edges in grouped.items()}
+
+
+def _runner_worker_count(
+    order: tuple[WorkflowNode, ...],
+    configured_max_workers: int | None,
+) -> int:
+    if configured_max_workers is not None:
+        return max(1, configured_max_workers)
+    return max(1, len(order))
 
 
 def _outputs_by_port(

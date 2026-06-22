@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -225,3 +226,93 @@ def test_workflow_runner_marks_downstream_nodes_blocked(tmp_path: Path) -> None:
     assert "agent failed" in agent_manifest["error"]
     assert output_manifest["status"] == "blocked"
     assert output_manifest["error"] == "blocked by upstream node failure"
+
+
+def test_workflow_runner_executes_ready_sibling_nodes_concurrently(tmp_path: Path) -> None:
+    template = WorkflowTemplate(
+        template_id="parallel_siblings",
+        name="Parallel Siblings",
+        nodes=(
+            WorkflowNode(
+                node_id="input",
+                node_type="input",
+                title="Input",
+                outputs=(_port("source", ("source",), required=False),),
+            ),
+            WorkflowNode(
+                node_id="branch_a",
+                node_type="branch",
+                title="Branch A",
+                inputs=(_port("source", ("source",)),),
+                outputs=(_port("artifact", ("artifact",), required=False),),
+            ),
+            WorkflowNode(
+                node_id="branch_b",
+                node_type="branch",
+                title="Branch B",
+                inputs=(_port("source", ("source",)),),
+                outputs=(_port("artifact", ("artifact",), required=False),),
+            ),
+        ),
+        edges=(
+            WorkflowEdge("e1", "input", "source", "branch_a", "source"),
+            WorkflowEdge("e2", "input", "source", "branch_b", "source"),
+        ),
+    )
+    started = {
+        "branch_a": threading.Event(),
+        "branch_b": threading.Event(),
+    }
+    release = threading.Event()
+    result_holder: dict[str, Any] = {}
+    errors: list[BaseException] = []
+
+    def input_handler(
+        context: NodeRunContext,
+        _inputs: tuple[Mapping[str, Any], ...],
+    ) -> tuple[Mapping[str, Any], ...]:
+        source_path = context.output_dir / "source.txt"
+        source_path.write_text("source", encoding="utf-8")
+        return ({"port_id": "source", "path": context.relative_path(source_path), "type": "source"},)
+
+    def branch_handler(
+        context: NodeRunContext,
+        _inputs: tuple[Mapping[str, Any], ...],
+    ) -> tuple[Mapping[str, Any], ...]:
+        started[context.node.node_id].set()
+        release.wait(timeout=5)
+        output_path = context.output_dir / f"{context.node.node_id}.txt"
+        output_path.write_text(context.node.node_id, encoding="utf-8")
+        return (
+            {
+                "port_id": "artifact",
+                "path": context.relative_path(output_path),
+                "type": "artifact",
+            },
+        )
+
+    runner = WorkflowRunner(
+        template,
+        handlers={"input": input_handler, "branch": branch_handler},
+    )
+
+    def run_workflow() -> None:
+        try:
+            result_holder["result"] = runner.run(tmp_path)
+        except BaseException as exc:  # Thread boundary for surfacing runner failures in the test.
+            errors.append(exc)
+
+    thread = threading.Thread(target=run_workflow)
+    thread.start()
+    try:
+        assert started["branch_a"].wait(timeout=2)
+        assert started["branch_b"].wait(timeout=0.5)
+    finally:
+        release.set()
+        thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert not errors
+    result = result_holder["result"]
+    assert result.ok
+    assert [run.node_id for run in result.node_runs] == ["input", "branch_a", "branch_b"]
