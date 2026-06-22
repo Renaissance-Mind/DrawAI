@@ -142,7 +142,6 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   reasoning_effort: "",
   timeout_seconds: 0
 };
-const AGENT_SETTINGS_PAGE_SIZE = 4;
 
 const strategyLabels: Record<SourceStrategy, string> = {
   svg_self_draw: "SVG",
@@ -1457,23 +1456,9 @@ function WorkbenchAgentSettingsDialog({
 
   const agents = response?.agents || [];
   const selectedAgent = agents.find((agent) => agent.provider_id === draft.selected_provider_id) || agents[0] || null;
-  const [agentPage, setAgentPage] = useState(0);
-  const agentPageCount = Math.max(1, Math.ceil(agents.length / AGENT_SETTINGS_PAGE_SIZE));
-  const visibleAgents = useMemo(
-    () => agents.slice(agentPage * AGENT_SETTINGS_PAGE_SIZE, (agentPage + 1) * AGENT_SETTINGS_PAGE_SIZE),
-    [agentPage, agents]
-  );
   const selectAgentProvider = (providerId: string) => {
-    const nextIndex = agents.findIndex((agent) => agent.provider_id === providerId);
-    if (nextIndex >= 0) {
-      setAgentPage(Math.floor(nextIndex / AGENT_SETTINGS_PAGE_SIZE));
-    }
     setDraft((current) => ({ ...current, selected_provider_id: providerId }));
   };
-
-  useEffect(() => {
-    setAgentPage((current) => Math.min(current, Math.max(0, agentPageCount - 1)));
-  }, [agentPageCount]);
 
   const saveSettings = async () => {
     setSaving(true);
@@ -1527,7 +1512,7 @@ function WorkbenchAgentSettingsDialog({
               <div className="agent-settings-list" aria-label="本地 Agent">
                 {loading && <div className="agent-settings-empty">加载中</div>}
                 {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
-                {visibleAgents.map((agent) => (
+                {agents.map((agent) => (
                   <button
                     type="button"
                     key={agent.provider_id}
@@ -1543,27 +1528,6 @@ function WorkbenchAgentSettingsDialog({
                     {agent.version && <span className="agent-version">{agent.version}</span>}
                   </button>
                 ))}
-              </div>
-              <div className="agent-settings-pager" aria-label="Agent 翻页">
-                <button
-                  type="button"
-                  aria-label="上一页"
-                  disabled={loading || agentPage <= 0}
-                  onClick={() => setAgentPage((current) => Math.max(0, current - 1))}
-                >
-                  ‹
-                </button>
-                <span>
-                  {agentPage + 1} / {agentPageCount}
-                </span>
-                <button
-                  type="button"
-                  aria-label="下一页"
-                  disabled={loading || agentPage >= agentPageCount - 1}
-                  onClick={() => setAgentPage((current) => Math.min(agentPageCount - 1, current + 1))}
-                >
-                  ›
-                </button>
               </div>
             </div>
             <div className="agent-settings-panel">

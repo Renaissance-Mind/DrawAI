@@ -3454,7 +3454,24 @@ button.asset-status-unsupported {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scroll-snap-type: y proximity;
+  scrollbar-gutter: stable;
+}
+
+.agent-settings-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.agent-settings-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(105, 118, 111, 0.28);
+}
+
+.agent-settings-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .agent-settings-empty {
@@ -3467,6 +3484,7 @@ button.asset-status-unsupported {
 
 .agent-option {
   position: relative;
+  flex: 0 0 auto;
   min-height: 78px;
   display: grid;
   gap: 5px;
@@ -3476,6 +3494,7 @@ button.asset-status-unsupported {
   background: transparent;
   box-shadow: none;
   padding: 11px 8px 11px 13px;
+  scroll-snap-align: start;
   text-align: left;
 }
 
@@ -3538,43 +3557,6 @@ button.asset-status-unsupported {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.agent-settings-pager {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding-top: 12px;
-}
-
-.agent-settings-pager button {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  min-height: 28px;
-  display: inline-grid;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--ink-soft);
-  padding: 0;
-  font-size: 22px;
-  line-height: 1;
-}
-
-.agent-settings-pager button:hover:not(:disabled) {
-  background: rgba(15, 23, 42, 0.06);
-}
-
-.agent-settings-pager span {
-  min-width: 42px;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
 }
 
 .agent-status {
