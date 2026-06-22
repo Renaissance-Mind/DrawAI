@@ -5,7 +5,7 @@ import json
 import os
 import shutil
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -15,6 +15,11 @@ from drawai.workflow.agents import SUPPORTED_REASONING_EFFORTS
 
 SETTINGS_SCHEMA = "drawai.workbench.agent_settings.v1"
 DEFAULT_AGENT_PROVIDER_ID = "codex_sdk"
+DEFAULT_EXECUTION_MODE = "agent"
+DEFAULT_LLM_PROVIDER_ID = "openai_compatible"
+DEFAULT_LLM_WIRE_API = "chat_completions"
+SUPPORTED_EXECUTION_MODES = ("agent", "llm")
+SUPPORTED_LLM_WIRE_APIS = ("chat_completions", "responses")
 VERSION_TIMEOUT_SECONDS = 8
 
 
@@ -35,6 +40,13 @@ class WorkbenchAgentSettings:
     model: str = ""
     reasoning_effort: str = ""
     timeout_seconds: int = 0
+    execution_mode: str = DEFAULT_EXECUTION_MODE
+    llm_model: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_api_key_env: str = "OPENAI_API_KEY"
+    llm_wire_api: str = DEFAULT_LLM_WIRE_API
+    llm_extra_body: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -130,16 +142,36 @@ def normalize_workbench_agent_settings(payload: Mapping[str, Any] | None) -> Wor
     if provider_id not in AGENT_DEFINITIONS:
         supported = ", ".join(sorted(AGENT_DEFINITIONS))
         raise ValueError(f"unsupported Workbench agent provider: {provider_id!r}. Expected one of: {supported}")
+    execution_mode = str(data.get("execution_mode") or DEFAULT_EXECUTION_MODE).strip().lower()
+    if execution_mode not in SUPPORTED_EXECUTION_MODES:
+        supported = ", ".join(SUPPORTED_EXECUTION_MODES)
+        raise ValueError(f"unsupported execution_mode: {execution_mode!r}. Expected one of: {supported}")
     reasoning_effort = str(data.get("reasoning_effort") or "").strip().lower()
     if reasoning_effort and reasoning_effort not in SUPPORTED_REASONING_EFFORTS:
         supported = ", ".join(SUPPORTED_REASONING_EFFORTS)
         raise ValueError(f"unsupported reasoning_effort: {reasoning_effort!r}. Expected one of: {supported}")
+    llm_wire_api = str(data.get("llm_wire_api") or DEFAULT_LLM_WIRE_API).strip().lower().replace("-", "_")
+    if llm_wire_api in {"chat", "chat_completion"}:
+        llm_wire_api = "chat_completions"
+    if llm_wire_api not in SUPPORTED_LLM_WIRE_APIS:
+        supported = ", ".join(SUPPORTED_LLM_WIRE_APIS)
+        raise ValueError(f"unsupported llm_wire_api: {llm_wire_api!r}. Expected one of: {supported}")
+    llm_extra_body = data.get("llm_extra_body") or {}
+    if not isinstance(llm_extra_body, Mapping):
+        raise ValueError("llm_extra_body must be a JSON object")
     timeout_seconds = _settings_timeout_seconds(data.get("timeout_seconds"))
     return WorkbenchAgentSettings(
         selected_provider_id=provider_id,
         model=str(data.get("model") or "").strip(),
         reasoning_effort=reasoning_effort,
         timeout_seconds=timeout_seconds,
+        execution_mode=execution_mode,
+        llm_model=str(data.get("llm_model") or "").strip(),
+        llm_base_url=str(data.get("llm_base_url") or "").strip().rstrip("/"),
+        llm_api_key=str(data.get("llm_api_key") or "").strip(),
+        llm_api_key_env=str(data.get("llm_api_key_env") or "OPENAI_API_KEY").strip(),
+        llm_wire_api=llm_wire_api,
+        llm_extra_body=dict(llm_extra_body),
     )
 
 
@@ -170,6 +202,30 @@ def apply_workbench_agent_settings_to_node_config(
     return config
 
 
+def apply_workbench_llm_settings_to_node_config(
+    node_config: Mapping[str, Any],
+    settings: WorkbenchAgentSettings,
+) -> dict[str, Any]:
+    config = dict(node_config)
+    config["provider_id"] = DEFAULT_LLM_PROVIDER_ID
+    if settings.llm_model:
+        config["model"] = settings.llm_model
+    if settings.reasoning_effort:
+        config["reasoning_effort"] = settings.reasoning_effort
+    if settings.timeout_seconds:
+        config["timeout_seconds"] = settings.timeout_seconds
+    if settings.llm_base_url:
+        config["base_url"] = settings.llm_base_url
+    if settings.llm_api_key:
+        config["api_key"] = settings.llm_api_key
+    if settings.llm_api_key_env:
+        config["api_key_env"] = settings.llm_api_key_env
+    config["wire_api"] = settings.llm_wire_api
+    if settings.llm_extra_body:
+        config["extra_body"] = dict(settings.llm_extra_body)
+    return config
+
+
 def workbench_agent_runtime_options(settings: WorkbenchAgentSettings) -> dict[str, Any]:
     command = resolved_agent_command(settings.selected_provider_id)
     return {"agent_cli_command": command} if command else {}
@@ -179,6 +235,9 @@ def apply_workbench_agent_settings_to_config_payload(
     payload: dict[str, Any],
     settings: WorkbenchAgentSettings,
 ) -> None:
+    if settings.execution_mode == "llm":
+        _apply_workbench_llm_settings_to_config_payload(payload, settings)
+        return
     definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     svg_config = _mapping_child(payload, "svg")
     runtime_config = _mapping_child(payload, "model_runtime")
@@ -200,6 +259,38 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["reasoning_effort"] = settings.reasoning_effort
     if settings.timeout_seconds:
         runtime_config["timeout_seconds"] = settings.timeout_seconds
+
+
+def _apply_workbench_llm_settings_to_config_payload(
+    payload: dict[str, Any],
+    settings: WorkbenchAgentSettings,
+) -> None:
+    svg_config = _mapping_child(payload, "svg")
+    runtime_config = _mapping_child(payload, "model_runtime")
+    svg_config["generation_backend"] = "responses"
+    runtime_config["provider"] = DEFAULT_LLM_PROVIDER_ID
+    runtime_config["connection_id"] = DEFAULT_LLM_PROVIDER_ID
+    if settings.llm_model:
+        runtime_config["model_name"] = settings.llm_model
+    if settings.reasoning_effort:
+        runtime_config["reasoning_effort"] = settings.reasoning_effort
+    if settings.timeout_seconds:
+        runtime_config["timeout_seconds"] = settings.timeout_seconds
+    if settings.llm_base_url:
+        runtime_config["base_url"] = settings.llm_base_url
+    if settings.llm_api_key:
+        runtime_config["api_key"] = settings.llm_api_key
+    if settings.llm_base_url:
+        api_provider = _mapping_child(runtime_config, "api_provider")
+        api_provider["mode"] = "thirdparty"
+        thirdparty = _mapping_child(api_provider, "thirdparty")
+        thirdparty["base_url"] = settings.llm_base_url
+        thirdparty["wire_api"] = settings.llm_wire_api
+        thirdparty["model_provider"] = DEFAULT_LLM_PROVIDER_ID
+        if settings.llm_api_key:
+            thirdparty["api_key"] = settings.llm_api_key
+        if settings.llm_api_key_env:
+            thirdparty["api_key_env"] = settings.llm_api_key_env
 
 
 def resolved_agent_command(provider_id: str) -> list[str]:

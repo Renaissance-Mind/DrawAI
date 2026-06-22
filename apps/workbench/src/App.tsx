@@ -140,7 +140,14 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   selected_provider_id: "codex_sdk",
   model: "",
   reasoning_effort: "",
-  timeout_seconds: 0
+  timeout_seconds: 0,
+  execution_mode: "agent",
+  llm_model: "",
+  llm_base_url: "",
+  llm_api_key: "",
+  llm_api_key_env: "OPENAI_API_KEY",
+  llm_wire_api: "chat_completions",
+  llm_extra_body: {}
 };
 
 const strategyLabels: Record<SourceStrategy, string> = {
@@ -978,8 +985,8 @@ export default function App() {
             <button
               type="button"
               className="topbar-icon-button"
-              title="Agent 设置"
-              aria-label="Agent 设置"
+              title="运行设置"
+              aria-label="运行设置"
               onClick={() => setWorkbenchAgentSettingsOpen(true)}
             >
               <SettingsIcon />
@@ -1430,6 +1437,7 @@ function WorkbenchAgentSettingsDialog({
 }) {
   const [response, setResponse] = useState<WorkbenchAgentSettingsResponse | null>(null);
   const [draft, setDraft] = useState<WorkbenchAgentSettings>(DEFAULT_WORKBENCH_AGENT_SETTINGS);
+  const [llmExtraBodyText, setLlmExtraBodyText] = useState(formatWorkbenchAgentJsonObject({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
@@ -1439,8 +1447,10 @@ function WorkbenchAgentSettingsDialog({
     setLocalError("");
     try {
       const nextResponse = await getWorkbenchAgentSettings();
+      const normalizedSettings = normalizeWorkbenchAgentDraft(nextResponse.settings);
       setResponse(nextResponse);
-      setDraft(normalizeWorkbenchAgentDraft(nextResponse.settings));
+      setDraft(normalizedSettings);
+      setLlmExtraBodyText(formatWorkbenchAgentJsonObject(normalizedSettings.llm_extra_body));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setLocalError(message);
@@ -1464,9 +1474,15 @@ function WorkbenchAgentSettingsDialog({
     setSaving(true);
     setLocalError("");
     try {
-      const nextResponse = await saveWorkbenchAgentSettings(normalizeWorkbenchAgentDraft(draft));
+      const normalizedDraft = normalizeWorkbenchAgentDraft({
+        ...draft,
+        llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
+      });
+      const nextResponse = await saveWorkbenchAgentSettings(normalizedDraft);
+      const normalizedSettings = normalizeWorkbenchAgentDraft(nextResponse.settings);
       setResponse(nextResponse);
-      setDraft(normalizeWorkbenchAgentDraft(nextResponse.settings));
+      setDraft(normalizedSettings);
+      setLlmExtraBodyText(formatWorkbenchAgentJsonObject(normalizedSettings.llm_extra_body));
       onSaved();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1483,12 +1499,12 @@ function WorkbenchAgentSettingsDialog({
         className="settings-dialog workbench-agent-settings-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Agent 设置"
+        aria-label="运行设置"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="settings-dialog-head">
           <div>
-            <span>Agent</span>
+            <span>Workflow</span>
             <strong>运行设置</strong>
           </div>
           <button type="button" className="settings-close" aria-label="关闭" onClick={onClose}>
@@ -1501,7 +1517,7 @@ function WorkbenchAgentSettingsDialog({
             <nav className="settings-nav" aria-label="设置导航">
               <button type="button" className="settings-nav-item active" aria-current="page">
                 <span className="settings-nav-marker" aria-hidden="true" />
-                <span>Agent</span>
+                <span>运行</span>
               </button>
             </nav>
             <div className="agent-settings-list-panel">
@@ -1531,58 +1547,161 @@ function WorkbenchAgentSettingsDialog({
               </div>
             </div>
             <div className="agent-settings-panel">
-              <label className="settings-field">
-                <span>全局 Agent</span>
-                <select
-                  value={draft.selected_provider_id}
-                  onChange={(event) => selectAgentProvider(event.target.value)}
-                  disabled={loading}
-                >
-                  {agents.map((agent) => (
-                    <option key={agent.provider_id} value={agent.provider_id}>
-                      {agent.label}
-                    </option>
-                  ))}
-                  {agents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
-                </select>
-              </label>
-              <label className="settings-field">
-                <span>模型</span>
-                <input
-                  value={draft.model}
-                  onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-                  placeholder={selectedAgent?.provider_id === "codex_sdk" ? "留空使用默认模型" : "例如 kimi-code/kimi-for-coding"}
-                  autoComplete="off"
-                />
-              </label>
-              <div className="settings-form-row">
-                <label className="settings-field">
-                  <span>推理强度</span>
-                  <select
-                    value={draft.reasoning_effort}
-                    onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
+              <div className="agent-settings-section">
+                <div className="agent-settings-section-title">
+                  <span>运行方式</span>
+                </div>
+                <div className="runtime-mode-toggle" role="radiogroup" aria-label="运行方式">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.execution_mode === "agent"}
+                    className={draft.execution_mode === "agent" ? "active" : ""}
+                    onClick={() => setDraft((current) => ({ ...current, execution_mode: "agent" }))}
                   >
-                    <option value="">默认</option>
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
+                    Agent
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.execution_mode === "llm"}
+                    className={draft.execution_mode === "llm" ? "active" : ""}
+                    onClick={() => setDraft((current) => ({ ...current, execution_mode: "llm" }))}
+                  >
+                    LLM
+                  </button>
+                </div>
+              </div>
+              <div className="agent-settings-section">
+                <div className="agent-settings-section-title">
+                  <span>Agent</span>
+                </div>
+                <label className="settings-field">
+                  <span>全局 Agent</span>
+                  <select
+                    value={draft.selected_provider_id}
+                    onChange={(event) => selectAgentProvider(event.target.value)}
+                    disabled={loading}
+                  >
+                    {agents.map((agent) => (
+                      <option key={agent.provider_id} value={agent.provider_id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                    {agents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
                   </select>
                 </label>
                 <label className="settings-field">
-                  <span>超时秒数</span>
+                  <span>模型</span>
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={draft.timeout_seconds || ""}
+                    value={draft.model}
+                    onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
+                    placeholder={selectedAgent?.provider_id === "codex_sdk" ? "留空使用默认模型" : "例如 kimi-code/kimi-for-coding"}
+                    autoComplete="off"
+                  />
+                </label>
+                <div className="settings-form-row">
+                  <label className="settings-field">
+                    <span>推理强度</span>
+                    <select
+                      value={draft.reasoning_effort}
+                      onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
+                    >
+                      <option value="">默认</option>
+                      <option value="none">none</option>
+                      <option value="minimal">minimal</option>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                      <option value="xhigh">xhigh</option>
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>超时秒数</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={draft.timeout_seconds || ""}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, timeout_seconds: Number(event.target.value || 0) }))
+                      }
+                      placeholder="默认"
+                    />
+                  </label>
+                </div>
+                {selectedAgent && <AgentValidationCard agent={selectedAgent} />}
+              </div>
+              <div className="agent-settings-section">
+                <div className="agent-settings-section-title">
+                  <span>LLM API</span>
+                </div>
+                <label className="settings-field">
+                  <span>模型</span>
+                  <input
+                    value={draft.llm_model}
+                    onChange={(event) => setDraft((current) => ({ ...current, llm_model: event.target.value }))}
+                    placeholder="例如 minimax/minimax-m3"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Base URL</span>
+                  <input
+                    value={draft.llm_base_url}
+                    onChange={(event) => setDraft((current) => ({ ...current, llm_base_url: event.target.value }))}
+                    placeholder="https://openrouter.ai/api/v1"
+                    autoComplete="off"
+                  />
+                </label>
+                <div className="settings-form-row">
+                  <label className="settings-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={draft.llm_api_key}
+                      onChange={(event) => setDraft((current) => ({ ...current, llm_api_key: event.target.value }))}
+                      placeholder="直接保存 key"
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Key Env</span>
+                    <input
+                      value={draft.llm_api_key_env}
+                      onChange={(event) => setDraft((current) => ({ ...current, llm_api_key_env: event.target.value }))}
+                      placeholder="OPENAI_API_KEY"
+                      autoComplete="off"
+                    />
+                  </label>
+                </div>
+                <label className="settings-field">
+                  <span>API 格式</span>
+                  <select
+                    value={draft.llm_wire_api}
                     onChange={(event) =>
-                      setDraft((current) => ({ ...current, timeout_seconds: Number(event.target.value || 0) }))
+                      setDraft((current) => ({
+                        ...current,
+                        llm_wire_api: event.target.value === "responses" ? "responses" : "chat_completions"
+                      }))
                     }
-                    placeholder="默认"
+                  >
+                    <option value="chat_completions">Chat Completions</option>
+                    <option value="responses">Responses</option>
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>Extra Body</span>
+                  <textarea
+                    className="settings-json-textarea"
+                    value={llmExtraBodyText}
+                    onChange={(event) => setLlmExtraBodyText(event.target.value)}
+                    spellCheck={false}
+                    rows={5}
+                    placeholder='{"reasoning":{"enabled":true}}'
                   />
                 </label>
               </div>
-              {selectedAgent && <AgentValidationCard agent={selectedAgent} />}
             </div>
           </div>
         </div>
@@ -1649,12 +1768,39 @@ function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {
 
 function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): WorkbenchAgentSettings {
   const timeout = Number(settings.timeout_seconds || 0);
+  const llmExtraBody = isWorkbenchAgentJsonObject(settings.llm_extra_body) ? settings.llm_extra_body : {};
   return {
     selected_provider_id: settings.selected_provider_id || DEFAULT_WORKBENCH_AGENT_SETTINGS.selected_provider_id,
     model: (settings.model || "").trim(),
     reasoning_effort: (settings.reasoning_effort || "").trim(),
-    timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0
+    timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0,
+    execution_mode: settings.execution_mode === "llm" ? "llm" : "agent",
+    llm_model: (settings.llm_model || "").trim(),
+    llm_base_url: (settings.llm_base_url || "").trim().replace(/\/+$/, ""),
+    llm_api_key: (settings.llm_api_key || "").trim(),
+    llm_api_key_env: (settings.llm_api_key_env || "OPENAI_API_KEY").trim(),
+    llm_wire_api: settings.llm_wire_api === "responses" ? "responses" : "chat_completions",
+    llm_extra_body: { ...llmExtraBody }
   };
+}
+
+function formatWorkbenchAgentJsonObject(value: Record<string, unknown>): string {
+  if (Object.keys(value).length === 0) return "{}";
+  return JSON.stringify(value, null, 2);
+}
+
+function parseWorkbenchAgentJsonObject(text: string, label: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (!isWorkbenchAgentJsonObject(parsed)) {
+    throw new Error(`${label} 必须是 JSON object`);
+  }
+  return parsed;
+}
+
+function isWorkbenchAgentJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function TaskRenameDialog({

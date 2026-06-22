@@ -138,7 +138,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
             ),
             WorkflowNode(
                 node_id="page_spec_refine",
-                node_type="llm",
+                node_type="agent",
                 title="PageSpec Refine",
                 inputs=(
                     _input(
@@ -167,8 +167,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 ),
                 config={
                     "preset_id": "page_spec_refine",
-                    "provider_id": "openai_responses",
-                    "model": "gpt-5.5",
+                    "provider_id": "codex_sdk",
                     "reasoning_effort": "high",
                     "timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
                     "task": PAGE_SPEC_REFINE_TASK,
@@ -220,7 +219,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
             ),
             WorkflowNode(
                 node_id="svg_compose",
-                node_type="llm",
+                node_type="agent",
                 title="SVG Compose",
                 inputs=(
                     _input(
@@ -250,8 +249,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 ),
                 config={
                     "preset_id": "svg_generation",
-                    "provider_id": "openai_responses",
-                    "model": "gpt-5.5",
+                    "provider_id": "codex_sdk",
                     "reasoning_effort": "xhigh",
                     "timeout_seconds": SVG_AGENT_TIMEOUT_SECONDS,
                     "task": SVG_GENERATION_TASK,

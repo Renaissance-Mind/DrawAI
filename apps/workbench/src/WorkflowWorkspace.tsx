@@ -305,10 +305,10 @@ const WORKFLOW_ANY_TYPES = WORKFLOW_FORMAT_OPTIONS.map((option) => option.type);
 const NODE_PRESETS: NodePreset[] = [
   {
     key: "svg-agent",
-    node_type: "llm",
-    title: "SVG LLM",
-    icon: "L",
-    description: "LLM node that returns semantic SVG content.",
+    node_type: "agent",
+    title: "SVG Agent",
+    icon: "A",
+    description: "Agent node that returns semantic SVG content.",
     inputs: [
       port("image", "Image", ["image"], "drawai.image.v1"),
       port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
@@ -316,8 +316,7 @@ const NODE_PRESETS: NodePreset[] = [
     outputs: [port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1", false, "single", "deliverable")],
     config: {
       preset_id: "svg_generation",
-      provider_id: "openai_responses",
-      model: "gpt-5.5",
+      provider_id: "codex_sdk",
       reasoning_effort: "xhigh",
       timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,
@@ -394,10 +393,10 @@ const NODE_PRESETS: NodePreset[] = [
   },
   {
     key: "page-spec-refine",
-    node_type: "llm",
+    node_type: "agent",
     title: "PageSpec Refine",
-    icon: "L",
-    description: "LLM node that refines one PageSpec directly.",
+    icon: "A",
+    description: "Agent node that refines one PageSpec directly.",
     inputs: [
       port("image", "Image", ["image"], "drawai.image.v1"),
       port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
@@ -405,8 +404,7 @@ const NODE_PRESETS: NodePreset[] = [
     outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
     config: {
       preset_id: "page_spec_refine",
-      provider_id: "openai_responses",
-      model: "gpt-5.5",
+      provider_id: "codex_sdk",
       reasoning_effort: "high",
       timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.page_spec_refine,
@@ -438,10 +436,10 @@ const NODE_PRESETS: NodePreset[] = [
   },
   {
     key: "svg-compose",
-    node_type: "llm",
+    node_type: "agent",
     title: "SVG Compose",
-    icon: "L",
-    description: "LLM node that composes semantic SVG from materialized PageSpec.",
+    icon: "A",
+    description: "Agent node that composes semantic SVG from materialized PageSpec.",
     inputs: [
       port("image", "Image", ["image"], "drawai.image.v1"),
       port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
@@ -449,8 +447,7 @@ const NODE_PRESETS: NodePreset[] = [
     outputs: [port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1", false, "single", "deliverable")],
     config: {
       preset_id: "svg_generation",
-      provider_id: "openai_responses",
-      model: "gpt-5.5",
+      provider_id: "codex_sdk",
       reasoning_effort: "xhigh",
       timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,

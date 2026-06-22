@@ -171,6 +171,8 @@ def default_format_registry() -> dict[str, FormatSpec]:
 
 
 def element_plans_from_payload(payload: Any) -> tuple[ElementPlan, ...]:
+    if isinstance(payload, Mapping) and payload.get("schema") == "drawai.codex_element_analysis.v1":
+        return codex_analysis_to_v2_element_plans(payload)
     raw_plans = _raw_element_plans(payload)
     plans: list[ElementPlan] = []
     for index, raw_plan in enumerate(raw_plans):

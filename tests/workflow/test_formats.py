@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from drawai.workflow.formats import default_format_registry, validate_format_file
+from drawai.workflow.formats import default_format_registry, element_plans_from_payload, validate_format_file
 
 
 def test_default_format_registry_contains_core_formats() -> None:
@@ -88,6 +88,29 @@ def test_validate_element_candidates_rejects_missing_required_fields(tmp_path: P
 
     assert not result.ok
     assert any("source_parser" in error for error in result.errors)
+
+
+def test_element_plans_from_payload_accepts_legacy_codex_analysis() -> None:
+    plans = element_plans_from_payload(
+        {
+            "schema": "drawai.codex_element_analysis.v1",
+            "elements": [
+                {
+                    "box_id": "E001",
+                    "source_candidate_ids": ["fixture:E001"],
+                    "bbox": [2, 2, 14, 14],
+                    "category": "crop",
+                    "type": "picture",
+                    "confidence": "high",
+                    "reason": "legacy review fixture",
+                }
+            ],
+        }
+    )
+
+    assert len(plans) == 1
+    assert plans[0].element_id == "E001"
+    assert plans[0].processing_intent.processing_type == "crop"
 
 
 def test_validate_page_spec_accepts_canonical_page_elements(tmp_path: Path) -> None:

@@ -64,6 +64,7 @@ from .agent_settings import (
     WorkbenchAgentSettings,
     apply_workbench_agent_settings_to_config_payload,
     apply_workbench_agent_settings_to_node_config,
+    apply_workbench_llm_settings_to_node_config,
     normalize_workbench_agent_settings,
     read_workbench_agent_settings,
     workbench_agent_runtime_options,
@@ -1395,19 +1396,28 @@ def _workflow_template_with_agent_settings(
     template: WorkflowTemplate,
     settings: WorkbenchAgentSettings,
 ) -> WorkflowTemplate:
-    nodes = tuple(
-        replace(
-            node,
-            config=apply_workbench_agent_settings_to_node_config(
-                {**dict(node.config), "node_id": node.node_id},
-                settings,
-            ),
-        )
-        if node.node_type == "agent"
-        else node
-        for node in template.nodes
-    )
-    return replace(template, nodes=nodes)
+    nodes = []
+    for node in template.nodes:
+        if node.node_type != "agent":
+            nodes.append(node)
+            continue
+        base_config = {**dict(node.config), "node_id": node.node_id}
+        if settings.execution_mode == "llm":
+            nodes.append(
+                replace(
+                    node,
+                    node_type="llm",
+                    config=apply_workbench_llm_settings_to_node_config(base_config, settings),
+                )
+            )
+        else:
+            nodes.append(
+                replace(
+                    node,
+                    config=apply_workbench_agent_settings_to_node_config(base_config, settings),
+                )
+            )
+    return replace(template, nodes=tuple(nodes))
 
 
 def _workflow_until_first_human_review(template: WorkflowTemplate) -> WorkflowTemplate | None:

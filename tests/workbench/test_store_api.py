@@ -370,11 +370,8 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
     updated = store.get_case(case.case_id)
     assert updated.status == "completed"
     assert updated.stage == "completed"
-    assert observed_stages == [
-        "prepare",
-        "sam_parse",
-        "ocr_parse",
-    ]
+    assert observed_stages[0] == "prepare"
+    assert sorted(observed_stages[1:]) == ["ocr_parse", "sam_parse"]
     assert (Path(updated.run_root) / "page_spec.json").exists()
     assert not (Path(updated.run_root) / "drawai_package.json").exists()
     prepared_page_spec = json.loads(

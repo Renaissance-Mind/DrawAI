@@ -3585,6 +3585,74 @@ button.asset-status-unsupported {
   padding-right: 2px;
 }
 
+.agent-settings-section {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(220, 228, 222, 0.72);
+}
+
+.agent-settings-section:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.agent-settings-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-settings-section-title span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.runtime-mode-toggle {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.runtime-mode-toggle button {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-weight: 640;
+}
+
+.runtime-mode-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.runtime-mode-toggle button:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.runtime-mode-toggle button.active {
+  background: var(--teal);
+  color: #fff;
+}
+
+.settings-json-textarea {
+  min-height: 116px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .agent-validation-card {
   min-width: 0;
   border: 1px solid var(--line);

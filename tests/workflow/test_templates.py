@@ -80,12 +80,12 @@ def test_default_template_uses_pagespec_processor_formats() -> None:
     assert nodes["ocr_parse"].outputs[0].formats == ("drawai.page_spec.v1",)
     assert nodes["page_spec_fuse"].inputs[0].formats == ("drawai.page_spec.v1",)
     assert nodes["page_spec_fuse"].outputs[0].formats == ("drawai.page_spec.v1",)
-    assert nodes["page_spec_refine"].node_type == "llm"
+    assert nodes["page_spec_refine"].node_type == "agent"
     assert nodes["page_spec_refine"].inputs[1].formats == ("drawai.page_spec.v1",)
     assert nodes["page_spec_refine"].outputs[0].formats == ("drawai.page_spec.v1",)
     assert nodes["asset_prepare"].inputs[1].types == ("page_spec",)
     assert nodes["asset_prepare"].outputs[0].types == ("page_spec",)
-    assert nodes["svg_compose"].node_type == "llm"
+    assert nodes["svg_compose"].node_type == "agent"
     assert nodes["svg_compose"].inputs[1].types == ("page_spec",)
     assert nodes["svg_compose"].outputs[0].formats == ("drawai.semantic_svg.v1",)
     assert nodes["svg_compose"].outputs[0].description.startswith("deliverable;")

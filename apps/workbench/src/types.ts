@@ -44,6 +44,13 @@ export interface WorkbenchAgentSettings {
   model: string;
   reasoning_effort: string;
   timeout_seconds: number;
+  execution_mode: "agent" | "llm";
+  llm_model: string;
+  llm_base_url: string;
+  llm_api_key: string;
+  llm_api_key_env: string;
+  llm_wire_api: "chat_completions" | "responses";
+  llm_extra_body: Record<string, unknown>;
 }
 
 export interface WorkbenchAgentDiscovery {
