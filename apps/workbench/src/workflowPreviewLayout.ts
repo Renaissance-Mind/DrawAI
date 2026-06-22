@@ -45,7 +45,9 @@ type EdgeRouteContext = {
   sequentialSourceTotal: number;
   sequentialTargetTotal: number;
   shortcutLaneIndex: number;
+  shortcutLaneTotal: number;
 };
+type ShortcutRoute = { startSide: Side; endSide: Side; laneGroup: string };
 
 const DEFAULT_LAYOUT_OPTIONS = {
   maxColumns: 4,
@@ -77,9 +79,9 @@ export function buildWorkflowPreviewLayout(
     if (!rows[row]) rows[row] = [];
     rows[row].push(rank);
   });
-  const shortcutSideByEdgeId = shortcutSidesByEdgeId(template.edges, ranks, rankToRow, rows.length);
-  const shortcutLaneTotals = new Map<Side, number>();
-  shortcutSideByEdgeId.forEach((side) => incrementMap(shortcutLaneTotals, side));
+  const shortcutRouteByEdgeId = shortcutRoutesByEdgeId(template.edges, ranks, rankToRow, rows.length);
+  const shortcutLaneTotals = new Map<string, number>();
+  shortcutRouteByEdgeId.forEach((route) => incrementMap(shortcutLaneTotals, route.laneGroup));
   const topRailGutter = outsideRailGutter(shortcutLaneTotals.get("top") || 0);
   const bottomRailGutter = outsideRailGutter(shortcutLaneTotals.get("bottom") || 0);
 
@@ -131,7 +133,7 @@ export function buildWorkflowPreviewLayout(
   const byId = new Map(nodeLayouts.map((node) => [node.node.node_id, node]));
   const edgeSidesById = new Map<string, { startSide: Side; endSide: Side }>();
   const shortcutLaneByEdgeId = new Map<string, number>();
-  const shortcutLaneUse = new Map<Side, number>();
+  const shortcutLaneUse = new Map<string, number>();
   const portTotals = new Map<string, number>();
   const sequentialOutTotals = new Map<string, number>();
   const sequentialInTotals = new Map<string, number>();
@@ -141,13 +143,13 @@ export function buildWorkflowPreviewLayout(
     if (!source || !target) return;
     const sourceRank = ranks.get(edge.source_node_id) ?? 0;
     const targetRank = ranks.get(edge.target_node_id) ?? 0;
-    const shortcutSide = shortcutSideByEdgeId.get(edge.edge_id);
-    const sides = shortcutSide ? { startSide: shortcutSide, endSide: shortcutSide } : edgeSides(source, target);
+    const shortcutRoute = shortcutRouteByEdgeId.get(edge.edge_id);
+    const sides = shortcutRoute ? { startSide: shortcutRoute.startSide, endSide: shortcutRoute.endSide } : edgeSides(source, target);
     edgeSidesById.set(edge.edge_id, sides);
-    if (shortcutSide) {
-      const laneIndex = shortcutLaneUse.get(shortcutSide) || 0;
+    if (shortcutRoute) {
+      const laneIndex = shortcutLaneUse.get(shortcutRoute.laneGroup) || 0;
       shortcutLaneByEdgeId.set(edge.edge_id, laneIndex);
-      shortcutLaneUse.set(shortcutSide, laneIndex + 1);
+      shortcutLaneUse.set(shortcutRoute.laneGroup, laneIndex + 1);
     }
     if (areSequentialRanks(sourceRank, targetRank)) {
       incrementMap(sequentialOutTotals, sequentialOutKey(edge.source_node_id, targetRank, sides.startSide));
@@ -174,7 +176,8 @@ export function buildWorkflowPreviewLayout(
       targetRank,
       sequentialSourceTotal: sequentialOutTotals.get(sequentialOutKey(edge.source_node_id, targetRank, sides.startSide)) || 1,
       sequentialTargetTotal: sequentialInTotals.get(sequentialInKey(edge.target_node_id, sourceRank, sides.endSide)) || 1,
-      shortcutLaneIndex: shortcutLaneByEdgeId.get(edge.edge_id) || 0
+      shortcutLaneIndex: shortcutLaneByEdgeId.get(edge.edge_id) || 0,
+      shortcutLaneTotal: shortcutLaneTotals.get(shortcutRouteByEdgeId.get(edge.edge_id)?.laneGroup || "") || 1
     });
     routedSegments.push(...segmentsFromPoints(route.points));
     return [{ edge, start: route.start, end: route.end, d: route.d }];
@@ -255,7 +258,14 @@ function routePreviewEdge(
   sides = edgeSides(source, target),
   sourceSlot: PortSlot = { index: 0, total: 1 },
   targetSlot: PortSlot = { index: 0, total: 1 },
-  context: EdgeRouteContext = { sourceRank: 0, targetRank: 0, sequentialSourceTotal: 1, sequentialTargetTotal: 1, shortcutLaneIndex: 0 }
+  context: EdgeRouteContext = {
+    sourceRank: 0,
+    targetRank: 0,
+    sequentialSourceTotal: 1,
+    sequentialTargetTotal: 1,
+    shortcutLaneIndex: 0,
+    shortcutLaneTotal: 1
+  }
 ): EdgeRoute {
   if (areSequentialRanks(context.sourceRank, context.targetRank)) {
     return routeSequentialEdge(source, target, sides, context);
@@ -266,7 +276,7 @@ function routePreviewEdge(
   const startOutside = offsetPoint(start, sides.startSide, clearance);
   const endOutside = offsetPoint(end, sides.endSide, clearance);
   if (isShortcutEdge(context)) {
-    const points = outsideRailRoute(start, startOutside, endOutside, end, bounds, sides.startSide, context.shortcutLaneIndex);
+    const points = shortcutRailRoute(start, startOutside, endOutside, end, bounds, sides, context.shortcutLaneIndex, context.shortcutLaneTotal);
     return { start, end, points, d: pointsToPath(points) };
   }
   const obstacles = nodes.map((node) => expandRect(nodeRect(node), 7));
@@ -335,17 +345,17 @@ function sequentialInKey(nodeId: string, sourceRank: number, side: Side): string
   return `${nodeId}:${sourceRank}:${side}`;
 }
 
-function outsideRailRoute(
+function shortcutRailRoute(
   start: Point,
   startOutside: Point,
   endOutside: Point,
   end: Point,
   bounds: { width: number; height: number },
-  side: Side,
-  laneIndex: number
+  sides: { startSide: Side; endSide: Side },
+  laneIndex: number,
+  laneTotal: number
 ): Point[] {
-  const laneOffset = OUTSIDE_RAIL_MARGIN + laneIndex * OUTSIDE_RAIL_GAP;
-  const railY = side === "top" ? laneOffset : Math.max(OUTSIDE_RAIL_MARGIN, bounds.height - laneOffset);
+  const railY = shortcutRailY(startOutside, endOutside, bounds, sides, laneIndex, laneTotal);
   return simplifyPoints([
     start,
     startOutside,
@@ -356,21 +366,48 @@ function outsideRailRoute(
   ]);
 }
 
-function shortcutSidesByEdgeId(
+function shortcutRailY(
+  startOutside: Point,
+  endOutside: Point,
+  bounds: { width: number; height: number },
+  sides: { startSide: Side; endSide: Side },
+  laneIndex: number,
+  laneTotal: number
+): number {
+  if (sides.startSide !== sides.endSide) {
+    const minY = Math.min(startOutside.y, endOutside.y);
+    const maxY = Math.max(startOutside.y, endOutside.y);
+    const gap = maxY - minY;
+    if (gap > 0) return minY + (gap * (laneIndex + 1)) / (laneTotal + 1);
+    return minY;
+  }
+  const laneOffset = OUTSIDE_RAIL_MARGIN + laneIndex * OUTSIDE_RAIL_GAP;
+  return sides.startSide === "top" ? laneOffset : Math.max(OUTSIDE_RAIL_MARGIN, bounds.height - laneOffset);
+}
+
+function shortcutRoutesByEdgeId(
   edges: WorkflowEdge[],
   ranks: Map<string, number>,
   rankToRow: Map<number, number>,
   rowCount: number
-): Map<string, Side> {
-  const sides = new Map<string, Side>();
+): Map<string, ShortcutRoute> {
+  const routes = new Map<string, ShortcutRoute>();
   edges.forEach((edge) => {
     const sourceRank = ranks.get(edge.source_node_id) ?? 0;
     const targetRank = ranks.get(edge.target_node_id) ?? 0;
-    if (!isShortcutEdge({ sourceRank, targetRank, sequentialSourceTotal: 1, sequentialTargetTotal: 1, shortcutLaneIndex: 0 })) return;
+    if (!isShortcutEdge({ sourceRank, targetRank, sequentialSourceTotal: 1, sequentialTargetTotal: 1, shortcutLaneIndex: 0, shortcutLaneTotal: 1 })) return;
     const sourceRow = rankToRow.get(sourceRank) || 0;
-    sides.set(edge.edge_id, sourceRow <= (rowCount - 1) / 2 ? "top" : "bottom");
+    const targetRow = rankToRow.get(targetRank) || 0;
+    if (targetRow > sourceRow) {
+      routes.set(edge.edge_id, { startSide: "bottom", endSide: "top", laneGroup: `between:${sourceRow}:${targetRow}` });
+    } else if (targetRow < sourceRow) {
+      routes.set(edge.edge_id, { startSide: "top", endSide: "bottom", laneGroup: `between:${targetRow}:${sourceRow}` });
+    } else {
+      const side = sourceRow <= (rowCount - 1) / 2 ? "top" : "bottom";
+      routes.set(edge.edge_id, { startSide: side, endSide: side, laneGroup: side });
+    }
   });
-  return sides;
+  return routes;
 }
 
 function outsideRailGutter(laneCount: number): number {

@@ -50,7 +50,7 @@ test("adjacent second-row flow remains a compact direct connection", async () =>
   assert.equal(points[0].y, points[1].y);
 });
 
-test("long-range shortcuts leave and enter through vertical node ports", async () => {
+test("long-range shortcuts to lower rows leave bottom and enter target top", async () => {
   const { buildWorkflowPreviewLayout } = await loadLayoutModule();
   const layout = buildWorkflowPreviewLayout(imageToPptxTemplate(), PREVIEW_OPTIONS);
   const source = nodeById(layout, "input");
@@ -58,19 +58,22 @@ test("long-range shortcuts leave and enter through vertical node ports", async (
   const edge = edgeById(layout, "input_svg_compose");
   const points = pathPoints(edge.d);
 
-  assert.equal(edge.start.y, source.y);
+  assert.equal(edge.start.y, source.y + source.height);
   assert.ok(edge.start.x > source.x && edge.start.x < source.x + source.width);
   assert.equal(edge.end.y, target.y);
   assert.ok(edge.end.x > target.x && edge.end.x < target.x + target.width);
-  assert.ok(points.some((point) => point.y < source.y), `expected shortcut edge to use a top outside rail, got: ${edge.d}`);
+  assert.ok(
+    points.some((point) => point.y > source.y + source.height && point.y < target.y),
+    `expected shortcut edge to use the gap between rows, got: ${edge.d}`
+  );
 });
 
-test("long-range shortcuts on the same outside side use separate rails", async () => {
+test("long-range shortcuts in the same row gap use separate rails", async () => {
   const { buildWorkflowPreviewLayout } = await loadLayoutModule();
   const layout = buildWorkflowPreviewLayout(imageToPptxTemplate(), PREVIEW_OPTIONS);
-  const railYs = outsideRailYs(layout, ["input_page_spec_refine", "input_asset_prepare", "input_svg_compose"]);
+  const railYs = corridorRailYs(layout, ["input_asset_prepare", "input_svg_compose"]);
 
-  assert.equal(railYs.size, 3);
+  assert.equal(railYs.size, 2);
 });
 
 test("running edge animation only applies to edges entering the running node", async () => {
@@ -196,16 +199,17 @@ function pathPoints(path) {
   }));
 }
 
-function outsideRailYs(layout, edgeIds) {
+function corridorRailYs(layout, edgeIds) {
   const ys = new Set();
   for (const edgeId of edgeIds) {
     const edge = edgeById(layout, edgeId);
     const source = nodeById(layout, edge.edge.source_node_id);
+    const target = nodeById(layout, edge.edge.target_node_id);
     const points = pathPoints(edge.d);
     for (let index = 0; index < points.length - 1; index += 1) {
       const current = points[index];
       const next = points[index + 1];
-      if (current.y === next.y && current.y < source.y) {
+      if (current.y === next.y && current.y > source.y + source.height && current.y < target.y) {
         ys.add(current.y);
       }
     }
