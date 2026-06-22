@@ -117,6 +117,10 @@ def test_svg_agent_prompt_uses_same_agent_contract() -> None:
     assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in prompt.text
     assert "Do not run a third refinement round" in prompt.text
     assert "A complete valid final SVG is better than an unfinished extra refinement" in prompt.text
+    assert 'data-pb-formula-latex-b64' in prompt.text
+    assert 'data-pb-formula-bbox="x y width height"' in prompt.text
+    assert "Office Math" in prompt.text
+    assert "Do not display raw LaTeX" in prompt.text
     assert "semantic_3.svg" not in prompt.text
     assert "Do not look for unconnected OCR, template, layout, request, or parser files." in prompt.text
     assert "OCR boxes JSON" not in prompt.text

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import copy
 import json
 import math
 import re
+import shutil
+import subprocess
+import tempfile
+import zipfile
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -17,6 +25,11 @@ SVG_TO_PPT_SAFE_BACKGROUND_ID = "canvas_background"
 SVG_TO_PPT_SAFE_OBJECT_ID_PREFIX = "svg_to_ppt_object"
 SVG_TO_PPT_EXPORT_MODE_NATIVE_SHAPES = "native_shapes"
 DRAWAI_NATIVE_SHAPES_BACKEND = "drawai_native_shapes"
+SVG_TO_PPT_EXPORT_MODE_NATIVE_SHAPES_WITH_OFFICE_MATH = "native_shapes+office_math"
+DRAWAI_FORMULA_ROLE = "formula"
+DRAWAI_FORMULA_LATEX_ATTR = "data-pb-formula-latex"
+DRAWAI_FORMULA_LATEX_B64_ATTR = "data-pb-formula-latex-b64"
+DRAWAI_FORMULA_BBOX_ATTR = "data-pb-formula-bbox"
 SVG_TO_PPT_UNSAFE_BACKGROUND_IDS = {
     "page_background",
     "page_bg",
@@ -90,6 +103,33 @@ SVG_NUMERIC_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 SVG_PATH_TOKEN_RE = re.compile(r"[A-Za-z]|[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 SVG_MARKER_URL_RE = re.compile(r"^url\(\s*#([^)'\"]+)\s*\)$")
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+PPTX_PRESENTATION_NAMESPACE = "http://schemas.openxmlformats.org/presentationml/2006/main"
+PPTX_DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main"
+PPTX_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PPTX_DRAWING_2010_NAMESPACE = "http://schemas.microsoft.com/office/drawing/2010/main"
+PPTX_OFFICE_MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+PPTX_MARKUP_COMPATIBILITY_NAMESPACE = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+
+ElementTree.register_namespace("p", PPTX_PRESENTATION_NAMESPACE)
+ElementTree.register_namespace("a", PPTX_DRAWING_NAMESPACE)
+ElementTree.register_namespace("r", PPTX_RELATIONSHIPS_NAMESPACE)
+ElementTree.register_namespace("a14", PPTX_DRAWING_2010_NAMESPACE)
+ElementTree.register_namespace("m", PPTX_OFFICE_MATH_NAMESPACE)
+ElementTree.register_namespace("mc", PPTX_MARKUP_COMPATIBILITY_NAMESPACE)
+
+
+@dataclass(frozen=True)
+class SvgFormulaSpec:
+    element_id: str
+    latex: str
+    bbox: tuple[float, float, float, float]
+    latex_source: str
+
+
+@dataclass(frozen=True)
+class ConvertedFormulaSpec:
+    source: SvgFormulaSpec
+    omml_xml: str
 
 
 class SvgToPptError(RuntimeError):
@@ -161,6 +201,409 @@ def _format_svg_number(value: float) -> str:
     if abs(value - round(value)) < 1e-6:
         return str(int(round(value)))
     return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def _decode_formula_latex(element: ElementTree.Element) -> tuple[str, str] | tuple[None, None]:
+    latex_b64 = element.get(DRAWAI_FORMULA_LATEX_B64_ATTR)
+    if latex_b64:
+        try:
+            return base64.b64decode(latex_b64, validate=True).decode("utf-8"), DRAWAI_FORMULA_LATEX_B64_ATTR
+        except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+            raise SvgToPptError(
+                f"Formula {DRAWAI_FORMULA_LATEX_B64_ATTR} is not valid UTF-8 base64."
+            ) from exc
+    latex = element.get(DRAWAI_FORMULA_LATEX_ATTR)
+    if latex:
+        return latex, DRAWAI_FORMULA_LATEX_ATTR
+    return None, None
+
+
+def _parse_formula_bbox(value: str | None) -> tuple[float, float, float, float] | None:
+    if not value:
+        return None
+    numbers = [float(match.group(0)) for match in SVG_NUMERIC_RE.finditer(value)]
+    if len(numbers) != 4:
+        return None
+    x, y, width, height = numbers
+    if width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
+
+
+def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpec], dict[str, Any]]:
+    source = Path(svg_path).resolve(strict=False)
+    try:
+        root = ElementTree.fromstring(source.read_text(encoding="utf-8"))
+    except ElementTree.ParseError as exc:
+        raise SvgToPptError("semantic SVG XML could not be parsed for formula extraction") from exc
+
+    specs: list[SvgFormulaSpec] = []
+    issues: list[dict[str, Any]] = []
+    candidate_count = 0
+    for index, element in enumerate(root.iter(), start=1):
+        if element.get("data-pb-role") != DRAWAI_FORMULA_ROLE:
+            continue
+        if not element.get(DRAWAI_FORMULA_LATEX_B64_ATTR) and not element.get(DRAWAI_FORMULA_LATEX_ATTR):
+            continue
+        candidate_count += 1
+        element_id = element.get("id") or f"formula_{index}"
+        try:
+            latex, latex_source = _decode_formula_latex(element)
+        except SvgToPptError as exc:
+            issues.append(
+                {
+                    "element_id": element_id,
+                    "issue_type": "formula_latex_decode_failed",
+                    "severity": "warning",
+                    "message": str(exc),
+                }
+            )
+            continue
+        bbox = _parse_formula_bbox(element.get(DRAWAI_FORMULA_BBOX_ATTR))
+        if latex is None:
+            issues.append(
+                {
+                    "element_id": element_id,
+                    "issue_type": "formula_latex_missing",
+                    "severity": "warning",
+                    "message": "Formula metadata is missing a LaTeX source attribute.",
+                }
+            )
+            continue
+        if bbox is None:
+            issues.append(
+                {
+                    "element_id": element_id,
+                    "issue_type": "formula_bbox_missing",
+                    "severity": "warning",
+                    "message": f"Formula metadata must include {DRAWAI_FORMULA_BBOX_ATTR}=\"x y width height\".",
+                }
+            )
+            continue
+        specs.append(SvgFormulaSpec(element_id=element_id, latex=latex, bbox=bbox, latex_source=latex_source or ""))
+
+    report = {
+        "candidate_count": candidate_count,
+        "convertible_count": len(specs),
+        "issues": issues,
+        "items": [
+            {
+                "element_id": spec.element_id,
+                "latex_source": spec.latex_source,
+                "bbox": list(spec.bbox),
+            }
+            for spec in specs
+        ],
+    }
+    return specs, report
+
+
+def _strip_converted_formula_elements(
+    svg_path: str | Path,
+    formulas: list[ConvertedFormulaSpec],
+) -> tuple[Path, dict[str, Any]]:
+    source = Path(svg_path).resolve(strict=False)
+    if not formulas:
+        return source, {
+            "status": "unchanged",
+            "source_svg": str(source),
+            "stripped_svg": str(source),
+            "removed_formula_ids": [],
+        }
+
+    try:
+        root = ElementTree.fromstring(source.read_text(encoding="utf-8"))
+    except ElementTree.ParseError as exc:
+        raise SvgToPptError("semantic SVG XML could not be parsed for formula stripping") from exc
+
+    target_ids = {formula.source.element_id for formula in formulas}
+    parent_by_child = {child: parent for parent in root.iter() for child in list(parent)}
+    removed_ids: list[str] = []
+    for element in list(root.iter()):
+        element_id = element.get("id")
+        if element_id not in target_ids:
+            continue
+        parent = parent_by_child.get(element)
+        if parent is None:
+            continue
+        parent.remove(element)
+        removed_ids.append(element_id)
+
+    if not removed_ids:
+        return source, {
+            "status": "unchanged",
+            "source_svg": str(source),
+            "stripped_svg": str(source),
+            "removed_formula_ids": [],
+        }
+
+    ElementTree.register_namespace("", SVG_NAMESPACE)
+    stripped = source.with_name(f"{source.stem}.formula_stripped{source.suffix}")
+    stripped.write_text(ElementTree.tostring(root, encoding="unicode"), encoding="utf-8")
+    return stripped, {
+        "status": "stripped",
+        "source_svg": str(source),
+        "stripped_svg": str(stripped),
+        "removed_formula_ids": removed_ids,
+    }
+
+
+def _extract_first_math_xml_from_pptx(pptx_path: str | Path) -> str:
+    with zipfile.ZipFile(pptx_path) as archive:
+        slide_names = sorted(
+            name for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+        )
+        for slide_name in slide_names:
+            root = ElementTree.fromstring(archive.read(slide_name))
+            for element in root.iter():
+                if element.tag == f"{{{PPTX_DRAWING_2010_NAMESPACE}}}m":
+                    return ElementTree.tostring(element, encoding="unicode")
+                if element.tag == f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}oMathPara":
+                    wrapper = ElementTree.Element(f"{{{PPTX_DRAWING_2010_NAMESPACE}}}m")
+                    wrapper.append(copy.deepcopy(element))
+                    return ElementTree.tostring(wrapper, encoding="unicode")
+    raise SvgToPptError("Pandoc PPTX output did not contain Office Math XML.")
+
+
+def _latex_to_omml(latex: str) -> str:
+    pandoc = shutil.which("pandoc")
+    if pandoc is None:
+        raise SvgToPptError("pandoc is required to convert LaTeX formulas to Office Math for PPT export.")
+
+    with tempfile.TemporaryDirectory(prefix="drawai_latex_omml_") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        markdown_path = temp_dir / "formula.md"
+        pptx_path = temp_dir / "formula.pptx"
+        markdown_path.write_text(f"$$\n{latex}\n$$\n", encoding="utf-8")
+        try:
+            subprocess.run(
+                [pandoc, "--standalone", "--slide-level=1", "-o", str(pptx_path), str(markdown_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or exc.stdout or "").strip()
+            message = "pandoc failed to convert LaTeX formula to Office Math"
+            if stderr:
+                message = f"{message}: {stderr}"
+            raise SvgToPptError(message) from exc
+        return _extract_first_math_xml_from_pptx(pptx_path)
+
+
+def _convert_formula_specs(specs: list[SvgFormulaSpec]) -> tuple[list[ConvertedFormulaSpec], list[dict[str, Any]]]:
+    converted: list[ConvertedFormulaSpec] = []
+    issues: list[dict[str, Any]] = []
+    for spec in specs:
+        try:
+            converted.append(ConvertedFormulaSpec(source=spec, omml_xml=_latex_to_omml(spec.latex)))
+        except SvgToPptError as exc:
+            issues.append(
+                {
+                    "element_id": spec.element_id,
+                    "issue_type": "formula_omml_convert_failed",
+                    "severity": "warning",
+                    "message": str(exc),
+                }
+            )
+    return converted, issues
+
+
+def _svg_viewbox(svg_path: str | Path) -> tuple[float, float, float, float]:
+    source = Path(svg_path).resolve(strict=False)
+    try:
+        root = ElementTree.fromstring(source.read_text(encoding="utf-8"))
+    except ElementTree.ParseError as exc:
+        raise SvgToPptError("semantic SVG XML could not be parsed for formula geometry") from exc
+
+    view_box = root.get("viewBox")
+    if view_box:
+        numbers = [float(match.group(0)) for match in SVG_NUMERIC_RE.finditer(view_box)]
+        if len(numbers) == 4 and numbers[2] > 0 and numbers[3] > 0:
+            return numbers[0], numbers[1], numbers[2], numbers[3]
+
+    width = _parse_svg_number(root.get("width"))
+    height = _parse_svg_number(root.get("height"))
+    if width is not None and height is not None and width > 0 and height > 0:
+        return 0.0, 0.0, width, height
+    raise SvgToPptError("Formula export requires an SVG viewBox or positive width/height.")
+
+
+def _pptx_slide_size_emu(extracted_pptx_dir: Path) -> tuple[int, int]:
+    presentation_xml = extracted_pptx_dir / "ppt" / "presentation.xml"
+    root = ElementTree.fromstring(presentation_xml.read_bytes())
+    slide_size = root.find(f".//{{{PPTX_PRESENTATION_NAMESPACE}}}sldSz")
+    if slide_size is None:
+        raise SvgToPptError("PPTX presentation.xml is missing p:sldSz.")
+    cx = int(slide_size.get("cx") or "0")
+    cy = int(slide_size.get("cy") or "0")
+    if cx <= 0 or cy <= 0:
+        raise SvgToPptError("PPTX slide size is invalid.")
+    return cx, cy
+
+
+def _formula_bbox_to_emu(
+    bbox: tuple[float, float, float, float],
+    svg_viewbox: tuple[float, float, float, float],
+    slide_size_emu: tuple[int, int],
+) -> tuple[int, int, int, int]:
+    bbox_x, bbox_y, bbox_width, bbox_height = bbox
+    view_x, view_y, view_width, view_height = svg_viewbox
+    slide_width, slide_height = slide_size_emu
+    return (
+        round(((bbox_x - view_x) / view_width) * slide_width),
+        round(((bbox_y - view_y) / view_height) * slide_height),
+        max(1, round((bbox_width / view_width) * slide_width)),
+        max(1, round((bbox_height / view_height) * slide_height)),
+    )
+
+
+def _next_pptx_shape_id(slide_root: ElementTree.Element) -> int:
+    max_id = 0
+    for element in slide_root.iter(f"{{{PPTX_PRESENTATION_NAMESPACE}}}cNvPr"):
+        value = element.get("id")
+        if value and value.isdigit():
+            max_id = max(max_id, int(value))
+    return max_id + 1
+
+
+def _office_math_element(omml_xml: str) -> ElementTree.Element:
+    element = ElementTree.fromstring(omml_xml)
+    if element.tag == f"{{{PPTX_DRAWING_2010_NAMESPACE}}}m":
+        return element
+    if element.tag == f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}oMathPara":
+        wrapper = ElementTree.Element(f"{{{PPTX_DRAWING_2010_NAMESPACE}}}m")
+        wrapper.append(element)
+        return wrapper
+    raise SvgToPptError("Formula converter returned XML without an a14:m or m:oMathPara root.")
+
+
+def _append_office_math_shape(
+    slide_root: ElementTree.Element,
+    formula: ConvertedFormulaSpec,
+    shape_id: int,
+    geometry_emu: tuple[int, int, int, int],
+) -> None:
+    x, y, width, height = geometry_emu
+    sp_tree = slide_root.find(f".//{{{PPTX_PRESENTATION_NAMESPACE}}}spTree")
+    if sp_tree is None:
+        raise SvgToPptError("PPTX slide XML is missing p:spTree.")
+
+    alternate_content = ElementTree.Element(f"{{{PPTX_MARKUP_COMPATIBILITY_NAMESPACE}}}AlternateContent")
+    choice = ElementTree.SubElement(
+        alternate_content,
+        f"{{{PPTX_MARKUP_COMPATIBILITY_NAMESPACE}}}Choice",
+        {"Requires": "a14"},
+    )
+    sp = ElementTree.SubElement(choice, f"{{{PPTX_PRESENTATION_NAMESPACE}}}sp")
+    nv_sp_pr = ElementTree.SubElement(sp, f"{{{PPTX_PRESENTATION_NAMESPACE}}}nvSpPr")
+    ElementTree.SubElement(
+        nv_sp_pr,
+        f"{{{PPTX_PRESENTATION_NAMESPACE}}}cNvPr",
+        {"id": str(shape_id), "name": f"DrawAI formula {formula.source.element_id}"},
+    )
+    ElementTree.SubElement(nv_sp_pr, f"{{{PPTX_PRESENTATION_NAMESPACE}}}cNvSpPr", {"txBox": "1"})
+    ElementTree.SubElement(nv_sp_pr, f"{{{PPTX_PRESENTATION_NAMESPACE}}}nvPr")
+
+    sp_pr = ElementTree.SubElement(sp, f"{{{PPTX_PRESENTATION_NAMESPACE}}}spPr")
+    xfrm = ElementTree.SubElement(sp_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}xfrm")
+    ElementTree.SubElement(xfrm, f"{{{PPTX_DRAWING_NAMESPACE}}}off", {"x": str(x), "y": str(y)})
+    ElementTree.SubElement(xfrm, f"{{{PPTX_DRAWING_NAMESPACE}}}ext", {"cx": str(width), "cy": str(height)})
+    prst_geom = ElementTree.SubElement(sp_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}prstGeom", {"prst": "rect"})
+    ElementTree.SubElement(prst_geom, f"{{{PPTX_DRAWING_NAMESPACE}}}avLst")
+    ElementTree.SubElement(sp_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}noFill")
+    line = ElementTree.SubElement(sp_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}ln")
+    ElementTree.SubElement(line, f"{{{PPTX_DRAWING_NAMESPACE}}}noFill")
+
+    tx_body = ElementTree.SubElement(sp, f"{{{PPTX_PRESENTATION_NAMESPACE}}}txBody")
+    body_pr = ElementTree.SubElement(
+        tx_body,
+        f"{{{PPTX_DRAWING_NAMESPACE}}}bodyPr",
+        {"wrap": "none", "anchor": "ctr", "rtlCol": "0"},
+    )
+    ElementTree.SubElement(body_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}spAutoFit")
+    ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}lstStyle")
+    paragraph = ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}p")
+    ElementTree.SubElement(paragraph, f"{{{PPTX_DRAWING_NAMESPACE}}}pPr", {"algn": "ctr"})
+    paragraph.append(_office_math_element(formula.omml_xml))
+    sp_tree.append(alternate_content)
+
+
+def _rewrite_pptx_zip(extracted_pptx_dir: Path, target_pptx: Path) -> None:
+    patched_pptx = target_pptx.with_suffix(".formula_patch.pptx")
+    with zipfile.ZipFile(patched_pptx, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(extracted_pptx_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(extracted_pptx_dir).as_posix())
+    patched_pptx.replace(target_pptx)
+
+
+def _inject_office_math_formulas(
+    pptx_path: str | Path,
+    svg_path: str | Path,
+    formulas: list[ConvertedFormulaSpec],
+) -> dict[str, Any]:
+    if not formulas:
+        return {"status": "skipped", "inserted": 0, "items": []}
+
+    target = Path(pptx_path).resolve(strict=False)
+    svg_viewbox = _svg_viewbox(svg_path)
+    with tempfile.TemporaryDirectory(prefix="drawai_pptx_formula_") as temp_dir_name:
+        extracted = Path(temp_dir_name) / "pptx"
+        with zipfile.ZipFile(target) as archive:
+            archive.extractall(extracted)
+
+        slide_xml_path = extracted / "ppt" / "slides" / "slide1.xml"
+        slide_root = ElementTree.fromstring(slide_xml_path.read_bytes())
+        slide_size = _pptx_slide_size_emu(extracted)
+        shape_id = _next_pptx_shape_id(slide_root)
+        items: list[dict[str, Any]] = []
+        for offset, formula in enumerate(formulas):
+            geometry = _formula_bbox_to_emu(formula.source.bbox, svg_viewbox, slide_size)
+            _append_office_math_shape(slide_root, formula, shape_id + offset, geometry)
+            items.append(
+                {
+                    "element_id": formula.source.element_id,
+                    "shape_id": shape_id + offset,
+                    "bbox": list(formula.source.bbox),
+                    "geometry_emu": list(geometry),
+                }
+            )
+
+        slide_xml_path.write_text(ElementTree.tostring(slide_root, encoding="unicode"), encoding="utf-8")
+        _rewrite_pptx_zip(extracted, target)
+
+    return {"status": "ok", "inserted": len(formulas), "items": items}
+
+
+def _prepare_formula_export(svg_path: str | Path) -> tuple[Path, list[ConvertedFormulaSpec], dict[str, Any]]:
+    source = Path(svg_path).resolve(strict=False)
+    specs, collection_report = _collect_svg_formula_specs(source)
+    converted, conversion_issues = _convert_formula_specs(specs)
+    stripped_svg, strip_report = _strip_converted_formula_elements(source, converted)
+
+    total = collection_report["candidate_count"]
+    converted_count = len(converted)
+    fallback_count = total - converted_count
+    if total == 0:
+        status = "not_found"
+    elif fallback_count == 0:
+        status = "ok"
+    elif converted_count:
+        status = "partial"
+    else:
+        status = "fallback"
+
+    report = {
+        "status": status,
+        "count": total,
+        "converted": converted_count,
+        "fallback": fallback_count,
+        "collection": collection_report,
+        "conversion_issues": conversion_issues,
+        "strip": strip_report,
+    }
+    return stripped_svg, converted, report
 
 
 def _normalize_tspan_dy_positions_for_svg_to_ppt(svg_text: str) -> tuple[str, list[dict[str, Any]]]:
@@ -994,7 +1437,8 @@ class SvgToPptCompiler:
         if not source_svg.exists():
             raise SvgToPptError(f"semantic SVG does not exist: {source_svg}")
 
-        prepared_svg, svg_input_report = prepare_svg_for_ppt_input(source_svg)
+        formula_source_svg, converted_formulas, formula_export_report = _prepare_formula_export(source_svg)
+        prepared_svg, svg_input_report = prepare_svg_for_ppt_input(formula_source_svg)
         trace_path = final_pptx.with_suffix(".trace.json")
 
         final_pptx.parent.mkdir(parents=True, exist_ok=True)
@@ -1028,6 +1472,7 @@ class SvgToPptCompiler:
                 "source_svg": str(source_svg),
                 "prepared_svg": str(prepared_svg),
                 "svg_input": svg_input_report,
+                "formula_export": formula_export_report,
                 "output_pptx": str(final_pptx),
                 "conversion_trace_path": str(trace_path),
                 "issues": [
@@ -1042,15 +1487,22 @@ class SvgToPptCompiler:
                 _write_json(report_target, report)
             raise SvgToPptError(message)
 
+        formula_injection_report = _inject_office_math_formulas(final_pptx, source_svg, converted_formulas)
+        formula_export_report["injection"] = formula_injection_report
         pptx_structure = inspect_pptx_structure(final_pptx)
         report = {
             "status": "ok",
             "backend": DRAWAI_NATIVE_SHAPES_BACKEND,
-            "editable_surface": "native_shapes",
+            "editable_surface": (
+                SVG_TO_PPT_EXPORT_MODE_NATIVE_SHAPES_WITH_OFFICE_MATH
+                if converted_formulas
+                else SVG_TO_PPT_EXPORT_MODE_NATIVE_SHAPES
+            ),
             **self._export_mode_report_fields(),
             "source_svg": str(source_svg),
             "prepared_svg": str(prepared_svg),
             "svg_input": svg_input_report,
+            "formula_export": formula_export_report,
             "output_pptx": str(final_pptx),
             "conversion_trace_path": str(trace_path),
             "pptx_structure": pptx_structure,

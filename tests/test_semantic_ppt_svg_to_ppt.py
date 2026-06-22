@@ -1,6 +1,9 @@
+import base64
+import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+import drawai.svg_to_ppt as svg_to_ppt
 from drawai.svg_to_ppt import SvgToPptCompiler, prepare_svg_for_ppt_input
 
 
@@ -228,3 +231,56 @@ def test_svg_to_ppt_compiler_uses_native_shape_converter(tmp_path):
     assert report["pptx_structure"]["slide_count"] == 1
     assert not report["pptx_structure"]["is_single_screenshot_like"]
     assert Path(report["conversion_trace_path"]).exists()
+
+
+def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_path, monkeypatch):
+    latex = r"\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}"
+    latex_b64 = base64.b64encode(latex.encode("utf-8")).decode("ascii")
+    source = tmp_path / "semantic.svg"
+    source.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect x="0" y="0" width="640" height="360" fill="#ffffff"/>
+  <g id="formula-gaussian" data-pb-role="formula" data-pb-editable="true"
+     data-pb-formula-latex-b64="{latex_b64}" data-pb-formula-bbox="170 130 300 70">
+    <text x="170" y="176" font-size="28" fill="#111827" data-pb-role="formula"
+          data-pb-editable="true" data-pb-text-source="model_inferred"
+          data-pb-orientation="horizontal">SVG fallback formula only</text>
+  </g>
+  <text x="42" y="72" font-size="24" fill="#111827">Gaussian integral</text>
+</svg>""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "semantic.pptx"
+    report_path = tmp_path / "svg_to_ppt_report.json"
+    converted_latex: list[str] = []
+
+    def fake_latex_to_omml(value: str) -> str:
+        converted_latex.append(value)
+        return (
+            '<a14:m xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">'
+            '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">'
+            "<m:oMath><m:r><m:t>converted office math</m:t></m:r></m:oMath>"
+            "</m:oMathPara>"
+            "</a14:m>"
+        )
+
+    monkeypatch.setattr(svg_to_ppt, "_latex_to_omml", fake_latex_to_omml)
+
+    report = SvgToPptCompiler().compile(svg_path=source, output_path=output, report_path=report_path)
+
+    assert converted_latex == [latex]
+    assert report["editable_surface"] == "native_shapes+office_math"
+    assert report["formula_export"]["status"] == "ok"
+    assert report["formula_export"]["count"] == 1
+    assert report["formula_export"]["converted"] == 1
+    assert report["formula_export"]["fallback"] == 0
+    stripped_svg = Path(report["prepared_svg"])
+    assert stripped_svg.exists()
+    assert "SVG fallback formula only" not in stripped_svg.read_text(encoding="utf-8")
+
+    with zipfile.ZipFile(output) as archive:
+        slide_xml = archive.read("ppt/slides/slide1.xml").decode("utf-8")
+    assert "<mc:AlternateContent" in slide_xml
+    assert "<m:oMathPara" in slide_xml
+    assert "converted office math" in slide_xml
+    assert "SVG fallback formula only" not in slide_xml

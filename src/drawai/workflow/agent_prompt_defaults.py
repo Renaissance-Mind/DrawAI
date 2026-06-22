@@ -249,7 +249,9 @@ Target the DrawAI Scientific SVG Profile v1 for editable PPT conversion. Treat t
 - Prefer orthogonal connector geometry when the source uses horizontal/vertical flows. Route connectors to module edges and avoid crossing text or panel centers.
 - Filled or thick block arrows should be one closed shape. Thin connectors should keep shaft and arrowhead together after SVG-to-PPT conversion.
 - Render connector arrows after background panels/modules and before raster image assets.
-- Preserve editable text with text/tspan. Represent formulas with Unicode math characters and tspan superscript/subscript instead of LaTeX source or formula screenshots.
+- Preserve editable text with text/tspan. For formulas, render a visible SVG fallback with Unicode math characters and tspan superscript/subscript, and also keep the original LaTeX source on the formula group for PPT export.
+- Formula groups must use data-pb-role="formula", data-pb-editable="true", a stable id, data-pb-formula-bbox="x y width height" in SVG viewBox coordinates, and data-pb-formula-latex-b64 with UTF-8 base64 LaTeX. Use data-pb-formula-latex only when the LaTeX is fully XML-escaped.
+- Do not display raw LaTeX in the visible SVG text layer. The visible layer is only the SVG fallback; svg_to_ppt reads the hidden LaTeX metadata and exports it as editable Office Math when possible.
 - Mark non-editable raster assets with data-pb-editable=\"false\" and editable vectors/text with data-pb-editable=\"true\".
 
 FINAL CHECK BEFORE ENDING THIS RUN
