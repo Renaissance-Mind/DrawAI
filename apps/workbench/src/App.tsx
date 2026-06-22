@@ -436,6 +436,32 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [activeBatch?.batch.batch_id, activeCase?.case.case_id, runCompatibility, selectedV2ElementId]);
 
+  useEffect(() => {
+    if (activeView !== "nodeArtifact" || !nodeArtifactViewer) return;
+    const nodeRunStatus = String(nodeArtifactViewer.node_run?.status || "");
+    if (nodeRunStatus !== "running") return;
+    let canceled = false;
+    const refreshViewer = async () => {
+      try {
+        const viewer = await getWorkflowNodeViewer(nodeArtifactViewer.case_id, nodeArtifactViewer.node_id);
+        if (!canceled) setNodeArtifactViewer(viewer);
+      } catch (err) {
+        if (!canceled) setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    const timer = window.setInterval(refreshViewer, 2500);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeView,
+    nodeArtifactViewer?.case_id,
+    nodeArtifactViewer?.node_id,
+    nodeArtifactViewer?.attempt_id,
+    nodeArtifactViewer?.node_run?.status
+  ]);
+
   const activeAssetPlan = activeCase && assetPlan?.case_id === activeCase.case.case_id ? assetPlan : null;
   const activeRunPackage = activeCase && runPackage?.run_id === activeCase.case.case_id ? runPackage : null;
   const legacyReadOnly = runCompatibility === "legacy_readonly";
@@ -1717,6 +1743,19 @@ function WorkflowNodeArtifactWorkspace({
     [viewer.elements, elementFilter, viewer.kind]
   );
   const fileLinks = viewer.files.filter((file) => file.exists && file.url);
+  const agentLogs = viewer.agent_logs || {
+    files: [],
+    trace_events: [],
+    session_summary: {},
+    session_events: [],
+    runtime_log_tail: []
+  };
+  const agentLogLinks = agentLogs.files.filter((file) => file.exists && file.url);
+  const agentLogItems = [
+    ...agentLogs.trace_events.map((item) => ({ source: "trace", item })),
+    ...agentLogs.session_events.map((item) => ({ source: "session", item })),
+    ...agentLogs.runtime_log_tail.map((item) => ({ source: "runtime", item }))
+  ].slice(-12);
 
   const changeZoom = useCallback((delta: number) => {
     setZoom((value) => clamp(Number((value + delta).toFixed(2)), 0.25, 2.5));
@@ -1824,9 +1863,41 @@ function WorkflowNodeArtifactWorkspace({
             </a>
           ))}
         </div>
+        {(agentLogItems.length > 0 || agentLogLinks.length > 0) && (
+          <section className="node-agent-log-panel" aria-label="Agent 执行日志">
+            <header>
+              <span>Agent log</span>
+              {agentLogLinks.slice(0, 6).map((file) => (
+                <a key={file.relative_path} href={file.url} target="_blank" rel="noreferrer">
+                  {file.label}
+                </a>
+              ))}
+            </header>
+            <div className="node-agent-log-list">
+              {agentLogItems.length > 0 ? (
+                agentLogItems.map((entry, index) => (
+                  <pre key={`${entry.source}-${index}`}>{agentLogEntryText(entry.source, entry.item)}</pre>
+                ))
+              ) : (
+                <span>日志文件已生成，等待事件写入。</span>
+              )}
+            </div>
+          </section>
+        )}
       </main>
     </>
   );
+}
+
+function agentLogEntryText(source: string, item: Record<string, unknown>): string {
+  const kind = stringField(item, "type") || stringField(item, "kind") || stringField(item, "level") || source;
+  const summary = stringField(item, "summary") || stringField(item, "message") || JSON.stringify(item);
+  return `[${source}] ${kind}: ${summary}`;
+}
+
+function stringField(item: Record<string, unknown>, key: string): string {
+  const value = item[key];
+  return typeof value === "string" ? value : "";
 }
 
 function LegacyReadOnlyBanner({

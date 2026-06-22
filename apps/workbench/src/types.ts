@@ -216,6 +216,13 @@ export interface WorkflowNodeViewer {
   node_run: Record<string, unknown> | null;
   input_manifest: Record<string, unknown> | null;
   files: CaseProgressFile[];
+  agent_logs: {
+    files: CaseProgressFile[];
+    trace_events: Array<Record<string, unknown>>;
+    session_summary: Record<string, unknown>;
+    session_events: Array<Record<string, unknown>>;
+    runtime_log_tail: Array<Record<string, unknown>>;
+  };
   elements: V2ElementPlan[];
 }
 

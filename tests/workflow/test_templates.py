@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
+from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, SVG_AGENT_TIMEOUT_SECONDS
 from drawai.workflow.templates import (
     copy_builtin_template_to_workspace,
     copy_builtin_template,
@@ -87,7 +88,17 @@ def test_default_template_uses_pagespec_processor_formats() -> None:
     assert nodes["svg_compose"].node_type == "agent"
     assert nodes["svg_compose"].inputs[1].types == ("page_spec",)
     assert nodes["svg_compose"].outputs[0].formats == ("drawai.semantic_svg.v1",)
-    assert nodes["svg_compose"].outputs[0].description == "deliverable"
+    assert nodes["svg_compose"].outputs[0].description.startswith("deliverable;")
+    assert "Materialized PageSpec" in nodes["svg_compose"].inputs[1].description
+    assert "crop_nobg" in nodes["page_spec_refine"].inputs[0].description
+
+
+def test_default_template_gives_svg_compose_longer_timeout() -> None:
+    template = default_drawai_workflow_template()
+    nodes = {node.node_id: node for node in template.nodes}
+
+    assert nodes["page_spec_refine"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
+    assert nodes["svg_compose"].config["timeout_seconds"] == SVG_AGENT_TIMEOUT_SECONDS
 
 
 def test_default_template_routes_svg_and_pptx_into_output() -> None:

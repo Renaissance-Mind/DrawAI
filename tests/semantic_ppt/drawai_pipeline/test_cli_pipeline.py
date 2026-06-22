@@ -1803,15 +1803,15 @@ v2:
     assert "AVAILABLE FILES AND READING LOGIC" in prompt_text
     assert "OVERALL DRAWAI PIPELINE" in prompt_text
     assert "RUN1 / COMPLETE FIRST PASS" in prompt_text
-    assert "REFINE LOOP / MAX 3 ROUNDS" in prompt_text
+    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in prompt_text
     assert "Run 2 / visual_review_text_style" not in prompt_text
     assert "Run 3 / ir_refine" not in prompt_text
     assert "semantic_0.svg" in prompt_text
-    assert "semantic_3.svg" in prompt_text
+    assert "semantic_2.svg" in prompt_text
     assert "rendered_0.png" in prompt_text
     assert "iteration_log.md" in prompt_text
-    assert "The whole-figure render is perfectly close to the original" in prompt_text
-    assert "Another round is likely to make the figure better" in prompt_text
+    assert "Finalization has higher priority than another refinement round" in prompt_text
+    assert "Do not run a third refinement round" in prompt_text
     assert "FINAL CHECK BEFORE ENDING THIS TURN" in prompt_text
     assert "MUST READ FILES" not in prompt_text
     assert "WORKSPACE RULES" not in prompt_text
@@ -1820,7 +1820,7 @@ v2:
     assert "Attempt feedback JSON" not in calls[0]["prompt"]
     assert "Attempt feedback source" in calls[0]["prompt"]
     assert "RUN1 / COMPLETE FIRST PASS" in calls[0]["prompt"]
-    assert "REFINE LOOP / MAX 3 ROUNDS" in calls[0]["prompt"]
+    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in calls[0]["prompt"]
     assert "Run1 and every refine round may use allowed local raster image hrefs" in calls[0]["prompt"]
     assert "Current template SVG to refine:\n<svg" not in calls[0]["prompt"]
     assert "Validated visual template SVG from stage 1:\n<svg" not in calls[0]["prompt"]

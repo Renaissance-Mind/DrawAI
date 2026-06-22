@@ -107,12 +107,18 @@ def test_finish_node_run_ok_records_outputs(tmp_path: Path) -> None:
         prompt_path="prompt.md",
         stdout_path="stdout.log",
         stderr_path="stderr.log",
+        trace_path="trace.jsonl",
+        session_log_path="codex_session_log",
+        execution_manifest_path="agent_execution.json",
     )
 
     payload = _read_json(record.workdir / "node_run.json")
     assert payload["status"] == "ok"
     assert payload["outputs"][0]["format_id"] == "drawai.semantic_svg.v1"
     assert payload["prompt_path"] == "prompt.md"
+    assert payload["trace_path"] == "trace.jsonl"
+    assert payload["session_log_path"] == "codex_session_log"
+    assert payload["execution_manifest_path"] == "agent_execution.json"
     assert payload["ended_at"]
     assert payload["duration_ms"] >= 0
 

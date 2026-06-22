@@ -138,6 +138,7 @@ const BUILTIN_WORKFLOW_FOLDER_ID = "builtin";
 const CUSTOM_WORKFLOW_FOLDER_ID = "custom";
 const WORKFLOW_FOLDERS_STORAGE_KEY = "drawai.workflow.folders";
 const DEFAULT_AGENT_TIMEOUT_SECONDS = 1800;
+const SVG_AGENT_TIMEOUT_SECONDS = 7200;
 const DEFAULT_WORKFLOW_FOLDERS: WorkflowFolder[] = [
   { folder_id: BUILTIN_WORKFLOW_FOLDER_ID, name: "DrawAI默认工作流", builtin: true },
   { folder_id: CUSTOM_WORKFLOW_FOLDER_ID, name: "自定义工作流" }
@@ -145,13 +146,17 @@ const DEFAULT_WORKFLOW_FOLDERS: WorkflowFolder[] = [
 const AGENT_DEFAULT_TASKS: Record<string, string> = {
   page_spec_refine: `DrawAI PageSpec refinement task.
 
-You are operating on one page. The connected PageSpec is the only structured page model for this node; do not convert it into element candidates, element plans, run packages, BoxIR, layout IR, or analysis JSON.
+You are operating on one page. The connected PageSpec is the only structured page model for this node. The refined PageSpec elements array is the handoff to every downstream node.
 
-Goal: read the original page image and connected drawai.page_spec.v1 file, then write a refined drawai.page_spec.v1 file to the declared output path.
+Goal: read the original page image and the connected drawai.page_spec.v1 file, then write a refined drawai.page_spec.v1 file to the declared output path.
+
+Do not inspect DrawAI repository source code, import internal DrawAI modules, or call internal Python APIs to learn schema behavior. Use the declared DrawAI CLI tools, especially format describe and format validate, for format contracts and validation.
 
 Refine elements directly in PageSpec: adjust bbox, kind, role, z_index, text, style, measurement, build.mode, build.processing_type, build.asset_id, grouping, and source_refs when the image requires it. Split combined boxes, add missing visual elements, and delete duplicates/noise by removing them from elements.
 
-For retained or new elements, set build.processing_type to svg_self_draw, crop, crop_nobg, or chart_rebuild_reserved. Put provenance and refine audit notes on elements and metadata.refine_changes; the elements array is the source of truth.`,
+For retained or new elements, set build.processing_type to svg_self_draw, crop, crop_nobg, or chart_rebuild_reserved. Use crop for rectangular raster material whose background must stay attached. Use crop_nobg for separable foreground objects that should sit on reconstructed SVG background after background removal.
+
+Preserve stable ids: keep retained/adjusted ids, do not globally renumber, use new ids only for added/split children, and record changes in metadata.refine_changes. Before finishing, validate the declared output with the DrawAI format tool.`,
   svg_generation: `IMAGE VECTORIZATION TASK
 Goal: convert one bitmap figure into an editable, PPT-stable SVG.
 
@@ -160,13 +165,20 @@ OVERALL DRAWAI PIPELINE
 2. PageSpec refinement and asset preparation: refine elements and materialize crop/crop_nobg outputs into element.materialization in the PageSpec bundle.
 3. Image editabilization: reconstruct the whole figure as editable SVG/PPT by combining SVG primitives/text with allowed raster crop assets.
 
-The current Agent node executes stage 3 only. Do not redo stage 1 or stage 2. Use the connected materialized PageSpec and original image as evidence. Use DrawAI page-spec-assets to compute allowed raster hrefs and svg-validate to render/validate each SVG.
+The current Agent node executes stage 3 only. Do not redo parsing, refinement, or asset preparation. Use the original image as visual truth. If the connected input list includes no PageSpec, treat this as the direct-image path from the start. When a materialized PageSpec input is connected, use it as the structured plan and use only its element.materialization outputs as raster asset sources.
+
+You may use ordinary shell utilities or short local scripts to inspect connected files and write node-local outputs. For DrawAI-specific behavior, do not inspect repository source code, import internal DrawAI modules, or call internal Python APIs; use only the declared DrawAI CLI tools and their help / format describe contracts.
 
 Primary reading order:
-1. Original/current reference image and materialized PageSpec.
-2. PageSpec materialization via page-spec-assets --svg-dir svg before inserting any raster href.
-3. OCR only when text details need help.
-4. SVG template IR or layout IR only as fallback hints.
+1. Original/current reference image and connected materialized PageSpec when present.
+2. When a PageSpec input is connected, compute PageSpec materialization hrefs via page-spec-assets --svg-dir svg before inserting any raster href. In image-only runs, skip this step entirely.
+3. Do not look for unconnected OCR, template, layout, request, or parser files.
+
+Path model:
+- The declared SVG output is the downstream semantic output.
+- In PageSpec-connected runs, write auxiliary semantic_0.svg/rendered_0.png/validation_report_0.json, semantic_1.svg/rendered_1.png/validation_report_1.json, optional semantic_2.svg/rendered_2.png/validation_report_2.json, rendered.png, validation_report_final.json, iteration_log.md, and iteration_log.jsonl inside the same node output directory.
+- In image-only runs, write semantic_0.svg, semantic_1.svg when a refinement round is used, optional semantic_2.svg only when validation failed, semantic.svg, validation_report_final.json, iteration_log.md, and iteration_log.jsonl. rendered*.png files are optional in image-only runs.
+- DrawAI mirrors the declared final SVG to svg/semantic.svg after the node succeeds. When a PageSpec input is connected, compute PageSpec asset hrefs with page-spec-assets --svg-dir svg and validate PageSpec-connected SVGs with svg-validate --href-base-dir svg. In image-only runs, skip PageSpec asset hrefs entirely.
 
 SOURCE POLICY
 - svg_self_draw: editable SVG primitives/text for text, formulas, arrows, frames, tables, axes, borders, simple charts, simple icons, and simple diagram components.
@@ -183,23 +195,23 @@ RUN1 / COMPLETE FIRST PASS
 - Use SVG/text for svg_self_draw elements.
 - Use PageSpec materialization image hrefs for crop/crop_nobg elements when available.
 - Preserve refined bboxes unless visible evidence shows they need adjustment.
-- Render/validate semantic_0.svg to rendered_0.png and validation_report_0.json with svg-validate --href-base-dir svg.
+- In PageSpec-connected runs, render/validate semantic_0.svg to rendered_0.png and validation_report_0.json with svg-validate --href-base-dir svg.
 - Record Run1 in iteration_log.md and iteration_log.jsonl.
 
-REFINE LOOP / MAX 3 ROUNDS
-At each round, render the latest SVG, compare against the original image, inspect whole figure first then local regions, and fix the highest-impact issues. Consider layout mismatch, text mismatch, connector/arrow mismatch, shape/table/axis mismatch, asset source mismatch, editability regression, PPT stability issues, and validator issues.
+REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS
+At each round, render the latest SVG with svg-validate when a PageSpec input is connected. In image-only runs, render only if a renderer is available through declared tools; otherwise inspect the SVG structure and compare against the original image directly. Inspect whole figure first then local regions, and fix the highest-impact issues. Default to one refinement round, skip it only when Run1 is already acceptable, and run a second round only for validator failures or a clearly blocking structure issue.
 
 Round outputs:
-- Round 1 writes semantic_1.svg, rendered_1.png, validation_report_1.json.
-- Round 2 writes semantic_2.svg, rendered_2.png, validation_report_2.json.
-- Round 3 writes semantic_3.svg, rendered_3.png, validation_report_3.json.
+- In PageSpec-connected runs, Round 1 writes semantic_1.svg, rendered_1.png, and validation_report_1.json.
+- In PageSpec-connected runs, optional Round 2 writes semantic_2.svg, rendered_2.png, and validation_report_2.json.
+- In image-only runs, Round 1 writes semantic_1.svg when used, and optional Round 2 writes semantic_2.svg only when validation failed. Rendered PNGs and per-round validation reports are optional in image-only runs; validation_report_final.json remains required.
 
-Stop before 3 rounds only when the render is close enough, editable structures remain editable, crop/crop_nobg regions use allowed sources, validation is ok, and another round is unlikely to help.
+Stop after Run1 or Round 1 when validation is ok, the render is coherent, editable structures remain editable, crop/crop_nobg regions use allowed sources, and another round would only improve minor details.
 
 FINALIZATION
 - Choose the latest acceptable SVG as final.
 - Write semantic.svg and the declared SVG output.
-- Render/validate semantic.svg to rendered.png and validation_report_final.json with svg-validate --href-base-dir svg.
+- In PageSpec-connected runs, render/validate semantic.svg to rendered.png and validation_report_final.json with svg-validate --href-base-dir svg. In image-only runs, validate the declared SVG with the format tool and record the result in validation_report_final.json.
 - Write iteration_log.md and iteration_log.jsonl.
 
 OVERALL SVG/PPT PROFILE
@@ -211,18 +223,19 @@ This is a configurable DrawAI Agent node. The node editor controls the task, inp
 const AGENT_DEFAULT_CONSTRAINTS: Record<string, string[]> = {
   page_spec_refine: [
     "Use only connected input files listed in this prompt and declared DrawAI tools.",
-    "Do not convert to or write legacy element candidates, element plans, run packages, BoxIR, layout IR, or element analysis.",
+    "Do not inspect repository source code, import internal DrawAI modules, or call internal DrawAI APIs; use declared DrawAI CLI tools for schema/tool contracts.",
     "Do not render final SVG/PPT. This node only refines one PageSpec page.",
     "Deleted elements must be absent from the output elements array; record deletion only in metadata.refine_changes.",
     "Write the declared PageSpec output exactly as UTF-8 JSON."
   ],
   svg_generation: [
     "Use only connected input files listed in this prompt and declared DrawAI tools.",
-    "Do not redo parsing or PageSpec refinement; consume the connected materialized PageSpec and original image as evidence.",
+    "Do not inspect repository source code, import internal DrawAI modules, or call internal DrawAI APIs; use declared DrawAI CLI tools for DrawAI-specific behavior.",
+    "Do not redo parsing or PageSpec refinement; consume the connected materialized PageSpec when present and the original image as evidence.",
     "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
     "Do not invent image hrefs, external URLs, file:// URLs, absolute paths, or base64 images.",
     "Do not rasterize panels, arrows, text, formulas, grids, tables, axes, or whole diagram structure.",
-    "Write the declared SVG/render/log outputs exactly and keep the final chat response short."
+    "Write the declared final SVG plus task-requested auxiliary render/report/log files inside this node output directory and keep the final chat response short."
   ],
   custom_agent: [
     "Treat every connected input file as explicit node context.",
@@ -304,7 +317,7 @@ const NODE_PRESETS: NodePreset[] = [
     config: {
       preset_id: "svg_generation",
       provider_id: "codex_sdk",
-      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+      timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,
       constraints: AGENT_DEFAULT_CONSTRAINTS.svg_generation,
       drawai_tools: ["format", "page-spec-assets", "svg-validate"],
@@ -434,7 +447,7 @@ const NODE_PRESETS: NodePreset[] = [
     config: {
       preset_id: "svg_generation",
       provider_id: "codex_sdk",
-      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+      timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,
       constraints: AGENT_DEFAULT_CONSTRAINTS.svg_generation,
       drawai_tools: ["format", "page-spec-assets", "svg-validate"],
@@ -2397,7 +2410,7 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
   lines.push(
     "",
     "## Declared Output Files",
-    "Write exactly these files. The Agent cwd is the workflow run root, so use the run-root path when creating outputs."
+    "Write each declared output exactly; these are the semantic files consumed by downstream nodes. The Agent cwd is the workflow run root, so use the run-root path when creating outputs. When the task explicitly asks for render/report/log helper files, keep those auxiliary files inside the current node output directory."
   );
   outputs.forEach((output) => {
     const finalPath = outputPathFromRunRoot(node.node_id, output.path);
@@ -2433,12 +2446,13 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
     });
   }
 
-  const tools = agentDrawAITools(node);
+  const tools = agentDrawAIToolsForInputs(agentDrawAITools(node), selectedInputs);
   if (tools.length > 0) {
     lines.push(
       "",
       "## DrawAI Tools",
       "Use only the DrawAI tools listed here. They are CLI product interfaces, not direct Python function calls.",
+      "For DrawAI-specific behavior, use this CLI surface and the tool help/format contracts; do not inspect repository source code or import internal DrawAI modules.",
       "Exact command prefix from the Agent cwd: `<drawai_tool_command_prefix>`",
       "Run `<command prefix> help <tool_id>` for the full contract of a tool before using unfamiliar parameters."
     );
@@ -2484,6 +2498,12 @@ function agentDrawAITools(node: WorkflowNode): string[] {
     });
   }
   return orderedUnique(tools);
+}
+
+function agentDrawAIToolsForInputs(tools: string[], inputs: AgentInputPreview[]): string[] {
+  const hasPageSpec = inputs.some((input) => input.type === "page_spec" || input.format_id === "drawai.page_spec.v1");
+  if (hasPageSpec) return tools;
+  return tools.filter((toolId) => toolId !== "page-spec-assets" && toolId !== "svg-validate");
 }
 
 function agentDrawAIToolsText(node: WorkflowNode): string {

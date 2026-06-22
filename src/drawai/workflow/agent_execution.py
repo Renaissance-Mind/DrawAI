@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -12,6 +13,9 @@ from typing import Any
 
 from drawai.codex_cli import resolve_codex_executable
 from drawai.codex_python_sdk_svg import (
+    CODEX_SESSION_LOG_DIRS,
+    CODEX_SESSION_LOG_FILES,
+    CODEX_RUNTIME_EVENT_TAIL_FILE,
     _archive_codex_session_logs,
     _codex_sdk_env,
     _isolated_codex_home,
@@ -19,6 +23,7 @@ from drawai.codex_python_sdk_svg import (
     _normalize_codex_model_name,
     _normalize_codex_reasoning_effort,
     _run_thread_with_timeout,
+    _write_codex_runtime_log_tail,
     controlled_codex_config_overrides,
 )
 
@@ -54,12 +59,18 @@ class AgentExecutionError(RuntimeError):
         prompt_path: Path | None = None,
         stdout_path: Path | None = None,
         stderr_path: Path | None = None,
+        trace_path: Path | None = None,
+        session_log_path: Path | None = None,
+        execution_manifest_path: Path | None = None,
         exit_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.prompt_path = prompt_path
         self.stdout_path = stdout_path
         self.stderr_path = stderr_path
+        self.trace_path = trace_path
+        self.session_log_path = session_log_path
+        self.execution_manifest_path = execution_manifest_path
         self.exit_code = exit_code
 
 
@@ -154,16 +165,30 @@ def _execute_codex_sdk_agent(
                             "timeout_seconds": timeout_seconds,
                         },
                     )
-                    result = _run_thread_with_timeout(
-                        thread,
-                        codex_inputs,
-                        timeout_seconds=timeout_seconds,
-                        approval_mode=sdk.ApprovalMode.deny_all,
-                        cwd=str(_agent_cwd(request)),
-                        effort=reasoning_effort,
-                        model=model_name,
-                        sandbox=sdk.Sandbox.full_access,
+                    mirror_stop, mirror_thread = _start_codex_session_log_mirror(
+                        prepared_codex_home.codex_home,
+                        session_log_path,
+                        task_name=f"drawai.workflow.agent.{request.node_id}.codex_sdk",
                     )
+                    try:
+                        result = _run_thread_with_timeout(
+                            thread,
+                            codex_inputs,
+                            timeout_seconds=timeout_seconds,
+                            approval_mode=sdk.ApprovalMode.deny_all,
+                            cwd=str(_agent_cwd(request)),
+                            effort=reasoning_effort,
+                            model=model_name,
+                            sandbox=sdk.Sandbox.full_access,
+                        )
+                    finally:
+                        _stop_codex_session_log_mirror(
+                            mirror_stop,
+                            mirror_thread,
+                            prepared_codex_home.codex_home,
+                            session_log_path,
+                            task_name=f"drawai.workflow.agent.{request.node_id}.codex_sdk",
+                        )
                     final_response = str(getattr(result, "final_response", "") or "")
                     stdout_path.write_text(final_response, encoding="utf-8")
             except Exception as exc:
@@ -203,6 +228,8 @@ def _execute_codex_sdk_agent(
             prompt_path=prompt_path,
             stdout_path=stdout_path if stdout_path.exists() else None,
             stderr_path=stderr_path,
+            trace_path=trace_path if trace_path.exists() else None,
+            session_log_path=session_log_path if session_log_path.exists() else None,
             exit_code=1,
         ) from exc
     _append_trace(
@@ -418,6 +445,7 @@ def _execute_subprocess_agent(
             prompt_path=prompt_path,
             stdout_path=stdout_path if stdout_path.exists() else None,
             stderr_path=stderr_path if stderr_path.exists() else None,
+            trace_path=trace_path if trace_path.exists() else None,
             exit_code=1,
         ) from exc
     _append_trace(
@@ -438,6 +466,7 @@ def _execute_subprocess_agent(
             prompt_path=prompt_path,
             stdout_path=stdout_path,
             stderr_path=stderr_path,
+            trace_path=trace_path,
             exit_code=returncode,
         )
     return AgentExecutionResult(
@@ -579,8 +608,108 @@ def _developer_instructions(request: AgentExecutionRequest) -> str:
     return (
         "You are a DrawAI file-backed Agent node. Run inside the workflow run root, "
         "read only the connected input files, built-in script files, and DrawAI tools declared by the prompt, and write "
-        "the declared output files exactly. Do not use web search, external apps, hooks, memories, or "
-        "multi-agent delegation."
+        "the declared output files exactly. You may also write prompt-requested auxiliary render/report/log files inside "
+        "the current node output directory. The repository root is provided only so command prefixes are executable; "
+        "do not inspect, import, or call DrawAI repository source code unless a concrete built-in script file is declared "
+        "as an input. For DrawAI-specific behavior, use the declared CLI tools and their help/format contracts. Do not use "
+        "web search, external apps, hooks, memories, or multi-agent delegation."
+    )
+
+
+def _start_codex_session_log_mirror(
+    codex_home: Path,
+    archive_dir: Path,
+    *,
+    task_name: str,
+) -> tuple[threading.Event, threading.Thread]:
+    stop_event = threading.Event()
+
+    def _mirror_loop() -> None:
+        while not stop_event.is_set():
+            try:
+                _copy_codex_session_log_snapshot(codex_home, archive_dir, task_name=task_name)
+            except OSError:
+                pass
+            stop_event.wait(2.0)
+
+    thread = threading.Thread(
+        target=_mirror_loop,
+        name=f"drawai-session-log-mirror-{archive_dir.parent.name}",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
+
+
+def _stop_codex_session_log_mirror(
+    stop_event: threading.Event,
+    thread: threading.Thread,
+    codex_home: Path,
+    archive_dir: Path,
+    *,
+    task_name: str,
+) -> None:
+    stop_event.set()
+    thread.join(timeout=5.0)
+    try:
+        _copy_codex_session_log_snapshot(codex_home, archive_dir, task_name=task_name)
+    except OSError:
+        pass
+
+
+def _copy_codex_session_log_snapshot(
+    codex_home: Path,
+    archive_dir: Path,
+    *,
+    task_name: str,
+) -> None:
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    missing: list[str] = []
+    errors: list[str] = []
+    for name in CODEX_SESSION_LOG_DIRS:
+        source = codex_home / name
+        destination = archive_dir / name
+        if not source.exists():
+            missing.append(name)
+            continue
+        try:
+            if source.is_dir():
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            elif source.is_file():
+                shutil.copy2(source, destination)
+            copied.append(name)
+        except OSError as exc:
+            errors.append(f"{name}: {type(exc).__name__}: {exc}")
+    for name in CODEX_SESSION_LOG_FILES:
+        source = codex_home / name
+        if not source.exists() or not source.is_file():
+            missing.append(name)
+            continue
+        try:
+            shutil.copy2(source, archive_dir / name)
+            copied.append(name)
+        except OSError as exc:
+            errors.append(f"{name}: {type(exc).__name__}: {exc}")
+    runtime_tail = _write_codex_runtime_log_tail(
+        codex_home / "logs_2.sqlite",
+        archive_dir / CODEX_RUNTIME_EVENT_TAIL_FILE,
+    )
+    if runtime_tail.get("status") == "ok":
+        copied.append(CODEX_RUNTIME_EVENT_TAIL_FILE)
+    _write_json(
+        archive_dir / "live_manifest.json",
+        {
+            "schema": "drawai.codex_session_log_live_snapshot.v1",
+            "task_name": task_name,
+            "codex_home": str(codex_home),
+            "archive_dir": str(archive_dir),
+            "copied": copied,
+            "missing": missing,
+            "errors": errors,
+            "runtime_event_tail": runtime_tail,
+            "updated_at": time.time(),
+        },
     )
 
 

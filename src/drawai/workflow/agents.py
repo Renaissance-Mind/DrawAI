@@ -32,6 +32,7 @@ DANGEROUS_AGENT_CONFIG_KEYS = (
     "shell_command",
 )
 DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
+SVG_AGENT_TIMEOUT_SECONDS = 7200
 
 TYPE_CONTRACTS = {
     "image": "Raster image file. Use it as visual evidence; do not rewrite it unless this node declares an image output.",
@@ -315,7 +316,7 @@ def render_agent_prompt(
     outputs = _configured_outputs(preset, config)
     options = _agent_options(config)
     scripts = _configured_scripts(preset, config, runtime)
-    drawai_tools = _configured_drawai_tools(config)
+    drawai_tools = _drawai_tools_for_inputs(_configured_drawai_tools(config), selected_inputs)
     text = _render_prompt_text(
         node_id=str(config.get("node_id") or "<agent_node_id>"),
         provider_id=provider_id,
@@ -412,8 +413,10 @@ def _render_prompt_text(
             "",
             "## Declared Output Files",
             (
-                "Write exactly these files. The Agent cwd is the workflow run root, so use "
-                "the run-root path when creating outputs. The harness records them in node_run.json after the run."
+                "Write each declared output exactly; these are the semantic files consumed by downstream nodes. "
+                "The Agent cwd is the workflow run root, so use the run-root path when creating outputs. "
+                "When the task explicitly asks for render/report/log helper files, keep those auxiliary files "
+                "inside the current node output directory. The harness records declared outputs in node_run.json after the run."
             ),
         ]
     )
@@ -759,6 +762,23 @@ def _configured_drawai_tools(config: Mapping[str, Any]) -> tuple[str, ...]:
                 raise ValueError(f"drawai_tools[{index}] must be a non-empty string")
             tool_ids.append(raw_tool.strip())
     return _ordered_unique(tool_ids)
+
+
+PAGE_SPEC_ONLY_DRAWAI_TOOLS = frozenset({"page-spec-assets", "svg-validate"})
+
+
+def _drawai_tools_for_inputs(
+    tool_ids: Sequence[str],
+    inputs: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    has_page_spec = any(
+        str(item.get("type") or "") == "page_spec"
+        or str(item.get("format_id") or "") == "drawai.page_spec.v1"
+        for item in inputs
+    )
+    if has_page_spec:
+        return tuple(tool_ids)
+    return tuple(tool_id for tool_id in tool_ids if tool_id not in PAGE_SPEC_ONLY_DRAWAI_TOOLS)
 
 
 def _agent_task(preset: AgentPreset, config: Mapping[str, Any]) -> str:

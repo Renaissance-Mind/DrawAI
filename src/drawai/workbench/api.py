@@ -8,6 +8,7 @@ import os
 import posixpath
 import re
 import shutil
+import sqlite3
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -2240,6 +2241,13 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
         "node_run": None,
         "input_manifest": None,
         "files": [],
+        "agent_logs": {
+            "files": [],
+            "trace_events": [],
+            "session_summary": {},
+            "session_events": [],
+            "runtime_log_tail": [],
+        },
         "elements": [],
     }
     if run_dir is None:
@@ -2250,6 +2258,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
     input_manifest = _read_json_object_if_exists(run_dir / "input_manifest.json")
     workdir = _case_relative_path(root, run_dir)
     output_files = _workflow_node_output_files(case, root, run_dir, node_run)
+    agent_logs = _workflow_node_agent_logs(case, root, run_dir, node_run)
     base_payload.update(
         {
             "title": str((node_run or {}).get("node_id") or safe_node_id),
@@ -2258,6 +2267,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
             "node_run": node_run,
             "input_manifest": input_manifest,
             "files": output_files,
+            "agent_logs": agent_logs,
         }
     )
 
@@ -2326,7 +2336,25 @@ def _workflow_node_output_files(
             path = item.get("path")
             if isinstance(path, str) and path:
                 relative_paths.append(path)
-        for key in ("prompt_path", "stdout_path", "stderr_path"):
+            for key in (
+                "prompt_path",
+                "stdout_path",
+                "stderr_path",
+                "trace_path",
+                "session_log_path",
+                "execution_manifest_path",
+            ):
+                path = item.get(key)
+                if isinstance(path, str) and path:
+                    relative_paths.append(path)
+        for key in (
+            "prompt_path",
+            "stdout_path",
+            "stderr_path",
+            "trace_path",
+            "session_log_path",
+            "execution_manifest_path",
+        ):
             path = node_run.get(key)
             if isinstance(path, str) and path:
                 relative_paths.append(path)
@@ -2343,6 +2371,217 @@ def _workflow_node_output_files(
         seen.add(relative_path)
         records.append(_case_file_record(case.case_id, root, Path(relative_path).name, relative_path))
     return records
+
+
+AGENT_LOG_FILE_CANDIDATES = (
+    "prompt.md",
+    "agent_execution_request.json",
+    "agent_execution.json",
+    "codex_sdk_trace.jsonl",
+    "codex_sdk_final_response.txt",
+    "codex_sdk_error.txt",
+    "codex_cli_trace.jsonl",
+    "codex_cli_events.jsonl",
+    "codex_cli_stderr.txt",
+    "kimi_trace.jsonl",
+    "kimi_events.jsonl",
+    "kimi_stderr.txt",
+    "codex_session_log/live_manifest.json",
+    "codex_session_log/manifest.json",
+    "codex_session_log/turn_result_summary.json",
+    "codex_session_log/codex_session_events.jsonl",
+    "codex_session_log/codex_runtime_events.jsonl",
+    "codex_session_log/logs_2.sqlite",
+    "codex_session_log/state_5.sqlite",
+)
+
+
+def _workflow_node_agent_logs(
+    case: CaseRecord,
+    root: Path,
+    run_dir: Path,
+    node_run: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    relative_paths: list[str] = []
+    for relative_path in AGENT_LOG_FILE_CANDIDATES:
+        path = run_dir / relative_path
+        if path.exists():
+            relative_paths.append(_case_relative_path(root, path))
+    if node_run:
+        for key in (
+            "prompt_path",
+            "stdout_path",
+            "stderr_path",
+            "trace_path",
+            "session_log_path",
+            "execution_manifest_path",
+        ):
+            value = node_run.get(key)
+            if isinstance(value, str) and value:
+                relative_paths.append(value)
+        for item in _json_list(node_run.get("outputs")):
+            for key in (
+                "prompt_path",
+                "stdout_path",
+                "stderr_path",
+                "trace_path",
+                "session_log_path",
+                "execution_manifest_path",
+            ):
+                value = item.get(key)
+                if isinstance(value, str) and value:
+                    relative_paths.append(value)
+
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for relative_path in relative_paths:
+        if relative_path in seen:
+            continue
+        seen.add(relative_path)
+        path = _resolve_case_path(root, relative_path)
+        if path.is_dir():
+            manifest = path / "manifest.json"
+            live_manifest = path / "live_manifest.json"
+            if manifest.is_file():
+                records.append(_case_file_record(case.case_id, root, "session_manifest", _case_relative_path(root, manifest)))
+            if live_manifest.is_file():
+                records.append(
+                    _case_file_record(case.case_id, root, "session_live_manifest", _case_relative_path(root, live_manifest))
+                )
+            continue
+        records.append(_case_file_record(case.case_id, root, path.name, relative_path))
+
+    trace_events = _agent_trace_events(run_dir)
+    session_dir = run_dir / "codex_session_log"
+    return {
+        "files": records,
+        "trace_events": trace_events,
+        "session_summary": _read_json_object_if_exists(session_dir / "turn_result_summary.json"),
+        "session_events": _agent_session_events(session_dir / "codex_session_events.jsonl"),
+        "runtime_log_tail": _codex_runtime_event_tail(session_dir / "codex_runtime_events.jsonl")
+        or _codex_runtime_log_tail(session_dir / "logs_2.sqlite"),
+    }
+
+
+def _agent_trace_events(run_dir: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for name in ("codex_sdk_trace.jsonl", "codex_cli_trace.jsonl", "kimi_trace.jsonl"):
+        path = run_dir / name
+        for item in _read_jsonl_tail(path, limit=80):
+            if isinstance(item, dict):
+                events.append(
+                    {
+                        "source": name,
+                        "type": str(item.get("type") or ""),
+                        "summary": _truncate_progress_text(_compact_json_text(item), limit=800),
+                    }
+                )
+    return events[-80:]
+
+
+def _agent_session_events(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in _read_jsonl_tail(path, limit=120):
+        if not isinstance(item, dict):
+            continue
+        event_item = item.get("item")
+        events.append(
+            {
+                "index": item.get("index"),
+                "kind": _agent_event_kind(event_item),
+                "summary": _truncate_progress_text(_compact_json_text(event_item), limit=1200),
+            }
+        )
+    return events
+
+
+def _codex_runtime_log_tail(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    rows: list[tuple[Any, ...]]
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.2)
+        try:
+            rows = connection.execute(
+                "select ts, level, target, feedback_log_body from logs order by id desc limit 80"
+            ).fetchall()
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error):
+        return []
+    return [
+        {
+            "ts": row[0],
+            "level": str(row[1] or ""),
+            "target": str(row[2] or ""),
+            "message": _truncate_progress_text(str(row[3] or ""), limit=900),
+        }
+        for row in reversed(rows)
+        if str(row[3] or "").strip()
+    ]
+
+
+def _codex_runtime_event_tail(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in _read_jsonl_tail(path, limit=120):
+        if not isinstance(item, dict):
+            continue
+        message = str(item.get("message") or "")
+        event = item.get("event")
+        event_type = str(item.get("event_type") or "")
+        event_kind = str(item.get("event_kind") or "")
+        if isinstance(event, Mapping):
+            event_type = event_type or str(event.get("type") or "")
+            text = event.get("text")
+            delta = event.get("delta")
+            if isinstance(text, str) and text:
+                message = text
+            elif isinstance(delta, str) and delta:
+                message = delta
+        events.append(
+            {
+                "ts": item.get("ts"),
+                "level": str(item.get("level") or ""),
+                "target": str(item.get("target") or ""),
+                "event_type": event_type or event_kind,
+                "message": _truncate_progress_text(message, limit=900),
+            }
+        )
+    return events
+
+
+def _read_jsonl_tail(path: Path, *, limit: int) -> list[Any]:
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    items: list[Any] = []
+    for line in lines[-limit:]:
+        if not line.strip():
+            continue
+        try:
+            items.append(json.loads(line))
+        except json.JSONDecodeError:
+            items.append({"raw": line})
+    return items
+
+
+def _agent_event_kind(value: Any) -> str:
+    if isinstance(value, Mapping):
+        for key in ("type", "kind", "name", "role"):
+            item = value.get(key)
+            if isinstance(item, str) and item:
+                return item
+    return type(value).__name__
+
+
+def _compact_json_text(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(value)
 
 
 def _workflow_node_overlay_source(

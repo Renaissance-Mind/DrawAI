@@ -10,6 +10,7 @@ from drawai.workflow.agent_execution import (
     AgentExecutionError,
     AgentExecutionRequest,
     execute_agent_prompt,
+    _copy_codex_session_log_snapshot,
     _execute_codex_cli_agent,
     _execute_kimi_cli_agent,
     _execute_subprocess_agent,
@@ -228,6 +229,21 @@ def test_codex_cli_agent_uses_isolated_codex_home(tmp_path: Path, monkeypatch: p
     assert env_overrides["HOME"] == str(isolated_home.parent)
     assert env_overrides.get("CODEX_THREAD_ID") is None
     assert result.session_log_path == workdir / "codex_cli_session_log"
+
+
+def test_codex_session_log_snapshot_copies_live_runtime_files(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex_home"
+    archive_dir = tmp_path / "workdir" / "codex_session_log"
+    (codex_home / "shell_snapshots").mkdir(parents=True)
+    (codex_home / "shell_snapshots" / "turn.sh").write_text("echo ok\n", encoding="utf-8")
+    (codex_home / "history.jsonl").write_text('{"text":"ok"}\n', encoding="utf-8")
+
+    _copy_codex_session_log_snapshot(codex_home, archive_dir, task_name="test.agent")
+
+    assert (archive_dir / "shell_snapshots" / "turn.sh").read_text(encoding="utf-8") == "echo ok\n"
+    assert (archive_dir / "history.jsonl").read_text(encoding="utf-8") == '{"text":"ok"}\n'
+    live_manifest = (archive_dir / "live_manifest.json").read_text(encoding="utf-8")
+    assert "test.agent" in live_manifest
 
 
 def test_kimi_cli_agent_uses_isolated_skills_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

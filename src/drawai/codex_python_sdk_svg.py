@@ -8,6 +8,7 @@ import os
 import re
 import signal
 import shutil
+import sqlite3
 import tempfile
 import threading
 import time
@@ -31,6 +32,8 @@ CODEX_SESSION_LOG_DIRS = ("sessions", "log", "logs", "shell_snapshots")
 CODEX_SESSION_LOG_FILES = (
     "history.jsonl",
     "session_index.jsonl",
+)
+CODEX_SESSION_RUNTIME_STATE_FILES = (
     "logs_2.sqlite",
     "logs_2.sqlite-shm",
     "logs_2.sqlite-wal",
@@ -38,6 +41,7 @@ CODEX_SESSION_LOG_FILES = (
     "state_5.sqlite-shm",
     "state_5.sqlite-wal",
 )
+CODEX_RUNTIME_EVENT_TAIL_FILE = "codex_runtime_events.jsonl"
 
 
 class CodexPythonSdkSvgError(RuntimeError):
@@ -368,8 +372,6 @@ def _archive_codex_session_logs(
     task_name: str,
     sdk_turn_result: Any | None = None,
 ) -> dict[str, Any]:
-    if archive_dir.exists():
-        shutil.rmtree(archive_dir)
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     copied: list[str] = []
@@ -381,7 +383,7 @@ def _archive_codex_session_logs(
             missing.append(name)
             continue
         if source.is_dir():
-            shutil.copytree(source, destination)
+            shutil.copytree(source, destination, dirs_exist_ok=True)
         elif source.is_file():
             shutil.copy2(source, destination)
         copied.append(name)
@@ -393,6 +395,18 @@ def _archive_codex_session_logs(
             copied.append(name)
         else:
             missing.append(name)
+
+    runtime_tail = _write_codex_runtime_log_tail(
+        codex_home / "logs_2.sqlite",
+        archive_dir / CODEX_RUNTIME_EVENT_TAIL_FILE,
+    )
+    if runtime_tail.get("status") == "ok" or (archive_dir / CODEX_RUNTIME_EVENT_TAIL_FILE).is_file():
+        copied.append(CODEX_RUNTIME_EVENT_TAIL_FILE)
+        if runtime_tail.get("status") != "ok":
+            runtime_tail = {
+                **runtime_tail,
+                "preserved_live_path": str(archive_dir / CODEX_RUNTIME_EVENT_TAIL_FILE),
+            }
 
     sdk_turn_result_report = None
     if sdk_turn_result is not None:
@@ -409,6 +423,10 @@ def _archive_codex_session_logs(
         "archive_dir": str(archive_dir),
         "copied": copied,
         "missing": missing,
+        "runtime_event_tail": runtime_tail,
+        "skipped_runtime_state": [
+            name for name in CODEX_SESSION_RUNTIME_STATE_FILES if (codex_home / name).exists()
+        ],
         "sdk_turn_result": sdk_turn_result_report,
         "auth_json_copied": (archive_dir / "auth.json").exists(),
     }
@@ -417,6 +435,181 @@ def _archive_codex_session_logs(
         encoding="utf-8",
     )
     return manifest
+
+
+def _write_codex_runtime_log_tail(source: Path, destination: Path, *, limit: int = 200) -> dict[str, Any]:
+    if not source.is_file():
+        return {"status": "missing", "source": str(source), "path": str(destination), "event_count": 0}
+    try:
+        connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True, timeout=0.2)
+        try:
+            rows = _read_codex_runtime_rows(connection, limit=int(limit))
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error) as exc:
+        return {
+            "status": "error",
+            "source": str(source),
+            "path": str(destination),
+            "event_count": 0,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    rows = list(reversed(rows))
+    with destination.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(_codex_runtime_log_row(row), ensure_ascii=False, sort_keys=True) + "\n")
+    return {
+        "status": "ok",
+        "source": str(source),
+        "path": str(destination),
+        "event_count": len(rows),
+    }
+
+
+def _read_codex_runtime_rows(connection: sqlite3.Connection, *, limit: int) -> list[tuple[Any, ...]]:
+    rows = connection.execute(
+        """
+        select id, ts, ts_nanos, level, target, feedback_log_body
+        from logs
+        where feedback_log_body like '%websocket event:%'
+        order by id desc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+    if rows:
+        return rows
+    return connection.execute(
+        """
+        select id, ts, ts_nanos, level, target, feedback_log_body
+        from logs
+        where feedback_log_body is not null
+        order by id desc
+        limit ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def _codex_runtime_log_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    raw_message = str(row[5] or "")
+    payload = _extract_codex_websocket_event(raw_message)
+    event = _summarize_codex_runtime_payload(payload)
+    return {
+        "id": row[0],
+        "ts": row[1],
+        "ts_nanos": row[2],
+        "level": str(row[3] or ""),
+        "target": str(row[4] or ""),
+        "event_type": str(payload.get("type") or "") if isinstance(payload, Mapping) else "",
+        "event_kind": _extract_codex_otel_event_kind(raw_message),
+        "message": _codex_runtime_event_message(event, raw_message),
+        "event": event,
+    }
+
+
+def _extract_codex_websocket_event(message: str) -> Mapping[str, Any] | None:
+    marker = "websocket event: "
+    index = message.find(marker)
+    if index < 0:
+        return None
+    payload_text = message[index + len(marker) :].strip()
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, Mapping):
+        return payload
+    return None
+
+
+def _summarize_codex_runtime_payload(payload: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    event_type = str(payload.get("type") or "")
+    summary: dict[str, Any] = {"type": event_type}
+    for key in ("sequence_number", "output_index", "item_id", "call_id"):
+        value = payload.get(key)
+        if isinstance(value, str | int | float | bool):
+            summary[key] = value
+    for key in ("text", "delta"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            summary[key] = _redact_codex_runtime_message(value)[:2000]
+
+    item = payload.get("item")
+    if isinstance(item, Mapping):
+        item_summary: dict[str, Any] = {}
+        for key in ("id", "type", "name", "status", "role"):
+            value = item.get(key)
+            if isinstance(value, str | int | float | bool):
+                item_summary[key] = value
+        if isinstance(item.get("arguments"), str):
+            item_summary["arguments"] = _redact_codex_runtime_message(str(item["arguments"]))[:2000]
+        if isinstance(item.get("summary"), Sequence) and not isinstance(item.get("summary"), str | bytes | bytearray):
+            item_summary["summary_count"] = len(item["summary"])  # type: ignore[arg-type]
+        if isinstance(item.get("content"), Sequence) and not isinstance(item.get("content"), str | bytes | bytearray):
+            item_summary["content_count"] = len(item["content"])  # type: ignore[arg-type]
+        if "encrypted_content" in item:
+            item_summary["encrypted_content"] = "[redacted]"
+        summary["item"] = item_summary
+
+    response = payload.get("response")
+    if isinstance(response, Mapping):
+        response_summary: dict[str, Any] = {}
+        for key in ("id", "status", "created_at", "completed_at", "background"):
+            value = response.get(key)
+            if isinstance(value, str | int | float | bool) or value is None:
+                response_summary[key] = value
+        error = response.get("error")
+        if isinstance(error, Mapping):
+            response_summary["error"] = {
+                str(key): _redact_codex_runtime_message(str(value))[:1000]
+                for key, value in error.items()
+                if isinstance(value, str | int | float | bool)
+            }
+        elif isinstance(error, str) and error:
+            response_summary["error"] = _redact_codex_runtime_message(error)[:1000]
+        summary["response"] = response_summary
+    return summary
+
+
+def _codex_runtime_event_message(event: Mapping[str, Any] | None, raw_message: str) -> str:
+    if isinstance(event, Mapping):
+        for key in ("text", "delta"):
+            value = event.get(key)
+            if isinstance(value, str) and value:
+                return value[:900]
+        item = event.get("item")
+        if isinstance(item, Mapping):
+            item_type = str(item.get("type") or "")
+            item_name = str(item.get("name") or "")
+            if item_type or item_name:
+                return " ".join(part for part in (item_type, item_name) if part)[:900]
+        response = event.get("response")
+        if isinstance(response, Mapping):
+            status = str(response.get("status") or "")
+            if status:
+                return f"response {status}"[:900]
+        event_type = str(event.get("type") or "")
+        if event_type:
+            return event_type[:900]
+    return _redact_codex_runtime_message(raw_message)[:900]
+
+
+def _redact_codex_runtime_message(message: str) -> str:
+    redacted = re.sub(r'user\.email="[^"]*"', 'user.email="[redacted]"', message)
+    redacted = re.sub(r'user\.account_id="[^"]*"', 'user.account_id="[redacted]"', redacted)
+    return redacted
+
+
+def _extract_codex_otel_event_kind(message: str) -> str:
+    match = re.search(r"event\.kind=([^\s]+)", message)
+    if not match:
+        return ""
+    return match.group(1).strip('"')
 
 
 def _write_codex_sdk_turn_result_archive(
