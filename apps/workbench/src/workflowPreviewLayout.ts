@@ -39,7 +39,13 @@ type Rect = { left: number; top: number; right: number; bottom: number };
 type EdgeRoute = { points: Point[]; d: string; start: Point; end: Point };
 type Segment = { a: Point; b: Point };
 type PortSlot = { index: number; total: number };
-type EdgeRouteContext = { sourceRank: number; targetRank: number; sequentialSourceTotal: number; sequentialTargetTotal: number };
+type EdgeRouteContext = {
+  sourceRank: number;
+  targetRank: number;
+  sequentialSourceTotal: number;
+  sequentialTargetTotal: number;
+  shortcutLaneIndex: number;
+};
 
 const DEFAULT_LAYOUT_OPTIONS = {
   maxColumns: 4,
@@ -51,6 +57,8 @@ const DEFAULT_LAYOUT_OPTIONS = {
   paddingX: 28,
   paddingY: 28
 };
+const OUTSIDE_RAIL_MARGIN = 6;
+const OUTSIDE_RAIL_GAP = 10;
 
 export function buildWorkflowPreviewLayout(
   template: WorkflowTemplate,
@@ -69,6 +77,11 @@ export function buildWorkflowPreviewLayout(
     if (!rows[row]) rows[row] = [];
     rows[row].push(rank);
   });
+  const shortcutSideByEdgeId = shortcutSidesByEdgeId(template.edges, ranks, rankToRow, rows.length);
+  const shortcutLaneTotals = new Map<Side, number>();
+  shortcutSideByEdgeId.forEach((side) => incrementMap(shortcutLaneTotals, side));
+  const topRailGutter = outsideRailGutter(shortcutLaneTotals.get("top") || 0);
+  const bottomRailGutter = outsideRailGutter(shortcutLaneTotals.get("bottom") || 0);
 
   const rowHeights = rows.map((rowRanks) =>
     Math.max(
@@ -81,7 +94,12 @@ export function buildWorkflowPreviewLayout(
   );
   const usedColumns = Math.min(settings.maxColumns, Math.max(1, ...rows.map((row) => row.length)));
   const width = settings.paddingX * 2 + usedColumns * settings.nodeWidth + Math.max(0, usedColumns - 1) * settings.columnGap;
-  const height = settings.paddingY * 2 + rowHeights.reduce((sum, item) => sum + item, 0) + Math.max(0, rows.length - 1) * settings.rowGap;
+  const height =
+    settings.paddingY * 2 +
+    topRailGutter +
+    rowHeights.reduce((sum, item) => sum + item, 0) +
+    Math.max(0, rows.length - 1) * settings.rowGap +
+    bottomRailGutter;
   const nodeLayouts: WorkflowPreviewNode[] = [];
 
   rankValues.forEach((rank) => {
@@ -93,6 +111,7 @@ export function buildWorkflowPreviewLayout(
     const x = settings.paddingX + rowColumn * (settings.nodeWidth + settings.columnGap);
     const rowTop =
       settings.paddingY +
+      topRailGutter +
       rowHeights.slice(0, row).reduce((sum, item) => sum + item, 0) +
       row * settings.rowGap;
     const stackHeight = nodes.length * settings.nodeHeight + Math.max(0, nodes.length - 1) * settings.nodeGap;
@@ -111,6 +130,8 @@ export function buildWorkflowPreviewLayout(
 
   const byId = new Map(nodeLayouts.map((node) => [node.node.node_id, node]));
   const edgeSidesById = new Map<string, { startSide: Side; endSide: Side }>();
+  const shortcutLaneByEdgeId = new Map<string, number>();
+  const shortcutLaneUse = new Map<Side, number>();
   const portTotals = new Map<string, number>();
   const sequentialOutTotals = new Map<string, number>();
   const sequentialInTotals = new Map<string, number>();
@@ -120,8 +141,14 @@ export function buildWorkflowPreviewLayout(
     if (!source || !target) return;
     const sourceRank = ranks.get(edge.source_node_id) ?? 0;
     const targetRank = ranks.get(edge.target_node_id) ?? 0;
-    const sides = edgeRouteSides(source, target, { width, height }, sourceRank, targetRank);
+    const shortcutSide = shortcutSideByEdgeId.get(edge.edge_id);
+    const sides = shortcutSide ? { startSide: shortcutSide, endSide: shortcutSide } : edgeSides(source, target);
     edgeSidesById.set(edge.edge_id, sides);
+    if (shortcutSide) {
+      const laneIndex = shortcutLaneUse.get(shortcutSide) || 0;
+      shortcutLaneByEdgeId.set(edge.edge_id, laneIndex);
+      shortcutLaneUse.set(shortcutSide, laneIndex + 1);
+    }
     if (areSequentialRanks(sourceRank, targetRank)) {
       incrementMap(sequentialOutTotals, sequentialOutKey(edge.source_node_id, targetRank, sides.startSide));
       incrementMap(sequentialInTotals, sequentialInKey(edge.target_node_id, sourceRank, sides.endSide));
@@ -146,7 +173,8 @@ export function buildWorkflowPreviewLayout(
       sourceRank,
       targetRank,
       sequentialSourceTotal: sequentialOutTotals.get(sequentialOutKey(edge.source_node_id, targetRank, sides.startSide)) || 1,
-      sequentialTargetTotal: sequentialInTotals.get(sequentialInKey(edge.target_node_id, sourceRank, sides.endSide)) || 1
+      sequentialTargetTotal: sequentialInTotals.get(sequentialInKey(edge.target_node_id, sourceRank, sides.endSide)) || 1,
+      shortcutLaneIndex: shortcutLaneByEdgeId.get(edge.edge_id) || 0
     });
     routedSegments.push(...segmentsFromPoints(route.points));
     return [{ edge, start: route.start, end: route.end, d: route.d }];
@@ -227,7 +255,7 @@ function routePreviewEdge(
   sides = edgeSides(source, target),
   sourceSlot: PortSlot = { index: 0, total: 1 },
   targetSlot: PortSlot = { index: 0, total: 1 },
-  context: EdgeRouteContext = { sourceRank: 0, targetRank: 0, sequentialSourceTotal: 1, sequentialTargetTotal: 1 }
+  context: EdgeRouteContext = { sourceRank: 0, targetRank: 0, sequentialSourceTotal: 1, sequentialTargetTotal: 1, shortcutLaneIndex: 0 }
 ): EdgeRoute {
   if (areSequentialRanks(context.sourceRank, context.targetRank)) {
     return routeSequentialEdge(source, target, sides, context);
@@ -238,7 +266,7 @@ function routePreviewEdge(
   const startOutside = offsetPoint(start, sides.startSide, clearance);
   const endOutside = offsetPoint(end, sides.endSide, clearance);
   if (isShortcutEdge(context)) {
-    const points = outsideRailRoute(start, startOutside, endOutside, end, bounds);
+    const points = outsideRailRoute(start, startOutside, endOutside, end, bounds, sides.startSide, context.shortcutLaneIndex);
     return { start, end, points, d: pointsToPath(points) };
   }
   const obstacles = nodes.map((node) => expandRect(nodeRect(node), 7));
@@ -253,20 +281,6 @@ function isShortcutEdge(context: EdgeRouteContext): boolean {
 
 function areSequentialRanks(sourceRank: number, targetRank: number): boolean {
   return Math.abs(targetRank - sourceRank) === 1;
-}
-
-function edgeRouteSides(
-  source: WorkflowPreviewNode,
-  target: WorkflowPreviewNode,
-  bounds: { width: number; height: number },
-  sourceRank: number,
-  targetRank: number
-): { startSide: Side; endSide: Side } {
-  if (Math.abs(targetRank - sourceRank) > 1) {
-    const railSide: Side = nodeCenter(source).y <= bounds.height / 2 ? "top" : "bottom";
-    return { startSide: railSide, endSide: railSide };
-  }
-  return edgeSides(source, target);
 }
 
 function routeSequentialEdge(
@@ -321,8 +335,17 @@ function sequentialInKey(nodeId: string, sourceRank: number, side: Side): string
   return `${nodeId}:${sourceRank}:${side}`;
 }
 
-function outsideRailRoute(start: Point, startOutside: Point, endOutside: Point, end: Point, bounds: { width: number; height: number }): Point[] {
-  const railY = start.y <= bounds.height / 2 ? 6 : Math.max(6, bounds.height - 6);
+function outsideRailRoute(
+  start: Point,
+  startOutside: Point,
+  endOutside: Point,
+  end: Point,
+  bounds: { width: number; height: number },
+  side: Side,
+  laneIndex: number
+): Point[] {
+  const laneOffset = OUTSIDE_RAIL_MARGIN + laneIndex * OUTSIDE_RAIL_GAP;
+  const railY = side === "top" ? laneOffset : Math.max(OUTSIDE_RAIL_MARGIN, bounds.height - laneOffset);
   return simplifyPoints([
     start,
     startOutside,
@@ -331,6 +354,27 @@ function outsideRailRoute(start: Point, startOutside: Point, endOutside: Point, 
     endOutside,
     end
   ]);
+}
+
+function shortcutSidesByEdgeId(
+  edges: WorkflowEdge[],
+  ranks: Map<string, number>,
+  rankToRow: Map<number, number>,
+  rowCount: number
+): Map<string, Side> {
+  const sides = new Map<string, Side>();
+  edges.forEach((edge) => {
+    const sourceRank = ranks.get(edge.source_node_id) ?? 0;
+    const targetRank = ranks.get(edge.target_node_id) ?? 0;
+    if (!isShortcutEdge({ sourceRank, targetRank, sequentialSourceTotal: 1, sequentialTargetTotal: 1, shortcutLaneIndex: 0 })) return;
+    const sourceRow = rankToRow.get(sourceRank) || 0;
+    sides.set(edge.edge_id, sourceRow <= (rowCount - 1) / 2 ? "top" : "bottom");
+  });
+  return sides;
+}
+
+function outsideRailGutter(laneCount: number): number {
+  return Math.max(0, laneCount - 1) * OUTSIDE_RAIL_GAP;
 }
 
 function edgeSides(source: WorkflowPreviewNode, target: WorkflowPreviewNode): { startSide: Side; endSide: Side } {

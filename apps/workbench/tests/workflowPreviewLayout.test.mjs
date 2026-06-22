@@ -62,14 +62,34 @@ test("long-range shortcuts leave and enter through vertical node ports", async (
   assert.ok(edge.start.x > source.x && edge.start.x < source.x + source.width);
   assert.equal(edge.end.y, target.y);
   assert.ok(edge.end.x > target.x && edge.end.x < target.x + target.width);
-  assert.ok(
-    points.some((point) => point.y <= 8),
-    `expected shortcut edge to use the top outside rail, got: ${edge.d}`
-  );
+  assert.ok(points.some((point) => point.y < source.y), `expected shortcut edge to use a top outside rail, got: ${edge.d}`);
+});
+
+test("long-range shortcuts on the same outside side use separate rails", async () => {
+  const { buildWorkflowPreviewLayout } = await loadLayoutModule();
+  const layout = buildWorkflowPreviewLayout(imageToPptxTemplate(), PREVIEW_OPTIONS);
+  const railYs = outsideRailYs(layout, ["input_page_spec_refine", "input_asset_prepare", "input_svg_compose"]);
+
+  assert.equal(railYs.size, 3);
+});
+
+test("running edge animation only applies to edges entering the running node", async () => {
+  const { dagRunEdgeState } = await loadTsModule("../src/workflowRunState.ts");
+
+  assert.equal(dagRunEdgeState("done", "running"), "running");
+  assert.equal(dagRunEdgeState("running", "waiting"), "waiting");
+  assert.equal(dagRunEdgeState("done", "done"), "done");
 });
 
 async function loadLayoutModule() {
-  const source = readFileSync(new URL("../src/workflowPreviewLayout.ts", import.meta.url), "utf8");
+  layoutModulePromise ||= loadTsModule("../src/workflowPreviewLayout.ts");
+  return layoutModulePromise;
+}
+
+let layoutModulePromise;
+
+async function loadTsModule(relativePath) {
+  const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -77,7 +97,7 @@ async function loadLayoutModule() {
     }
   });
   const dir = mkdtempSync(join(tmpdir(), "drawai-workflow-layout-"));
-  const modulePath = join(dir, "workflowPreviewLayout.mjs");
+  const modulePath = join(dir, `${relativePath.split("/").at(-1).replace(/\.ts$/, "")}.mjs`);
   writeFileSync(modulePath, outputText);
   return import(pathToFileURL(modulePath).href);
 }
@@ -174,4 +194,21 @@ function pathPoints(path) {
     x: Number(match[1]),
     y: Number(match[2])
   }));
+}
+
+function outsideRailYs(layout, edgeIds) {
+  const ys = new Set();
+  for (const edgeId of edgeIds) {
+    const edge = edgeById(layout, edgeId);
+    const source = nodeById(layout, edge.edge.source_node_id);
+    const points = pathPoints(edge.d);
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const current = points[index];
+      const next = points[index + 1];
+      if (current.y === next.y && current.y < source.y) {
+        ys.add(current.y);
+      }
+    }
+  }
+  return ys;
 }

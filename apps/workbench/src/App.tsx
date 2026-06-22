@@ -33,6 +33,7 @@ import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudi
 import WorkflowWorkspace from "./WorkflowWorkspace";
 import { buildWorkflowPreviewLayout, type WorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
+import { dagRunEdgeState } from "./workflowRunState";
 import { listWorkflowTemplates } from "./workflowApi";
 import type {
   ArtifactRecord,
@@ -1713,12 +1714,7 @@ function DagRunPanel({
                   const target = viewByNodeId.get(edgeLayout.edge.target_node_id);
                   const sourceState = source?.state || "waiting";
                   const targetState = target?.state || "waiting";
-                  const edgeState =
-                    sourceState === "running" || targetState === "running"
-                      ? "running"
-                      : sourceState === "done" && targetState === "done"
-                        ? "done"
-                        : "waiting";
+                  const edgeState = dagRunEdgeState(sourceState, targetState);
                   const gradientId = dagRunEdgeGradientId(caseDetail.case.case_id, edgeLayout.edge.edge_id, edgeIndex);
                   return (
                     <path
