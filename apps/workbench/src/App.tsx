@@ -163,6 +163,16 @@ const EMPTY_V2_ELEMENT_FILTER: V2ElementFilter = {
   statuses: null
 };
 
+function dagRunEdgeGradientId(caseId: string, edgeId: string, edgeIndex: number): string {
+  const safeCaseId = caseId.replace(/[^a-zA-Z0-9_-]+/g, "-") || "case";
+  const safeEdgeId = edgeId.replace(/[^a-zA-Z0-9_-]+/g, "-") || "edge";
+  return `dag-edge-flow-${safeCaseId}-${edgeIndex}-${safeEdgeId}`;
+}
+
+function svgNumber(value: number): string {
+  return String(Number(value.toFixed(2)));
+}
+
 const PIPELINE_GROUPS = [
   {
     title: "元素解析",
@@ -1665,24 +1675,40 @@ function DagRunPanel({
             <div className="dag-run-stage" style={{ width: layout.width, height: layout.height }}>
               <svg className="dag-run-edges" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
                 <defs>
-                  <linearGradient id="dag-edge-flow-gradient" x1="0" y1="0" x2={layout.width} y2="0" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#022c22" />
-                    <stop offset="20%" stopColor="#047857" />
-                    <stop offset="38%" stopColor="#bbf7d0" />
-                    <stop offset="52%" stopColor="#065f46" />
-                    <stop offset="70%" stopColor="#4ade80" />
-                    <stop offset="100%" stopColor="#022c22" />
-                    <animateTransform
-                      attributeName="gradientTransform"
-                      type="translate"
-                      from={`${-layout.width} 0`}
-                      to={`${layout.width} 0`}
-                      dur="2.4s"
-                      repeatCount="indefinite"
-                    />
-                  </linearGradient>
+                  {layout.edges.map((edgeLayout, edgeIndex) => {
+                    const gradientId = dagRunEdgeGradientId(caseDetail.case.case_id, edgeLayout.edge.edge_id, edgeIndex);
+                    const dx = edgeLayout.end.x - edgeLayout.start.x;
+                    const dy = edgeLayout.end.y - edgeLayout.start.y;
+                    return (
+                      <linearGradient
+                        key={gradientId}
+                        id={gradientId}
+                        x1={svgNumber(edgeLayout.start.x)}
+                        y1={svgNumber(edgeLayout.start.y)}
+                        x2={svgNumber(edgeLayout.end.x)}
+                        y2={svgNumber(edgeLayout.end.y)}
+                        gradientUnits="userSpaceOnUse"
+                      >
+                        <stop offset="0%" stopColor="#022c22" />
+                        <stop offset="18%" stopColor="#065f46" />
+                        <stop offset="34%" stopColor="#22c55e" />
+                        <stop offset="48%" stopColor="#bbf7d0" />
+                        <stop offset="62%" stopColor="#047857" />
+                        <stop offset="82%" stopColor="#16a34a" />
+                        <stop offset="100%" stopColor="#022c22" />
+                        <animateTransform
+                          attributeName="gradientTransform"
+                          type="translate"
+                          from={`${svgNumber(-dx)} ${svgNumber(-dy)}`}
+                          to={`${svgNumber(dx)} ${svgNumber(dy)}`}
+                          dur="2.4s"
+                          repeatCount="indefinite"
+                        />
+                      </linearGradient>
+                    );
+                  })}
                 </defs>
-                {layout.edges.map((edgeLayout) => {
+                {layout.edges.map((edgeLayout, edgeIndex) => {
                   const source = viewByNodeId.get(edgeLayout.edge.source_node_id);
                   const target = viewByNodeId.get(edgeLayout.edge.target_node_id);
                   const sourceState = source?.state || "waiting";
@@ -1693,7 +1719,15 @@ function DagRunPanel({
                       : sourceState === "done" && targetState === "done"
                         ? "done"
                         : "waiting";
-                  return <path key={edgeLayout.edge.edge_id} className={edgeState} d={edgeLayout.d} />;
+                  const gradientId = dagRunEdgeGradientId(caseDetail.case.case_id, edgeLayout.edge.edge_id, edgeIndex);
+                  return (
+                    <path
+                      key={edgeLayout.edge.edge_id}
+                      className={edgeState}
+                      d={edgeLayout.d}
+                      style={edgeState === "running" ? { stroke: `url(#${gradientId})` } : undefined}
+                    />
+                  );
                 })}
               </svg>
               {views.map((view) => (

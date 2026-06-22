@@ -2312,7 +2312,6 @@ select:focus {
 }
 
 .dag-run-edges path.running {
-  stroke: url("#dag-edge-flow-gradient");
   opacity: 1;
   filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.28));
 }
@@ -2647,12 +2646,6 @@ button.dag-run-node.running.active {
 @keyframes dag-running-border {
   to {
     background-position: -220% 0;
-  }
-}
-
-@keyframes dag-edge-flow {
-  to {
-    stroke-dashoffset: -32;
   }
 }
 
