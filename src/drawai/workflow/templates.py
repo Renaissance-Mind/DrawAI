@@ -10,12 +10,14 @@ from ..prompt_plan import DEFAULT_SAM3_PROMPTS
 from .agent_prompt_defaults import (
     CUSTOM_AGENT_CONSTRAINTS,
     CUSTOM_AGENT_TASK,
+    PAGE_SPEC_REFINE_CONSTRAINTS,
+    PAGE_SPEC_REFINE_TASK,
     RUN0_ELEMENT_REFINE_CONSTRAINTS,
     RUN0_ELEMENT_REFINE_TASK,
     SVG_GENERATION_CONSTRAINTS,
     SVG_GENERATION_TASK,
 )
-from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS
+from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS, SVG_AGENT_TIMEOUT_SECONDS
 from .schema import (
     WORKFLOW_TEMPLATE_SCHEMA,
     WorkflowEdge,
@@ -33,175 +35,207 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
     return WorkflowTemplate(
         template_id=DEFAULT_WORKFLOW_TEMPLATE_ID,
         name="Image-to-PPTX",
-        description="Built-in workflow that mirrors the current DrawAI v2 path.",
+        description="Built-in PageSpec-first workflow that turns one or more images into editable SVG/PPTX outputs.",
         nodes=(
             WorkflowNode(
                 node_id="input",
                 node_type="input",
                 title="Input",
                 outputs=(
-                    _output("image", "Image", ("image",), formats=("drawai.image.v1",)),
+                    _output(
+                        "image",
+                        "Image",
+                        ("image",),
+                        formats=("drawai.image.v1",),
+                        description="Original one-page raster image. Treat this as the visual source of truth.",
+                    ),
                 ),
                 position={"x": 0, "y": 160},
             ),
             WorkflowNode(
-                node_id="sam_parser",
-                node_type="parser",
-                title="SAM Parser",
-                inputs=(_input("image", "Image", ("image",)),),
-                outputs=(
-                    _output(
-                        "candidates",
-                        "Candidates",
-                        ("element_candidates",),
-                        formats=("drawai.element_candidates.v1",),
-                    ),
-                ),
-                config={
-                    "parser_id": "sam3_structure_parser",
-                    "resource": "sam3",
-                    "prompts": _sam3_prompt_configs(),
-                },
-                position={"x": 240, "y": 80},
-            ),
-            WorkflowNode(
-                node_id="ocr_parser",
-                node_type="parser",
-                title="OCR Parser",
-                inputs=(_input("image", "Image", ("image",)),),
-                outputs=(
-                    _output(
-                        "candidates",
-                        "Candidates",
-                        ("element_candidates",),
-                        formats=("drawai.element_candidates.v1",),
-                    ),
-                ),
-                config={"parser_id": "ocr_text_parser", "resource": "ocr"},
-                position={"x": 240, "y": 240},
-            ),
-            WorkflowNode(
-                node_id="fusion",
-                node_type="fusion",
-                title="Fusion",
+                node_id="sam_parse",
+                node_type="processor",
+                title="SAM Parse",
                 inputs=(
                     _input(
-                        "candidates",
-                        "Candidates",
-                        ("element_candidates",),
-                        cardinality="many",
+                        "image",
+                        "Image",
+                        ("image",),
+                        description="Original page image for SAM segmentation proposals.",
                     ),
                 ),
                 outputs=(
                     _output(
-                        "elements",
-                        "Element Plans",
-                        ("element_plans",),
-                        formats=("drawai.element_plans.v1",),
-                    ),
-                ),
-                config={"fusion_id": "priority_nms"},
-                position={"x": 500, "y": 160},
-            ),
-            WorkflowNode(
-                node_id="run0_agent",
-                node_type="agent",
-                title="Asset Refine Agent",
-                inputs=(
-                    _input("image", "Image", ("image",), formats=("drawai.image.v1",)),
-                    _input("elements", "Element Plans", ("element_plans",)),
-                ),
-                outputs=(
-                    _output(
-                        "elements",
-                        "Element Plans",
-                        ("element_plans",),
-                        formats=("drawai.element_plans.v1",),
+                        "sam_page_spec",
+                        "SAM Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="PageSpec evidence produced from SAM regions for this page.",
                     ),
                 ),
                 config={
-                    "preset_id": "run0_element_refine",
+                    "processor_id": "sam_parse",
+                    "stage": "sam_parse",
+                    "prompts": _sam3_prompt_configs(),
+                },
+                position={"x": 280, "y": 80},
+            ),
+            WorkflowNode(
+                node_id="ocr_parse",
+                node_type="processor",
+                title="OCR Parse",
+                inputs=(
+                    _input(
+                        "image",
+                        "Image",
+                        ("image",),
+                        description="Original page image for OCR text box detection.",
+                    ),
+                ),
+                outputs=(
+                    _output(
+                        "ocr_page_spec",
+                        "OCR Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="PageSpec evidence produced from OCR text boxes for this page.",
+                    ),
+                ),
+                config={"processor_id": "ocr_parse", "stage": "ocr_parse"},
+                position={"x": 280, "y": 240},
+            ),
+            WorkflowNode(
+                node_id="page_spec_fuse",
+                node_type="processor",
+                title="PageSpec Fuse",
+                inputs=(
+                    _input(
+                        "sam_page_spec",
+                        "SAM Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="SAM-derived PageSpec evidence to fuse with OCR evidence.",
+                    ),
+                    _input(
+                        "ocr_page_spec",
+                        "OCR Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="OCR-derived PageSpec evidence to fuse with SAM evidence.",
+                    ),
+                ),
+                outputs=(
+                    _output(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Fused PageSpec evidence from connected parser nodes. This is still evidence, not final refined truth.",
+                    ),
+                ),
+                config={"processor_id": "page_spec_fuse", "stage": "fuse_elements"},
+                position={"x": 560, "y": 160},
+            ),
+            WorkflowNode(
+                node_id="page_spec_refine",
+                node_type="agent",
+                title="PageSpec Refine",
+                inputs=(
+                    _input(
+                        "image",
+                        "Image",
+                        ("image",),
+                        formats=("drawai.image.v1",),
+                        description="Original page image. Use as visual truth for bbox, text, object boundaries, and crop/crop_nobg decisions.",
+                    ),
+                    _input(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Upstream PageSpec evidence to refine directly. Keep decisions in PageSpec elements and metadata.",
+                    ),
+                ),
+                outputs=(
+                    _output(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Refined one-page PageSpec JSON. Elements are the source of truth for downstream asset preparation.",
+                    ),
+                ),
+                config={
+                    "preset_id": "page_spec_refine",
                     "provider_id": "codex_sdk",
                     "reasoning_effort": "high",
                     "timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
-                    "task": RUN0_ELEMENT_REFINE_TASK,
-                    "constraints": list(RUN0_ELEMENT_REFINE_CONSTRAINTS),
+                    "task": PAGE_SPEC_REFINE_TASK,
+                    "constraints": list(PAGE_SPEC_REFINE_CONSTRAINTS),
+                    "drawai_tools": ["format"],
                     "outputs": [
                         {
-                            "port_id": "elements",
-                            "path": "output/elements.json",
-                            "format_id": "drawai.element_plans.v1",
-                            "type": "element_plans",
-                            "description": "Run0 refined DrawAI element plans for asset materialization and SVG generation.",
+                            "port_id": "page_spec",
+                            "path": "output/page_spec.json",
+                            "format_id": "drawai.page_spec.v1",
+                            "type": "page_spec",
+                            "description": "Refined one-page PageSpec JSON.",
                         }
                     ],
                 },
-                position={"x": 760, "y": 160},
+                position={"x": 840, "y": 160},
             ),
             WorkflowNode(
-                node_id="asset_planner",
+                node_id="asset_prepare",
                 node_type="processor",
-                title="Asset Planner",
-                inputs=(_input("elements", "Element Plans", ("element_plans",)),),
-                outputs=(
-                    _output(
-                        "elements",
-                        "Planned Elements",
-                        ("element_plans",),
-                        formats=("drawai.element_plans.v1",),
-                    ),
-                ),
-                config={"processor_id": "asset_planner"},
-                position={"x": 1020, "y": 160},
-            ),
-            WorkflowNode(
-                node_id="asset_processors",
-                node_type="processor",
-                title="Asset Processors",
-                inputs=(_input("elements", "Planned Elements", ("element_plans",)),),
-                outputs=(
-                    _output(
-                        "asset_packages",
-                        "Asset Packages",
-                        ("asset_packages",),
-                        formats=("drawai.asset_packages.v1",),
-                    ),
-                ),
-                config={"processor_id": "asset_processors"},
-                position={"x": 1280, "y": 160},
-            ),
-            WorkflowNode(
-                node_id="asset_confirm",
-                node_type="human_review",
-                title="Asset Confirm",
+                title="Asset Prepare",
                 inputs=(
                     _input(
-                        "asset_packages",
-                        "Asset Packages",
-                        ("asset_packages",),
+                        "image",
+                        "Image",
+                        ("image",),
+                        formats=("drawai.image.v1",),
+                        description="Original page image used to crop and remove backgrounds for PageSpec raster elements.",
+                    ),
+                    _input(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Refined PageSpec whose element build.processing_type controls asset materialization.",
                     ),
                 ),
                 outputs=(
                     _output(
-                        "asset_packages",
-                        "Confirmed Asset Packages",
-                        ("asset_packages",),
-                        formats=("drawai.asset_packages.v1",),
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Materialized PageSpec. crop/crop_nobg elements contain element.materialization paths relative to this bundle.",
                     ),
                 ),
-                config={
-                    "review_surface": "assets",
-                    "result_path": "output/confirmed_asset_packages.json",
-                },
-                position={"x": 1540, "y": 80},
+                config={"processor_id": "asset_prepare", "stage": "process_assets"},
+                position={"x": 1120, "y": 160},
             ),
             WorkflowNode(
-                node_id="svg_agent",
+                node_id="svg_compose",
                 node_type="agent",
-                title="SVG Agent",
+                title="SVG Compose",
                 inputs=(
-                    _input("elements", "Element Plans", ("element_plans",)),
-                    _input("asset_packages", "Asset Packages", ("asset_packages",)),
+                    _input(
+                        "image",
+                        "Image",
+                        ("image",),
+                        formats=("drawai.image.v1",),
+                        description="Original page image. Use as visual truth while composing and comparing the SVG.",
+                    ),
+                    _input(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        description="Materialized PageSpec from asset_prepare. Use element ids, bbox/style/text/build fields, and materialization paths for allowed crop/crop_nobg raster hrefs.",
+                    ),
                 ),
                 outputs=(
                     _output(
@@ -210,14 +244,16 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                         ("semantic_svg",),
                         formats=("drawai.semantic_svg.v1",),
                         deliverable=True,
+                        description="Editable semantic SVG final for preview, PPT export, and final outputs.",
                     ),
                 ),
                 config={
                     "preset_id": "svg_generation",
                     "provider_id": "codex_sdk",
-                    "timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
+                    "timeout_seconds": SVG_AGENT_TIMEOUT_SECONDS,
                     "task": SVG_GENERATION_TASK,
                     "constraints": list(SVG_GENERATION_CONSTRAINTS),
+                    "drawai_tools": ["format", "page-spec-assets", "svg-validate"],
                     "outputs": [
                         {
                             "port_id": "semantic_svg",
@@ -228,13 +264,28 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                         }
                     ],
                 },
-                position={"x": 1540, "y": 260},
+                position={"x": 1400, "y": 160},
             ),
             WorkflowNode(
                 node_id="svg_to_ppt",
                 node_type="export",
                 title="SVG to PPT",
-                inputs=(_input("semantic_svg", "Semantic SVG", ("semantic_svg",)),),
+                inputs=(
+                    _input(
+                        "semantic_svg",
+                        "Semantic SVG",
+                        ("semantic_svg",),
+                        description="Final semantic SVG produced by svg_compose.",
+                    ),
+                    _input(
+                        "page_spec",
+                        "Page Spec",
+                        ("page_spec",),
+                        formats=("drawai.page_spec.v1",),
+                        required=False,
+                        description="Optional materialized PageSpec for SVG-to-PPT export context.",
+                    ),
+                ),
                 outputs=(
                     _output(
                         "pptx",
@@ -242,10 +293,11 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                         ("pptx",),
                         formats=("drawai.pptx.v1",),
                         deliverable=True,
+                        description="Editable PPTX export generated from the semantic SVG.",
                     ),
                 ),
                 config={"exporter_id": "svg_to_ppt"},
-                position={"x": 1800, "y": 260},
+                position={"x": 1680, "y": 160},
             ),
             WorkflowNode(
                 node_id="output",
@@ -257,6 +309,7 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                         "Deliverables",
                         ("semantic_svg", "pptx"),
                         cardinality="many",
+                        description="Collect final deliverable artifacts from upstream nodes.",
                     ),
                 ),
                 outputs=(
@@ -268,23 +321,23 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                     ),
                 ),
                 config={"auto_collect_deliverables": True},
-                position={"x": 2060, "y": 180},
+                position={"x": 1960, "y": 160},
             ),
         ),
         edges=(
-            _edge("input", "image", "sam_parser", "image"),
-            _edge("input", "image", "ocr_parser", "image"),
-            _edge("sam_parser", "candidates", "fusion", "candidates"),
-            _edge("ocr_parser", "candidates", "fusion", "candidates"),
-            _edge("input", "image", "run0_agent", "image"),
-            _edge("fusion", "elements", "run0_agent", "elements"),
-            _edge("run0_agent", "elements", "asset_planner", "elements"),
-            _edge("asset_planner", "elements", "asset_processors", "elements"),
-            _edge("asset_planner", "elements", "svg_agent", "elements"),
-            _edge("asset_processors", "asset_packages", "asset_confirm", "asset_packages"),
-            _edge("asset_confirm", "asset_packages", "svg_agent", "asset_packages"),
-            _edge("svg_agent", "semantic_svg", "svg_to_ppt", "semantic_svg"),
-            _edge("svg_agent", "semantic_svg", "output", "deliverables"),
+            _edge("input", "image", "sam_parse", "image"),
+            _edge("input", "image", "ocr_parse", "image"),
+            _edge("input", "image", "page_spec_refine", "image"),
+            _edge("input", "image", "asset_prepare", "image"),
+            _edge("input", "image", "svg_compose", "image"),
+            _edge("sam_parse", "sam_page_spec", "page_spec_fuse", "sam_page_spec"),
+            _edge("ocr_parse", "ocr_page_spec", "page_spec_fuse", "ocr_page_spec"),
+            _edge("page_spec_fuse", "page_spec", "page_spec_refine", "page_spec"),
+            _edge("page_spec_refine", "page_spec", "asset_prepare", "page_spec"),
+            _edge("asset_prepare", "page_spec", "svg_compose", "page_spec"),
+            _edge("svg_compose", "semantic_svg", "svg_to_ppt", "semantic_svg"),
+            _edge("asset_prepare", "page_spec", "svg_to_ppt", "page_spec"),
+            _edge("svg_compose", "semantic_svg", "output", "deliverables"),
             _edge("svg_to_ppt", "pptx", "output", "deliverables"),
         ),
         defaults={
@@ -468,12 +521,14 @@ _LEGACY_AGENT_TASK_TEXTS: dict[str, set[str]] = {
 
 _AGENT_TASK_DEFAULTS = {
     "run0_element_refine": RUN0_ELEMENT_REFINE_TASK,
+    "page_spec_refine": PAGE_SPEC_REFINE_TASK,
     "svg_generation": SVG_GENERATION_TASK,
     "custom_agent": CUSTOM_AGENT_TASK,
 }
 
 _AGENT_CONSTRAINT_DEFAULTS = {
     "run0_element_refine": RUN0_ELEMENT_REFINE_CONSTRAINTS,
+    "page_spec_refine": PAGE_SPEC_REFINE_CONSTRAINTS,
     "svg_generation": SVG_GENERATION_CONSTRAINTS,
     "custom_agent": CUSTOM_AGENT_CONSTRAINTS,
 }
@@ -500,10 +555,13 @@ def _normalized_node_config(node_type: str, config: dict[str, Any]) -> dict[str,
     raw_constraints = normalized.get("constraints")
     if raw_constraints in (None, "", []):
         normalized["constraints"] = list(_AGENT_CONSTRAINT_DEFAULTS[preset_id])
-    if preset_id == "run0_element_refine":
+    if preset_id in {"run0_element_refine", "page_spec_refine"}:
         normalized.setdefault("reasoning_effort", "high")
     if preset_id in _AGENT_TASK_DEFAULTS:
-        normalized.setdefault("timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
+        default_timeout = (
+            SVG_AGENT_TIMEOUT_SECONDS if preset_id == "svg_generation" else DEFAULT_AGENT_TIMEOUT_SECONDS
+        )
+        normalized.setdefault("timeout_seconds", default_timeout)
     return normalized
 
 
@@ -569,16 +627,19 @@ def _input(
     label: str,
     types: tuple[str, ...],
     *,
+    required: bool = True,
     cardinality: str = "single",
     formats: tuple[str, ...] = (),
+    description: str = "",
 ) -> WorkflowPort:
     return WorkflowPort(
         port_id=port_id,
         label=label,
         types=types,
-        required=True,
+        required=required,
         cardinality=cardinality,  # type: ignore[arg-type]
         formats=formats,
+        description=description,
     )
 
 
@@ -589,15 +650,18 @@ def _output(
     *,
     formats: tuple[str, ...] = (),
     deliverable: bool = False,
+    description: str = "",
 ) -> WorkflowPort:
-    description = "deliverable" if deliverable else ""
+    port_description = description
+    if deliverable:
+        port_description = f"deliverable; {description}" if description else "deliverable"
     return WorkflowPort(
         port_id=port_id,
         label=label,
         types=types,
         required=False,
         formats=formats,
-        description=description,
+        description=port_description,
     )
 
 

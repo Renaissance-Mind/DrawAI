@@ -4043,7 +4043,7 @@ button.asset-status-unsupported {
 }
 
 .node-artifact-workspace {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
 }
 
 .node-artifact-empty {
@@ -4085,6 +4085,69 @@ button.asset-status-unsupported {
   color: var(--teal);
   padding: 5px 8px;
   text-decoration: none;
+}
+
+.node-agent-log-panel {
+  max-height: 220px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
+  background: #fbfcfd;
+}
+
+.node-agent-log-panel header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px 12px;
+  scrollbar-width: none;
+}
+
+.node-agent-log-panel header::-webkit-scrollbar {
+  display: none;
+}
+
+.node-agent-log-panel header span {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-agent-log-panel header a {
+  flex: 0 0 auto;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--teal);
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.node-agent-log-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 10px;
+}
+
+.node-agent-log-list pre,
+.node-agent-log-list span {
+  display: block;
+  margin: 0 0 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  padding: 7px 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 1180px) {

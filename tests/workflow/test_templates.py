@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS
-from drawai.workflow.schema import WorkflowNode, WorkflowTemplate
+from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
+from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, SVG_AGENT_TIMEOUT_SECONDS
 from drawai.workflow.templates import (
     copy_builtin_template_to_workspace,
     copy_builtin_template,
@@ -31,44 +31,34 @@ def test_default_drawai_workflow_template_validates() -> None:
     assert result.errors == ()
 
 
-def test_default_template_contains_current_v2_nodes() -> None:
+def test_default_template_contains_pagespec_dag_nodes() -> None:
     template = default_drawai_workflow_template()
     node_ids = {node.node_id for node in template.nodes}
 
-    assert {
+    assert node_ids == {
         "input",
-        "sam_parser",
-        "ocr_parser",
-        "fusion",
-        "run0_agent",
-        "asset_planner",
-        "asset_processors",
-        "asset_confirm",
-        "svg_agent",
+        "sam_parse",
+        "ocr_parse",
+        "page_spec_fuse",
+        "page_spec_refine",
+        "asset_prepare",
+        "svg_compose",
         "svg_to_ppt",
         "output",
-    }.issubset(node_ids)
-
-
-def test_default_template_routes_assets_through_human_review_node() -> None:
-    template = default_drawai_workflow_template()
-    nodes = {node.node_id: node for node in template.nodes}
-    edges = {
-        (edge.source_node_id, edge.source_port_id, edge.target_node_id, edge.target_port_id)
-        for edge in template.edges
     }
 
-    assert nodes["asset_confirm"].node_type == "human_review"
-    assert nodes["asset_confirm"].config["review_surface"] == "assets"
-    assert ("asset_processors", "asset_packages", "asset_confirm", "asset_packages") in edges
-    assert ("asset_confirm", "asset_packages", "svg_agent", "asset_packages") in edges
+
+def test_default_template_skips_human_review_node() -> None:
+    template = default_drawai_workflow_template()
+
+    assert "human_review" not in {node.node_type for node in template.nodes}
 
 
-def test_default_template_exposes_sam_prompt_configuration() -> None:
+def test_default_template_exposes_sam_prompt_configuration_on_sam_parser() -> None:
     template = default_drawai_workflow_template()
     nodes = {node.node_id: node for node in template.nodes}
 
-    prompts = nodes["sam_parser"].config["prompts"]
+    prompts = nodes["sam_parse"].config["prompts"]
 
     assert prompts[0] == {
         "id": "arrow",
@@ -78,34 +68,37 @@ def test_default_template_exposes_sam_prompt_configuration() -> None:
     assert {prompt["id"] for prompt in prompts} >= {"content_box", "icon", "picture"}
 
 
-def test_asset_refine_and_svg_are_agent_node_presets() -> None:
+def test_default_template_uses_pagespec_processor_formats() -> None:
     template = default_drawai_workflow_template()
     nodes = {node.node_id: node for node in template.nodes}
 
-    assert nodes["run0_agent"].node_type == "agent"
-    assert nodes["svg_agent"].node_type == "agent"
-    assert nodes["run0_agent"].title == "Asset Refine Agent"
-    assert nodes["run0_agent"].config["provider_id"] == "codex_sdk"
-    assert nodes["run0_agent"].config["reasoning_effort"] == "high"
-    assert nodes["run0_agent"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
-    assert nodes["svg_agent"].config["provider_id"] == "codex_sdk"
-    assert nodes["svg_agent"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
-    assert nodes["run0_agent"].config["preset_id"] == "run0_element_refine"
-    assert nodes["svg_agent"].config["preset_id"] == "svg_generation"
-    assert "DrawAI asset post-processing and element-plans task." in nodes["run0_agent"].config["task"]
-    assert "Task 2: repeat a bounded visualization/refinement loop" in nodes["run0_agent"].config["task"]
-    assert nodes["run0_agent"].config["constraints"]
-    assert nodes["run0_agent"].config["outputs"][0]["format_id"] == "drawai.element_plans.v1"
-    assert [port.port_id for port in nodes["run0_agent"].inputs] == ["image", "elements"]
-    assert nodes["run0_agent"].inputs[0].types == ("image",)
-    assert nodes["run0_agent"].inputs[1].types == ("element_plans",)
-    assert nodes["run0_agent"].outputs[0].types == ("element_plans",)
-    assert nodes["asset_planner"].inputs[0].types == ("element_plans",)
-    assert "IMAGE VECTORIZATION TASK" in nodes["svg_agent"].config["task"]
-    assert "REFINE LOOP / MAX 3 ROUNDS" in nodes["svg_agent"].config["task"]
-    assert "OVERALL SVG/PPT PROFILE" in nodes["svg_agent"].config["task"]
-    assert nodes["svg_agent"].config["constraints"]
-    assert nodes["svg_agent"].config["outputs"][0]["format_id"] == "drawai.semantic_svg.v1"
+    assert nodes["sam_parse"].node_type == "processor"
+    assert nodes["sam_parse"].config["processor_id"] == "sam_parse"
+    assert nodes["sam_parse"].outputs[0].types == ("page_spec",)
+    assert nodes["sam_parse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["ocr_parse"].outputs[0].types == ("page_spec",)
+    assert nodes["ocr_parse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_fuse"].inputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_fuse"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_refine"].node_type == "agent"
+    assert nodes["page_spec_refine"].inputs[1].formats == ("drawai.page_spec.v1",)
+    assert nodes["page_spec_refine"].outputs[0].formats == ("drawai.page_spec.v1",)
+    assert nodes["asset_prepare"].inputs[1].types == ("page_spec",)
+    assert nodes["asset_prepare"].outputs[0].types == ("page_spec",)
+    assert nodes["svg_compose"].node_type == "agent"
+    assert nodes["svg_compose"].inputs[1].types == ("page_spec",)
+    assert nodes["svg_compose"].outputs[0].formats == ("drawai.semantic_svg.v1",)
+    assert nodes["svg_compose"].outputs[0].description.startswith("deliverable;")
+    assert "Materialized PageSpec" in nodes["svg_compose"].inputs[1].description
+    assert "crop_nobg" in nodes["page_spec_refine"].inputs[0].description
+
+
+def test_default_template_gives_svg_compose_longer_timeout() -> None:
+    template = default_drawai_workflow_template()
+    nodes = {node.node_id: node for node in template.nodes}
+
+    assert nodes["page_spec_refine"].config["timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS
+    assert nodes["svg_compose"].config["timeout_seconds"] == SVG_AGENT_TIMEOUT_SECONDS
 
 
 def test_default_template_routes_svg_and_pptx_into_output() -> None:
@@ -116,19 +109,26 @@ def test_default_template_routes_svg_and_pptx_into_output() -> None:
         if edge.target_node_id == "output"
     }
 
-    assert ("svg_agent", "semantic_svg", "output", "deliverables") in output_edges
+    assert ("svg_compose", "semantic_svg", "output", "deliverables") in output_edges
     assert ("svg_to_ppt", "pptx", "output", "deliverables") in output_edges
 
 
-def test_default_template_routes_original_image_into_asset_refine_agent() -> None:
+def test_default_template_routes_page_spec_through_assets_and_svg() -> None:
     template = default_drawai_workflow_template()
     edges = {
         (edge.source_node_id, edge.source_port_id, edge.target_node_id, edge.target_port_id)
         for edge in template.edges
     }
 
-    assert ("input", "image", "run0_agent", "image") in edges
-    assert ("fusion", "elements", "run0_agent", "elements") in edges
+    assert ("input", "image", "sam_parse", "image") in edges
+    assert ("input", "image", "ocr_parse", "image") in edges
+    assert ("input", "image", "asset_prepare", "image") in edges
+    assert ("sam_parse", "sam_page_spec", "page_spec_fuse", "sam_page_spec") in edges
+    assert ("ocr_parse", "ocr_page_spec", "page_spec_fuse", "ocr_page_spec") in edges
+    assert ("page_spec_fuse", "page_spec", "page_spec_refine", "page_spec") in edges
+    assert ("page_spec_refine", "page_spec", "asset_prepare", "page_spec") in edges
+    assert ("asset_prepare", "page_spec", "svg_compose", "page_spec") in edges
+    assert ("asset_prepare", "page_spec", "svg_to_ppt", "page_spec") in edges
 
 
 def test_workflow_template_paths_are_under_ignored_workbench_dir(tmp_path: Path) -> None:
@@ -169,12 +169,9 @@ def test_save_and_load_workflow_template_round_trip(tmp_path: Path) -> None:
 
 
 def test_load_workflow_template_normalizes_legacy_asset_refine_title(tmp_path: Path) -> None:
-    copied = copy_builtin_template("default_drawai_dag", name="Legacy DAG")
-    payload = copied.to_dict()
-    for node in payload["nodes"]:
-        if node["node_id"] == "run0_agent":
-            node["title"] = "Run0 Agent"
-    path = user_workflow_template_path(tmp_path, copied.template_id)
+    payload = _legacy_agent_template_payload()
+    payload["nodes"][0]["title"] = "Run0 Agent"
+    path = user_workflow_template_path(tmp_path, payload["template_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -185,8 +182,7 @@ def test_load_workflow_template_normalizes_legacy_asset_refine_title(tmp_path: P
 
 
 def test_load_workflow_template_upgrades_legacy_agent_default_prompts(tmp_path: Path) -> None:
-    copied = copy_builtin_template("default_drawai_dag", name="Legacy Prompt DAG")
-    payload = copied.to_dict()
+    payload = _legacy_agent_template_payload()
     for node in payload["nodes"]:
         if node["node_id"] == "run0_agent":
             node["config"]["task"] = "Refine element bbox, size, and type. Preserve IDs unless merge/delete is declared."
@@ -195,14 +191,14 @@ def test_load_workflow_template_upgrades_legacy_agent_default_prompts(tmp_path: 
             node["config"]["prompt_fragments"] = "Generate an editable SVG using connected element plans and confirmed assets."
             node["config"].pop("task", None)
             node["config"].pop("constraints", None)
-    path = user_workflow_template_path(tmp_path, copied.template_id)
+    path = user_workflow_template_path(tmp_path, payload["template_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     loaded = load_workflow_template(path)
     nodes = {node.node_id: node for node in loaded.nodes}
 
-    assert "DrawAI asset post-processing and element-plans task." in nodes["run0_agent"].config["task"]
+    assert "DrawAI asset post-processing and source analysis task." in nodes["run0_agent"].config["task"]
     assert nodes["run0_agent"].config["constraints"]
     assert "IMAGE VECTORIZATION TASK" in nodes["svg_agent"].config["task"]
     assert "prompt_fragments" not in nodes["svg_agent"].config
@@ -218,7 +214,13 @@ def test_save_workflow_template_rejects_invalid_template(tmp_path: Path) -> None
                 node_id="fusion",
                 node_type="fusion",
                 title="Fusion",
-                inputs=default_drawai_workflow_template().nodes[3].inputs,
+                inputs=(
+                    WorkflowPort(
+                        port_id="candidates",
+                        label="Candidates",
+                        types=("element_candidates",),
+                    ),
+                ),
             ),
         ),
         edges=(),
@@ -254,3 +256,74 @@ def test_load_workflow_template_by_id_loads_builtin_or_local_template(tmp_path: 
     assert builtin.defaults["builtin"] is True
     assert local.template_id == copied.template_id
     assert local.defaults["read_only"] is False
+
+
+def _legacy_agent_template_payload() -> dict[str, object]:
+    return {
+        "schema": "drawai.workflow_template.v1",
+        "template_id": "legacy_agent_template",
+        "name": "Legacy Agent Template",
+        "version": 1,
+        "nodes": [
+            {
+                "node_id": "run0_agent",
+                "node_type": "agent",
+                "title": "Asset Refine Agent",
+                "inputs": [],
+                "outputs": [
+                    {
+                        "port_id": "analysis",
+                        "label": "Element Analysis",
+                        "types": ["element_analysis"],
+                        "formats": ["drawai.codex_element_analysis.v1"],
+                        "required": False,
+                        "cardinality": "single",
+                    }
+                ],
+                "config": {
+                    "preset_id": "run0_element_refine",
+                    "provider_id": "codex_sdk",
+                    "outputs": [
+                        {
+                            "port_id": "analysis",
+                            "path": "output/element_analysis.json",
+                            "format_id": "drawai.codex_element_analysis.v1",
+                            "type": "element_analysis",
+                            "description": "Run0 refined asset/source analysis.",
+                        }
+                    ],
+                },
+            },
+            {
+                "node_id": "svg_agent",
+                "node_type": "agent",
+                "title": "SVG Agent",
+                "inputs": [],
+                "outputs": [
+                    {
+                        "port_id": "semantic_svg",
+                        "label": "Semantic SVG",
+                        "types": ["semantic_svg"],
+                        "formats": ["drawai.semantic_svg.v1"],
+                        "required": False,
+                        "cardinality": "single",
+                    }
+                ],
+                "config": {
+                    "preset_id": "svg_generation",
+                    "provider_id": "codex_sdk",
+                    "outputs": [
+                        {
+                            "port_id": "semantic_svg",
+                            "path": "output/semantic.svg",
+                            "format_id": "drawai.semantic_svg.v1",
+                            "type": "semantic_svg",
+                            "description": "Editable semantic SVG rooted at an svg element.",
+                        }
+                    ],
+                },
+            },
+        ],
+        "edges": [],
+        "defaults": {},
+    }

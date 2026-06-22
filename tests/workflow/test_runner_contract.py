@@ -43,13 +43,26 @@ def _tiny_template() -> WorkflowTemplate:
                 node_id="input",
                 node_type="input",
                 title="Input",
-                outputs=(_port("source", ("source",), required=False),),
+                outputs=(
+                    _port(
+                        "source",
+                        ("source",),
+                        required=False,
+                        description="Source artifact from input node.",
+                    ),
+                ),
             ),
             WorkflowNode(
                 node_id="agent",
                 node_type="agent",
                 title="Agent",
-                inputs=(_port("source", ("source",)),),
+                inputs=(
+                    _port(
+                        "source",
+                        ("source",),
+                        description="Connected source artifact for the agent.",
+                    ),
+                ),
                 outputs=(
                     _port(
                         "semantic_svg",
@@ -126,6 +139,9 @@ def test_workflow_runner_executes_nodes_and_finalizes_output(tmp_path: Path) -> 
     ) -> tuple[Mapping[str, Any], ...]:
         events.append(context.node.node_id)
         assert inputs[0]["source_node_id"] == "input"
+        assert inputs[0]["description"] == "Connected source artifact for the agent."
+        assert inputs[0]["source_port_label"] == "source"
+        assert inputs[0]["target_port_label"] == "source"
         svg_path = context.output_dir / "semantic.svg"
         svg_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
         return (

@@ -10,6 +10,7 @@ from typing import Any
 from lxml import etree
 from PIL import Image
 
+from drawai.page_spec import validate_page_spec_payload
 from drawai.v2.schema import (
     ElementCandidate,
     ElementPlan,
@@ -88,6 +89,21 @@ def default_format_registry() -> dict[str, FormatSpec]:
                 "UTF-8 JSON object with an elements array, or a JSON array of element plan objects. Each element "
                 "contains element_id, source_candidate_ids, element_type, bbox [x,y,width,height], geometry, z_order, "
                 "confidence, processing_intent, review_status, created_by_stage, and change_reason."
+            ),
+        ),
+        "drawai.page_spec.v1": FormatSpec(
+            format_id="drawai.page_spec.v1",
+            label="Page Spec",
+            media_type="application/json",
+            artifact_type="page_spec",
+            validator=_validate_page_spec,
+            description=(
+                "UTF-8 JSON object with schema drawai.page_spec.v1. It is the canonical page model used by "
+                "PageSpec-first DAGs: source, canvas, optional background, and elements. Elements use stable id, "
+                "kind text|shape|image|connector|table|chart|formula|group|unknown, source-pixel geometry "
+                "box_px/points_px/polygon_px, z_index, role, build instructions, style, measurement, source_refs, "
+                "metadata, and optional materialization outputs. Materialization paths are relative to the "
+                "PageSpec JSON bundle directory."
             ),
         ),
         "drawai.codex_element_analysis.v1": FormatSpec(
@@ -272,6 +288,20 @@ def _validate_element_analysis(path: Path) -> tuple[str, ...]:
     try:
         codex_analysis_to_v2_element_plans(payload)
         codex_analysis_to_v2_removal_records(payload)
+    except Exception as exc:
+        return (str(exc),)
+    return ()
+
+
+def _validate_page_spec(path: Path) -> tuple[str, ...]:
+    payload, errors = _read_json_object(path)
+    if errors:
+        return errors
+    try:
+        validate_page_spec_payload(payload)
+        from drawai.page_spec_assets import validate_page_spec_bundle_payload
+
+        validate_page_spec_bundle_payload(payload, path.parent)
     except Exception as exc:
         return (str(exc),)
     return ()

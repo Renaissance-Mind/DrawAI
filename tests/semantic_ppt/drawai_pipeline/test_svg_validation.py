@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
+import drawai.svg_validation as svg_validation
 from drawai.svg_validation import validate_svg_file
 
 
@@ -24,10 +26,17 @@ def test_validate_svg_accepts_renderable_nonblank_svg(tmp_path: Path):
 
 def test_validate_svg_prefers_configured_browser_renderer(tmp_path: Path, monkeypatch):
     browser = tmp_path / "browser_renderer.py"
+    args_path = tmp_path / "browser_args.json"
     browser.write_text(
         "#!/usr/bin/env python3\n"
         "import base64\n"
+        "import json\n"
+        "import os\n"
         "import sys\n"
+        "args_path = os.environ.get('DRAWAI_TEST_BROWSER_ARGS')\n"
+        "if args_path:\n"
+        "    with open(args_path, 'w', encoding='utf-8') as handle:\n"
+        "        json.dump(sys.argv, handle)\n"
         "png = base64.b64decode(\n"
         "    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFUlEQVR4nGP8z8DwnwEJMCFziBMAAIPRAgYEvCRHAAAAAElFTkSuQmCC'\n"
         ")\n"
@@ -42,12 +51,22 @@ def test_validate_svg_prefers_configured_browser_renderer(tmp_path: Path, monkey
     svg = tmp_path / "ok.svg"
     svg.write_text(VALID_SVG, encoding="utf-8")
     monkeypatch.setenv("DRAWAI_SVG_RENDERER_BROWSER", str(browser))
+    monkeypatch.setenv("DRAWAI_TEST_BROWSER_ARGS", str(args_path))
+    monkeypatch.setattr(svg_validation, "_browser_renderer_keychain_flags", lambda: ["--use-mock-keychain", "--password-store=basic"])
 
     report = validate_svg_file(svg, canvas=(100, 80), asset_manifest={"assets": []}, rendered_path=tmp_path / "rendered.png")
 
     assert report["status"] == "ok"
     assert report["render"]["backend"] == "browser"
     assert (tmp_path / "rendered.png").exists()
+    args = json.loads(args_path.read_text(encoding="utf-8"))
+    assert "--use-mock-keychain" in args
+    assert "--password-store=basic" in args
+
+
+def test_browser_renderer_keychain_flags_are_macos_only():
+    assert svg_validation._browser_renderer_keychain_flags("darwin") == ["--use-mock-keychain", "--password-store=basic"]
+    assert svg_validation._browser_renderer_keychain_flags("linux") == []
 
 
 def test_validate_svg_rejects_external_href(tmp_path: Path):

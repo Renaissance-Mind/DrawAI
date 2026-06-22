@@ -151,8 +151,9 @@ def test_workflow_run_agent_cli_uses_file_backed_execution(tmp_path: Path, capsy
         assert request.node_id == "agent"
         assert request.run_root == run_root.resolve(strict=False)
         assert request.workdir == workdir.resolve(strict=False)
-        assert "Input manifest path:" in request.prompt.text
+        assert "Input manifest path:" not in request.prompt.text
         assert "nodes/input/runs/001/output/image.png" in request.prompt.text
+        assert "## DrawAI Tools" in request.prompt.text
         output_path = request.workdir / "output" / "image.png"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake")
@@ -193,7 +194,7 @@ def test_workflow_run_agent_cli_uses_file_backed_execution(tmp_path: Path, capsy
     payload = _read_stdout_json(capsys)
     assert status == 0
     assert payload["provider_id"] == "codex_sdk"
-    assert (workdir / "input_manifest.json").is_file()
+    assert not (workdir / "input_manifest.json").exists()
     assert payload["execution_manifest_path"] == "nodes/agent/runs/cli/agent_execution.json"
 
 

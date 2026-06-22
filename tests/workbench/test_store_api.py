@@ -21,6 +21,7 @@ from drawai.rmbg_client import RmbgResult
 from drawai.v2.packages import write_asset_package, write_element_plan
 from drawai.v2.schema import AssetPackage, ElementPlan, ProcessingIntent, RUN_PACKAGE_SCHEMA
 from drawai.workflow.agent_execution import AgentExecutionRequest, AgentExecutionResult
+from drawai.workflow.templates import user_workflow_template_path
 import drawai.workbench.api as workbench_api
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
@@ -325,7 +326,7 @@ def test_store_rejects_artifacts_outside_case_root(tmp_path: Path) -> None:
         store.write_case_json(case.case_id, "../escape.json", {"bad": True})
 
 
-def test_runner_completes_analysis_and_stops_for_asset_review(tmp_path: Path) -> None:
+def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
     source = tmp_path / "source.png"
@@ -367,20 +368,48 @@ def test_runner_completes_analysis_and_stops_for_asset_review(tmp_path: Path) ->
     runner.wait_for_idle(timeout=5)
 
     updated = store.get_case(case.case_id)
-    assert updated.status == "assets_review"
-    assert updated.stage == "asset_confirm"
+    assert updated.status == "completed"
+    assert updated.stage == "completed"
     assert observed_stages == [
         "prepare",
-        "parse_elements",
-        "fuse_elements",
-        "process_assets",
+        "sam_parse",
+        "ocr_parse",
     ]
-    assert (Path(updated.run_root) / "reports" / "workbench" / "asset_draft.json").exists()
-    assert (Path(updated.run_root) / "drawai_package.json").exists()
-    assert (Path(updated.run_root) / "elements" / "E001" / "asset_package.json").exists()
+    assert (Path(updated.run_root) / "page_spec.json").exists()
+    assert not (Path(updated.run_root) / "drawai_package.json").exists()
+    prepared_page_spec = json.loads(
+        (
+            Path(updated.run_root)
+            / "nodes"
+            / "asset_prepare"
+            / "runs"
+            / "001"
+            / "output"
+            / "page_spec.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert prepared_page_spec["schema"] == "drawai.page_spec.v1"
+    assert prepared_page_spec["elements"][0]["materialization"]["outputs"]["active"]["path"] == "assets/E001/active.png"
+    assert (
+        Path(updated.run_root)
+        / "nodes"
+        / "asset_prepare"
+        / "runs"
+        / "001"
+        / "output"
+        / "assets"
+        / "E001"
+        / "active.png"
+    ).exists()
     assert (Path(updated.run_root) / "svg_to_ppt" / "assets" / "asset_manifest.json").exists()
-    assert (Path(updated.run_root) / "nodes" / "asset_confirm" / "runs" / "001" / "node_run.json").exists()
-    assert store.get_batch(batch.batch_id).status == "waiting_review"
+    assert (Path(updated.run_root) / "nodes" / "sam_parse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "ocr_parse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "page_spec_fuse" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "page_spec_refine" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "asset_prepare" / "runs" / "001" / "node_run.json").exists()
+    assert (Path(updated.run_root) / "nodes" / "svg_compose" / "runs" / "001" / "node_run.json").exists()
+    assert not (Path(updated.run_root) / "nodes" / "asset_confirm").exists()
+    assert store.get_batch(batch.batch_id).status == "completed"
 
 
 def test_runner_auto_run_approves_and_reconstructs(tmp_path: Path) -> None:
@@ -420,7 +449,7 @@ def test_runner_auto_run_approves_and_reconstructs(tmp_path: Path) -> None:
 
     updated = store.get_case(case.case_id)
     assert updated.status == "completed"
-    assert (Path(updated.run_root) / "reports" / "workbench" / "approved_asset_plan.json").exists()
+    assert (Path(updated.run_root) / "page_spec.json").exists()
     assert (Path(updated.run_root) / "svg" / "semantic.svg").exists()
     assert store.get_batch(batch.batch_id).status == "completed"
 
@@ -637,12 +666,15 @@ def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     )
     source = tmp_path / "source.png"
     Image.new("RGB", (24, 24), "white").save(source)
+    review_template_id = "custom_review_dag"
+    _write_legacy_review_workflow_template(store.workspace, review_template_id)
     batch = store.create_batch(
         name="batch",
         input_mode="local_dir",
         max_concurrent_cases=2,
         auto_run_svg_after_analysis=False,
         config_path=base_config,
+        workflow_template_id=review_template_id,
     )
     for index in range(2):
         case_root = store.runs_root / batch.batch_id / f"case_{index}"
@@ -684,7 +716,7 @@ def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     assert codex_activity["running"] == 0
 
 
-def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
+def test_runner_ocr_parse_uses_ocr_resource_lane(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
     settings = WorkbenchSettings(
@@ -716,12 +748,12 @@ def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
                 target_path=case_root / "drawai.config.yaml",
             ),
         )
-    first_parse_started = threading.Event()
+    first_ocr_started = threading.Event()
     release = threading.Event()
 
     def blocking_parse_executor(case_record, stage: str) -> None:
-        if stage == "parse_elements" and not first_parse_started.is_set():
-            first_parse_started.set()
+        if stage == "ocr_parse" and not first_ocr_started.is_set():
+            first_ocr_started.set()
             release.wait(timeout=5)
         _deterministic_stage_executor(case_record, stage)
 
@@ -733,7 +765,7 @@ def test_runner_parse_elements_uses_ocr_resource_lane(tmp_path: Path) -> None:
     )
 
     runner.submit_batch(batch.batch_id)
-    assert first_parse_started.wait(timeout=5)
+    assert first_ocr_started.wait(timeout=5)
     assert _wait_for_resource_activity(runner, "ocr", queued=1, running=1, timeout=5)
 
     release.set()
@@ -1112,6 +1144,146 @@ def test_api_exposes_workflow_node_viewer_for_planned_elements(tmp_path: Path) -
     assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
 
 
+def test_api_exposes_workflow_node_viewer_for_asset_packages(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(
+        store,
+        settings,
+        stage_executor=_deterministic_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="viewer batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_minimal_v2_package(Path(case.run_root), case.case_id)
+    _write_json(
+        Path(case.run_root) / "page_spec.json",
+        {
+            "schema": "drawai.page_spec.v1",
+            "page_id": case.case_id,
+            "source": {"image": str(source), "width_px": 24, "height_px": 24},
+            "canvas": {"width_px": 24, "height_px": 24},
+            "elements": [
+                {
+                    "id": "E001",
+                    "kind": "image",
+                    "role": "picture",
+                    "box_px": [2, 2, 12, 12],
+                    "z_index": 1,
+                    "confidence": "high",
+                    "build": {"mode": "asset_ref", "processing_type": "crop", "asset_id": "A001"},
+                    "source_refs": [{"kind": "candidate", "id": "fixture:E001"}],
+                }
+            ],
+        },
+    )
+    package_payload = json.loads((Path(case.run_root) / "drawai_package.json").read_text(encoding="utf-8"))
+    package_payload["asset_packages"][0]["status"] = "ok"
+    _write_workflow_node_run(
+        Path(case.run_root),
+        "asset_prepare",
+        output_type="asset_packages",
+        format_id="drawai.asset_packages.v1",
+        output_payload={
+            "schema": "drawai.asset_packages.v1",
+            "asset_packages": package_payload["asset_packages"],
+            "metadata": {},
+        },
+        output_name="asset_packages.json",
+    )
+
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/asset_prepare/viewer")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["kind"] == "asset_packages"
+    assert payload["elements"][0]["element_id"] == "E001"
+    assert payload["elements"][0]["bbox"] == [2.0, 2.0, 12.0, 12.0]
+    assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
+    assert payload["elements"][0]["review_status"] == "ok"
+
+
+def test_api_exposes_workflow_node_viewer_for_page_spec(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(
+        store,
+        settings,
+        stage_executor=_deterministic_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="viewer batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    _write_workflow_node_run(
+        Path(case.run_root),
+        "page_spec_refine",
+        output_type="page_spec",
+        format_id="drawai.page_spec.v1",
+        output_payload={
+            "schema": "drawai.page_spec.v1",
+            "page_id": case.case_id,
+            "source": {"image": str(source), "width_px": 24, "height_px": 24},
+            "canvas": {"width_px": 24, "height_px": 24},
+            "elements": [
+                {
+                    "id": "E001",
+                    "kind": "image",
+                    "role": "picture",
+                    "box_px": [2, 3, 10, 12],
+                    "z_index": 1,
+                    "confidence": "high",
+                    "build": {"mode": "asset_ref", "processing_type": "crop", "asset_id": "A001"},
+                    "source_refs": [{"kind": "candidate", "id": "sam3:B001"}],
+                }
+            ],
+        },
+        output_name="page_spec.json",
+    )
+
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/page_spec_refine/viewer")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["kind"] == "page_spec"
+    assert payload["elements"][0]["element_id"] == "E001"
+    assert payload["elements"][0]["element_type"] == "image"
+    assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
+
+
 def test_api_exposes_workflow_node_viewer_for_analysis_xyxy_bboxes(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
@@ -1422,6 +1594,8 @@ def test_api_creates_batch_polls_assets_and_approves(tmp_path: Path) -> None:
     image_dir = tmp_path / "images"
     image_dir.mkdir()
     Image.new("RGB", (24, 24), "white").save(image_dir / "source.png")
+    review_template_id = "custom_review_dag"
+    _write_legacy_review_workflow_template(store.workspace, review_template_id)
     settings = _settings(tmp_path, base_config)
     runner = WorkbenchRunner(
         store,
@@ -1441,6 +1615,7 @@ def test_api_creates_batch_polls_assets_and_approves(tmp_path: Path) -> None:
             "auto_run_svg_after_analysis": False,
             "max_concurrent_cases": 1,
             "base_config_path": str(base_config),
+            "workflow_template_id": review_template_id,
         },
     )
     assert response.status_code == 200
@@ -1477,6 +1652,8 @@ def test_api_approve_with_run_svg_enters_running_state_immediately(tmp_path: Pat
     image_dir = tmp_path / "images"
     image_dir.mkdir()
     Image.new("RGB", (24, 24), "white").save(image_dir / "source.png")
+    review_template_id = "custom_review_dag"
+    _write_legacy_review_workflow_template(store.workspace, review_template_id)
     settings = _settings(tmp_path, base_config)
     started = threading.Event()
     release = threading.Event()
@@ -1509,6 +1686,7 @@ def test_api_approve_with_run_svg_enters_running_state_immediately(tmp_path: Pat
             "auto_run_svg_after_analysis": False,
             "max_concurrent_cases": 1,
             "base_config_path": str(base_config),
+            "workflow_template_id": review_template_id,
         },
     )
     assert response.status_code == 200
@@ -1586,12 +1764,15 @@ def test_api_run_batch_approves_asset_drafts_and_generates_svg(tmp_path: Path) -
     base_config = _base_config(tmp_path)
     source = tmp_path / "source.png"
     Image.new("RGB", (24, 24), "white").save(source)
+    review_template_id = "custom_review_dag"
+    _write_legacy_review_workflow_template(store.workspace, review_template_id)
     batch = store.create_batch(
         name="task",
         input_mode="upload",
         max_concurrent_cases=1,
         auto_run_svg_after_analysis=False,
         config_path=base_config,
+        workflow_template_id=review_template_id,
     )
     case_root = store.runs_root / batch.batch_id / "case_seed"
     config_path = create_case_config(
@@ -1712,7 +1893,7 @@ def test_api_creates_batch_from_uploaded_zip(tmp_path: Path) -> None:
     assert len(payload["cases"]) == 1
     assert payload["cases"][0]["name"] == "source.png"
     runner.wait_for_idle(timeout=5)
-    assert client.get(f"/api/batches/{payload['batch']['batch_id']}").json()["batch"]["status"] == "waiting_review"
+    assert client.get(f"/api/batches/{payload['batch']['batch_id']}").json()["batch"]["status"] == "completed"
 
 
 def test_api_creates_batch_from_multiple_uploaded_images(tmp_path: Path) -> None:
@@ -1752,8 +1933,8 @@ def test_api_creates_batch_from_multiple_uploaded_images(tmp_path: Path) -> None
     assert [case["name"] for case in payload["cases"]] == ["alpha.png", "beta.png"]
     runner.wait_for_idle(timeout=5)
     batch_payload = client.get(f"/api/batches/{payload['batch']['batch_id']}").json()
-    assert batch_payload["batch"]["status"] == "waiting_review"
-    assert batch_payload["batch"]["case_counts"]["assets_review"] == 2
+    assert batch_payload["batch"]["status"] == "completed"
+    assert batch_payload["batch"]["case_counts"]["completed"] == 2
 
 
 def test_api_creates_batch_from_generated_image_data_url(tmp_path: Path) -> None:
@@ -1788,8 +1969,8 @@ def test_api_creates_batch_from_generated_image_data_url(tmp_path: Path) -> None
     assert payload["cases"][0]["name"] == "generated-001.png"
     runner.wait_for_idle(timeout=5)
     batch_payload = client.get(f"/api/batches/{payload['batch']['batch_id']}").json()
-    assert batch_payload["batch"]["status"] == "waiting_review"
-    assert batch_payload["batch"]["case_counts"]["assets_review"] == 1
+    assert batch_payload["batch"]["status"] == "completed"
+    assert batch_payload["batch"]["case_counts"]["completed"] == 1
 
 
 def test_api_processes_asset_and_returns_model_output_url(tmp_path: Path) -> None:
@@ -3175,7 +3356,7 @@ def test_api_accepts_single_local_image_path(tmp_path: Path) -> None:
     assert response.json()["cases"][0]["name"] == "single.png"
     runner.wait_for_idle(timeout=5)
     batch_id = response.json()["batch"]["batch_id"]
-    assert client.get(f"/api/batches/{batch_id}").json()["batch"]["status"] == "waiting_review"
+    assert client.get(f"/api/batches/{batch_id}").json()["batch"]["status"] == "completed"
 
 
 def test_api_marks_batch_failed_when_local_path_has_no_images(tmp_path: Path) -> None:
@@ -3262,6 +3443,66 @@ def _deterministic_stage_executor(case, stage: str) -> None:
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "figure.png")
         Image.new("RGB", (24, 24), "white").save(root / "inputs" / "original.png")
         _write_json(root / "inputs" / "source_metadata.json", {"width": 24, "height": 24})
+    elif stage == "sam_parse":
+        _write_json(
+            root / "reports" / "parser_outputs" / "sam3_candidates.json",
+            {
+                "schema": "drawai.v2.parser_outputs.v1",
+                "candidates": [
+                    {
+                        "candidate_id": "sam3:B001",
+                        "source_parser": "sam3_structure_parser",
+                        "source_parser_version": "v1",
+                        "element_type": "picture",
+                        "bbox": [2, 2, 12, 12],
+                        "geometry": {
+                            "kind": "bbox",
+                            "bbox": [2, 2, 12, 12],
+                            "coordinate_system": "figure_image_pixels",
+                        },
+                        "confidence": 0.9,
+                        "z_hint": 1,
+                        "text": "",
+                        "evidence_files": [],
+                        "provenance": {
+                            "source_image": str(root / "inputs" / "figure.png"),
+                            "parser_priority": 10,
+                        },
+                        "raw_ref": {"field": "raw_regions", "index": 0},
+                    }
+                ],
+            },
+        )
+    elif stage == "ocr_parse":
+        _write_json(
+            root / "reports" / "parser_outputs" / "ocr_candidates.json",
+            {
+                "schema": "drawai.v2.parser_outputs.v1",
+                "candidates": [
+                    {
+                        "candidate_id": "ocr:T001",
+                        "source_parser": "ocr_text_parser",
+                        "source_parser_version": "v1",
+                        "element_type": "text",
+                        "bbox": [1, 1, 9, 5],
+                        "geometry": {
+                            "kind": "bbox",
+                            "bbox": [1, 1, 9, 5],
+                            "coordinate_system": "figure_image_pixels",
+                        },
+                        "confidence": 0.95,
+                        "z_hint": 2,
+                        "text": "hello",
+                        "evidence_files": [],
+                        "provenance": {
+                            "source_image": str(root / "inputs" / "figure.png"),
+                            "parser_priority": 5,
+                        },
+                        "raw_ref": {"field": "ocr_text_boxes", "id": "T001", "index": 0},
+                    }
+                ],
+            },
+        )
     elif stage == "parse_elements":
         _write_json(root / "reports" / "parser_outputs" / "element_candidates.json", {"candidates": []})
     elif stage == "fuse_elements":
@@ -3388,6 +3629,30 @@ def _deterministic_agent_executor(request: AgentExecutionRequest) -> AgentExecut
                     "notes": [],
                 },
             )
+        elif format_id == "drawai.page_spec.v1":
+            source = next(
+                (
+                    request.run_root / str(item["path"])
+                    for item in request.prompt.inputs
+                    if item.get("type") == "page_spec" and isinstance(item.get("path"), str)
+                ),
+                None,
+            )
+            if source is None:
+                _write_json(
+                    path,
+                    {
+                        "schema": "drawai.page_spec.v1",
+                        "page_id": request.node_id,
+                        "source": {"image": "", "width_px": 24, "height_px": 24},
+                        "canvas": {"width_px": 24, "height_px": 24},
+                        "background": {},
+                        "elements": [],
+                        "metadata": {},
+                    },
+                )
+            else:
+                path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         elif format_id == "drawai.semantic_svg.v1":
             path.write_text(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"></svg>\n',
@@ -3469,6 +3734,185 @@ def _write_minimal_v2_package(root: Path, case_id: str) -> None:
     )
 
 
+def _write_legacy_review_workflow_template(workspace: Path, template_id: str) -> None:
+    _write_json(
+        user_workflow_template_path(workspace, template_id),
+        {
+            "schema": "drawai.workflow_template.v1",
+            "template_id": template_id,
+            "name": "Legacy Review DAG",
+            "version": 1,
+            "nodes": [
+                {
+                    "node_id": "input",
+                    "node_type": "input",
+                    "title": "Input",
+                    "outputs": [
+                        {
+                            "port_id": "image",
+                            "label": "Image",
+                            "types": ["image"],
+                            "required": False,
+                            "cardinality": "single",
+                            "formats": ["drawai.image.v1"],
+                        }
+                    ],
+                },
+                {
+                    "node_id": "run0_agent",
+                    "node_type": "agent",
+                    "title": "Asset Refine Agent",
+                    "inputs": [
+                        {
+                            "port_id": "image",
+                            "label": "Image",
+                            "types": ["image"],
+                            "required": True,
+                            "cardinality": "single",
+                            "formats": ["drawai.image.v1"],
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "port_id": "analysis",
+                            "label": "Element Analysis",
+                            "types": ["element_analysis"],
+                            "required": False,
+                            "cardinality": "single",
+                            "formats": ["drawai.codex_element_analysis.v1"],
+                        }
+                    ],
+                    "config": {
+                        "preset_id": "run0_element_refine",
+                        "provider_id": "codex_sdk",
+                        "outputs": [
+                            {
+                                "port_id": "analysis",
+                                "path": "output/element_analysis.json",
+                                "format_id": "drawai.codex_element_analysis.v1",
+                                "type": "element_analysis",
+                                "description": "Run0 refined asset/source analysis.",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "node_id": "asset_planner",
+                    "node_type": "processor",
+                    "title": "Asset Planner",
+                    "inputs": [
+                        {
+                            "port_id": "analysis",
+                            "label": "Element Analysis",
+                            "types": ["element_analysis"],
+                            "required": True,
+                            "cardinality": "single",
+                            "formats": ["drawai.codex_element_analysis.v1"],
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "port_id": "elements",
+                            "label": "Element Plans",
+                            "types": ["element_plans"],
+                            "required": False,
+                            "cardinality": "single",
+                            "formats": ["drawai.element_plans.v1"],
+                        }
+                    ],
+                    "config": {"processor_id": "asset_planner"},
+                },
+                {
+                    "node_id": "asset_processors",
+                    "node_type": "processor",
+                    "title": "Asset Processors",
+                    "inputs": [
+                        {
+                            "port_id": "elements",
+                            "label": "Elements",
+                            "types": ["element_plans"],
+                            "required": True,
+                            "cardinality": "single",
+                            "formats": ["drawai.element_plans.v1"],
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "port_id": "asset_packages",
+                            "label": "Asset Packages",
+                            "types": ["asset_packages"],
+                            "required": False,
+                            "cardinality": "single",
+                            "formats": ["drawai.asset_packages.v1"],
+                        }
+                    ],
+                    "config": {"processor_id": "asset_processors"},
+                },
+                {
+                    "node_id": "asset_confirm",
+                    "node_type": "human_review",
+                    "title": "Asset Confirm",
+                    "inputs": [
+                        {
+                            "port_id": "asset_packages",
+                            "label": "Asset Packages",
+                            "types": ["asset_packages"],
+                            "required": True,
+                            "cardinality": "single",
+                            "formats": ["drawai.asset_packages.v1"],
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "port_id": "asset_packages",
+                            "label": "Confirmed Assets",
+                            "types": ["asset_packages"],
+                            "required": False,
+                            "cardinality": "single",
+                            "formats": ["drawai.asset_packages.v1"],
+                        }
+                    ],
+                    "config": {
+                        "review_surface": "assets",
+                        "result_path": "output/confirmed_asset_packages.json",
+                    },
+                },
+            ],
+            "edges": [
+                {
+                    "edge_id": "input.image__run0_agent.image",
+                    "source_node_id": "input",
+                    "source_port_id": "image",
+                    "target_node_id": "run0_agent",
+                    "target_port_id": "image",
+                },
+                {
+                    "edge_id": "run0_agent.analysis__asset_planner.analysis",
+                    "source_node_id": "run0_agent",
+                    "source_port_id": "analysis",
+                    "target_node_id": "asset_planner",
+                    "target_port_id": "analysis",
+                },
+                {
+                    "edge_id": "asset_planner.elements__asset_processors.elements",
+                    "source_node_id": "asset_planner",
+                    "source_port_id": "elements",
+                    "target_node_id": "asset_processors",
+                    "target_port_id": "elements",
+                },
+                {
+                    "edge_id": "asset_processors.asset_packages__asset_confirm.asset_packages",
+                    "source_node_id": "asset_processors",
+                    "source_port_id": "asset_packages",
+                    "target_node_id": "asset_confirm",
+                    "target_port_id": "asset_packages",
+                },
+            ],
+            "defaults": {"builtin": False, "read_only": False},
+        },
+    )
+
+
 def _write_workflow_node_run(
     root: Path,
     node_id: str,
@@ -3513,7 +3957,7 @@ def _write_workflow_node_run(
 
 
 def _failing_stage_executor(case, stage: str) -> None:
-    if stage == "parse_elements":
+    if stage == "sam_parse":
         raise RuntimeError("detector unavailable")
     _deterministic_stage_executor(case, stage)
 

@@ -55,6 +55,7 @@ import type {
   V2AssetStatus,
   V2ElementPlan,
   V2RunPackage,
+  WorkflowNodeRunRecord,
   WorkflowNodeViewer
 } from "./types";
 import type { WorkflowTemplate } from "./workflowTypes";
@@ -445,6 +446,32 @@ export default function App() {
     }, 2500);
     return () => window.clearInterval(timer);
   }, [activeBatch?.batch.batch_id, activeCase?.case.case_id, runCompatibility, selectedV2ElementId]);
+
+  useEffect(() => {
+    if (activeView !== "nodeArtifact" || !nodeArtifactViewer) return;
+    const nodeRunStatus = String(nodeArtifactViewer.node_run?.status || "");
+    if (nodeRunStatus !== "running") return;
+    let canceled = false;
+    const refreshViewer = async () => {
+      try {
+        const viewer = await getWorkflowNodeViewer(nodeArtifactViewer.case_id, nodeArtifactViewer.node_id);
+        if (!canceled) setNodeArtifactViewer(viewer);
+      } catch (err) {
+        if (!canceled) setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    const timer = window.setInterval(refreshViewer, 2500);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeView,
+    nodeArtifactViewer?.case_id,
+    nodeArtifactViewer?.node_id,
+    nodeArtifactViewer?.attempt_id,
+    nodeArtifactViewer?.node_run?.status
+  ]);
 
   const activeAssetPlan = activeCase && assetPlan?.case_id === activeCase.case.case_id ? assetPlan : null;
   const activeRunPackage = activeCase && runPackage?.run_id === activeCase.case.case_id ? runPackage : null;
@@ -1593,9 +1620,10 @@ function DagRunPanel({
 
   const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
   const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
+  const nodeRuns = progress?.workflow_node_runs || [];
   const files = progress?.files || [];
   const layout = useMemo(() => (template ? buildWorkflowPreviewLayout(template) : null), [template]);
-  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, files), [template, layout, caseDetail, stageRuns, files]);
+  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, nodeRuns, files), [template, layout, caseDetail, stageRuns, nodeRuns, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   useEffect(() => {
@@ -1746,6 +1774,19 @@ function WorkflowNodeArtifactWorkspace({
     [viewer.elements, elementFilter, viewer.kind]
   );
   const fileLinks = viewer.files.filter((file) => file.exists && file.url);
+  const agentLogs = viewer.agent_logs || {
+    files: [],
+    trace_events: [],
+    session_summary: {},
+    session_events: [],
+    runtime_log_tail: []
+  };
+  const agentLogLinks = agentLogs.files.filter((file) => file.exists && file.url);
+  const agentLogItems = [
+    ...agentLogs.trace_events.map((item) => ({ source: "trace", item })),
+    ...agentLogs.session_events.map((item) => ({ source: "session", item })),
+    ...agentLogs.runtime_log_tail.map((item) => ({ source: "runtime", item }))
+  ].slice(-12);
 
   const changeZoom = useCallback((delta: number) => {
     setZoom((value) => clamp(Number((value + delta).toFixed(2)), 0.25, 2.5));
@@ -1853,9 +1894,41 @@ function WorkflowNodeArtifactWorkspace({
             </a>
           ))}
         </div>
+        {(agentLogItems.length > 0 || agentLogLinks.length > 0) && (
+          <section className="node-agent-log-panel" aria-label="Agent 执行日志">
+            <header>
+              <span>Agent log</span>
+              {agentLogLinks.slice(0, 6).map((file) => (
+                <a key={file.relative_path} href={file.url} target="_blank" rel="noreferrer">
+                  {file.label}
+                </a>
+              ))}
+            </header>
+            <div className="node-agent-log-list">
+              {agentLogItems.length > 0 ? (
+                agentLogItems.map((entry, index) => (
+                  <pre key={`${entry.source}-${index}`}>{agentLogEntryText(entry.source, entry.item)}</pre>
+                ))
+              ) : (
+                <span>日志文件已生成，等待事件写入。</span>
+              )}
+            </div>
+          </section>
+        )}
       </main>
     </>
   );
+}
+
+function agentLogEntryText(source: string, item: Record<string, unknown>): string {
+  const kind = stringField(item, "type") || stringField(item, "kind") || stringField(item, "level") || source;
+  const summary = stringField(item, "summary") || stringField(item, "message") || JSON.stringify(item);
+  return `[${source}] ${kind}: ${summary}`;
+}
+
+function stringField(item: Record<string, unknown>, key: string): string {
+  const value = item[key];
+  return typeof value === "string" ? value : "";
 }
 
 function LegacyReadOnlyBanner({
@@ -3290,13 +3363,14 @@ function buildDagNodeViews(
   layout: WorkflowPreviewLayout | null,
   caseDetail: CaseDetail,
   stageRuns: StageRunRecord[],
+  nodeRuns: WorkflowNodeRunRecord[],
   files: CaseProgress["files"]
 ): DagNodeView[] {
   if (!template || !layout) return [];
   const layoutByNodeId = new Map(layout.nodes.map((nodeLayout) => [nodeLayout.node.node_id, nodeLayout]));
   return template.nodes.map((node) => {
     const nodeLayout = layoutByNodeId.get(node.node_id);
-    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, files, caseDetail.artifacts);
+    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, nodeRuns, files, caseDetail.artifacts);
     return {
       node,
       ...runtime,
@@ -3317,11 +3391,27 @@ function workflowNodeRuntimeState(
   node: WorkflowTemplate["nodes"][number],
   caseDetail: CaseDetail,
   stageRuns: StageRunRecord[],
+  nodeRuns: WorkflowNodeRunRecord[],
   files: CaseProgress["files"],
   artifacts: ArtifactRecord[]
 ): Pick<DagNodeView, "state" | "stage" | "meta" | "error"> {
   const stage = workflowStageForNode(node);
   const current = caseDetail.case;
+  const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
+  if (latestNodeRun) {
+    if (latestNodeRun.status === "ok") {
+      return { state: "done", stage, meta: durationText(latestNodeRun.started_at, latestNodeRun.ended_at), error: "" };
+    }
+    if (latestNodeRun.status === "running") {
+      return { state: "running", stage, meta: durationText(latestNodeRun.started_at, ""), error: "" };
+    }
+    if (latestNodeRun.status === "failed") {
+      return { state: "failed", stage, meta: "失败", error: latestNodeRun.error_message };
+    }
+    if (latestNodeRun.status === "blocked") {
+      return { state: "failed", stage, meta: "阻塞", error: latestNodeRun.error_message };
+    }
+  }
   if (node.node_type === "human_review") {
     if (current.status === "assets_review") {
       return { stage, state: "review", meta: "等待人工确认", error: "" };
@@ -3389,6 +3479,12 @@ function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
   if (node.node_type === "output") return "output";
   if (node.node_type === "processor") {
     const processorId = String(node.config.processor_id || "");
+    if (processorId === "sam_parse") return "sam_parse";
+    if (processorId === "ocr_parse") return "ocr_parse";
+    if (processorId === "page_spec_fuse") return "fuse_elements";
+    if (processorId === "page_spec_refine") return "refine_elements";
+    if (processorId === "asset_prepare") return "process_assets";
+    if (processorId === "svg_compose") return "compose_svg";
     if (processorId === "asset_planner") return "plan_assets";
     return "process_assets";
   }
@@ -3398,6 +3494,16 @@ function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
     return "refine_elements";
   }
   return "";
+}
+
+function latestWorkflowNodeRun(nodeRuns: WorkflowNodeRunRecord[], nodeId: string): WorkflowNodeRunRecord | null {
+  const runs = nodeRuns.filter((run) => run.node_id === nodeId);
+  if (!runs.length) return null;
+  return [...runs].sort((a, b) => {
+    const attemptOrder = a.attempt_id.localeCompare(b.attempt_id, undefined, { numeric: true });
+    if (attemptOrder !== 0) return attemptOrder;
+    return Date.parse(a.started_at || "") - Date.parse(b.started_at || "");
+  })[runs.length - 1] || null;
 }
 
 function stageIsAfterOrEqual(currentStage: string, targetStage: string): boolean {
@@ -5521,6 +5627,8 @@ function pipelineNodeState(
 
 function stageReadyLabels(stage: string): string[] {
   if (stage === "prepare") return ["figure"];
+  if (stage === "sam_parse") return ["sam_page_spec", "raw_regions", "sam_boxes_by_prompt"];
+  if (stage === "ocr_parse") return ["ocr_page_spec", "ocr_boxes"];
   if (stage === "parse_elements") return ["raw_regions", "ocr_boxes", "parser_outputs"];
   if (stage === "fuse_elements") return ["box_ir", "fusion_trace"];
   if (stage === "refine_elements") return ["element_analysis", "refine_trace", "asset_draft"];

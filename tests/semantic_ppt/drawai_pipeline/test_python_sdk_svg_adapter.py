@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import threading
 import time
@@ -267,6 +268,117 @@ def test_invoke_codex_python_sdk_lets_codex_write_svg_in_workspace(monkeypatch, 
     assert len(archive_events) == 1
     assert archive_events[0]["archive"]["archive_dir"] == str(archive_dir)
     assert events[-1]["source"] == "output_svg_path"
+
+
+def test_archive_codex_session_logs_preserves_live_runtime_tail_without_sqlite(tmp_path):
+    codex_home = tmp_path / "codex_home"
+    codex_home.mkdir()
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    live_tail = archive_dir / "codex_runtime_events.jsonl"
+    live_tail.write_text('{"event_type":"response.output_text.delta"}\n', encoding="utf-8")
+
+    manifest = codex_sdk_svg._archive_codex_session_logs(
+        codex_home,
+        archive_dir,
+        task_name="unit_test",
+        sdk_turn_result=None,
+    )
+
+    assert live_tail.read_text(encoding="utf-8") == '{"event_type":"response.output_text.delta"}\n'
+    assert "codex_runtime_events.jsonl" in manifest["copied"]
+    assert manifest["runtime_event_tail"]["status"] == "missing"
+    assert manifest["runtime_event_tail"]["preserved_live_path"] == str(live_tail)
+
+
+def test_archive_codex_session_logs_merges_existing_live_snapshot_dirs(tmp_path):
+    codex_home = tmp_path / "codex_home"
+    (codex_home / "shell_snapshots").mkdir(parents=True)
+    (codex_home / "shell_snapshots" / "final.sh").write_text("echo final\n", encoding="utf-8")
+    archive_dir = tmp_path / "archive"
+    (archive_dir / "shell_snapshots").mkdir(parents=True)
+    (archive_dir / "shell_snapshots" / "live.sh").write_text("echo live\n", encoding="utf-8")
+
+    manifest = codex_sdk_svg._archive_codex_session_logs(
+        codex_home,
+        archive_dir,
+        task_name="unit_test",
+        sdk_turn_result=None,
+    )
+
+    assert "shell_snapshots" in manifest["copied"]
+    assert (archive_dir / "shell_snapshots" / "live.sh").read_text(encoding="utf-8") == "echo live\n"
+    assert (archive_dir / "shell_snapshots" / "final.sh").read_text(encoding="utf-8") == "echo final\n"
+
+
+def test_archive_codex_session_logs_extracts_websocket_runtime_tail(tmp_path):
+    codex_home = tmp_path / "codex_home"
+    codex_home.mkdir()
+    db_path = codex_home / "logs_2.sqlite"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "create table logs (id integer primary key, ts integer, ts_nanos integer, level text, target text, feedback_log_body text)"
+        )
+        connection.execute(
+            "insert into logs values (1, 1, 2, 'TRACE', 'codex_api::endpoint::responses_websocket', ?)",
+            ('websocket event: {"type":"response.output_text.delta","delta":"hello"}',),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    archive_dir = tmp_path / "archive"
+    manifest = codex_sdk_svg._archive_codex_session_logs(
+        codex_home,
+        archive_dir,
+        task_name="unit_test",
+        sdk_turn_result=None,
+    )
+
+    assert manifest["runtime_event_tail"]["status"] == "ok"
+    event = json.loads((archive_dir / "codex_runtime_events.jsonl").read_text(encoding="utf-8"))
+    assert event["event_type"] == "response.output_text.delta"
+    assert event["event"]["delta"] == "hello"
+
+
+def test_archive_codex_runtime_tail_summarizes_large_websocket_payloads(tmp_path):
+    codex_home = tmp_path / "codex_home"
+    codex_home.mkdir()
+    db_path = codex_home / "logs_2.sqlite"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "create table logs (id integer primary key, ts integer, ts_nanos integer, level text, target text, feedback_log_body text)"
+        )
+        connection.execute(
+            "insert into logs values (1, 1, 2, 'TRACE', 'codex_api::endpoint::responses_websocket', ?)",
+            (
+                'websocket event: {"type":"response.in_progress",'
+                '"response":{"id":"resp_1","status":"in_progress","instructions":"secret instructions"},'
+                '"item":{"id":"rs_1","type":"reasoning","encrypted_content":"ciphertext"}}',
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    archive_dir = tmp_path / "archive"
+    codex_sdk_svg._archive_codex_session_logs(
+        codex_home,
+        archive_dir,
+        task_name="unit_test",
+        sdk_turn_result=None,
+    )
+
+    text = (archive_dir / "codex_runtime_events.jsonl").read_text(encoding="utf-8")
+    assert "secret instructions" not in text
+    assert "ciphertext" not in text
+    event = json.loads(text)
+    assert event["event_type"] == "response.in_progress"
+    assert event["message"] == "reasoning"
+    assert event["event"]["item"]["encrypted_content"] == "[redacted]"
+    assert event["event"]["response"]["status"] == "in_progress"
 
 
 def test_codex_python_sdk_session_reuses_one_thread_for_multiple_turns(

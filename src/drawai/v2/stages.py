@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from drawai.artifacts import DrawAiArtifactPaths, write_json
+from drawai.asset_manifest_utils import extend_asset_manifest_for_svg_export
 from drawai.config import DrawAiPipelineConfig
 from drawai.core import ArtifactRef, ArtifactStore, ProviderRef, RunContext, StageResult, StageSpec
 from drawai.image_normalization import normalize_input_image
@@ -364,7 +365,11 @@ def _run_v2_stage(
             _write_export_failure_package(paths, cfg, plans, asset_packages)
             write_json(paths.svg_to_ppt_export_report_json, failed_asset_report)
             raise RuntimeError("V2 export refused failed assets.")
-        asset_manifest = _read_json_if_exists(paths.asset_manifest_json, default={"assets": []})
+        raw_asset_manifest = _read_json_if_exists(paths.asset_manifest_json, default={"assets": []})
+        asset_manifest = raw_asset_manifest if isinstance(raw_asset_manifest, Mapping) else {"assets": []}
+        asset_manifest, manifest_extension = extend_asset_manifest_for_svg_export(paths.root, asset_manifest)
+        if manifest_extension.get("manifest_extended"):
+            write_json(paths.asset_manifest_json, asset_manifest)
         if cfg.svg_to_ppt.enabled and cfg.svg_to_ppt.export_pptx:
             from drawai.pipeline import _check_svg_to_ppt
 
@@ -378,6 +383,7 @@ def _run_v2_stage(
                 "export_pptx": cfg.svg_to_ppt.export_pptx,
                 "semantic_svg": str(paths.semantic_svg),
             }
+        report["asset_manifest_extension"] = manifest_extension
         write_json(paths.svg_to_ppt_export_report_json, report)
         if report.get("status") != "ok":
             _write_export_failure_package(paths, cfg, plans, asset_packages)

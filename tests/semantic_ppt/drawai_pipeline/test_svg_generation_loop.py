@@ -471,7 +471,7 @@ def test_codex_sdk_staged_generation_merges_three_runs_into_one_self_iterating_t
     assert calls[0]["native_backfill_tools_dir"] == attempt_dir / "native_backfill_tools"
     assert calls[0]["native_backfill_assets_dir"] == output_dir / "native_backfill_assets" / "codex_merged_stages_001"
     assert "RUN1 / COMPLETE FIRST PASS" in calls[0]["prompt"]
-    assert "REFINE LOOP / MAX 3 ROUNDS" in calls[0]["prompt"]
+    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in calls[0]["prompt"]
     assert "Run 2 / visual_review_text_style" not in calls[0]["prompt"]
     assert "Run 3 / ir_refine" not in calls[0]["prompt"]
     assert "NATIVE SVG BACKFILL MODE" in calls[0]["prompt"]
@@ -479,7 +479,7 @@ def test_codex_sdk_staged_generation_merges_three_runs_into_one_self_iterating_t
     assert "crop_region.py" in calls[0]["prompt"]
     assert "remove_background.py" in calls[0]["prompt"]
     assert "semantic_0.svg" in calls[0]["prompt"]
-    assert "semantic_3.svg" in calls[0]["prompt"]
+    assert "semantic_2.svg" in calls[0]["prompt"]
     assert "rendered_0.png" in calls[0]["prompt"]
     assert "iteration_log.md" in calls[0]["prompt"]
     assert "iteration_log.jsonl" in calls[0]["prompt"]
@@ -635,7 +635,7 @@ def test_codex_merged_thread_prompt_instructs_self_rendered_iteration():
     assert "AVAILABLE FILES AND READING LOGIC" in prompt
     assert "OVERALL DRAWAI PIPELINE" in prompt
     assert "RUN1 / COMPLETE FIRST PASS" in prompt
-    assert "REFINE LOOP / MAX 3 ROUNDS" in prompt
+    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in prompt
     assert "Run 2 / visual_review_text_style" not in prompt
     assert "Run 3 / ir_refine" not in prompt
     assert "NATIVE SVG BACKFILL MODE" in prompt
@@ -644,7 +644,7 @@ def test_codex_merged_thread_prompt_instructs_self_rendered_iteration():
     assert "remove_background.py" in prompt
     assert "native_backfill_assets/codex_merged_stages_001" in prompt
     assert "semantic_0.svg" in prompt
-    assert "semantic_3.svg" in prompt
+    assert "semantic_2.svg" in prompt
     assert "rendered_0.png" in prompt
     assert "semantic_1.svg" in prompt
     assert "rendered_1.png" in prompt
@@ -653,8 +653,8 @@ def test_codex_merged_thread_prompt_instructs_self_rendered_iteration():
     assert "Chrome" in prompt
     assert "validate_svg_attempt.py" in prompt
     assert "validation_report_0.json" in prompt
-    assert "The whole-figure render is perfectly close to the original" in prompt
-    assert "Another round is likely to make the figure better" in prompt
+    assert "Do not run a third refinement round" in prompt
+    assert "A complete valid final SVG is better than an unfinished extra refinement" in prompt
     assert "must run this validator after each semantic_N.svg" in prompt
     assert "Copy the accepted final SVG/render to the required final SVG/rendered output paths" in prompt
 

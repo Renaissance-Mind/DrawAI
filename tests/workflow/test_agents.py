@@ -62,9 +62,8 @@ def test_run0_agent_prompt_renders_inputs_and_output_contract() -> None:
     assert "nodes/input/runs/001/output/image.png" in prompt.text
     assert "Original source image." in prompt.text
     assert "nodes/fusion/runs/001/output/elements.json" in prompt.text
-    assert "input_manifest.json" in prompt.text
     assert "Absolute path: <workflow_run_root>/nodes/fusion/runs/001/output/elements.json" in prompt.text
-    assert "From Agent cwd: ../../../nodes/fusion/runs/001/output/elements.json" in prompt.text
+    assert "From Agent cwd: nodes/fusion/runs/001/output/elements.json" in prompt.text
     assert "Fused boxes from SAM and OCR." in prompt.text
     assert "## Declared Output Files" in prompt.text
     assert "output/elements.json" in prompt.text
@@ -73,6 +72,8 @@ def test_run0_agent_prompt_renders_inputs_and_output_contract() -> None:
     assert "## Built-in Script Files" in prompt.text
     assert "assets_visualization.py" in prompt.text
     assert "node_run.json" in prompt.text
+    assert "## DrawAI Tools" in prompt.text
+    assert "Tool `format`" in prompt.text
     assert "## Type And Format Contracts" in prompt.text
     assert "Type `image`" in prompt.text
     assert "Type `element_plans`" in prompt.text
@@ -88,16 +89,16 @@ def test_svg_agent_prompt_uses_same_agent_contract() -> None:
         svg_agent_preset(),
         inputs=(
             {
-                "path": "nodes/asset_planner/runs/001/output/elements.json",
-                "format_id": "drawai.element_plans.v1",
-                "type": "element_plans",
-                "description": "Approved element plan.",
+                "path": "nodes/input/runs/001/output/image.png",
+                "format_id": "drawai.image.v1",
+                "type": "image",
+                "description": "Original page image.",
             },
             {
-                "path": "nodes/asset_processors/runs/001/output/asset_packages.json",
-                "format_id": "drawai.asset_packages.v1",
-                "type": "asset_packages",
-                "description": "Renderable crop and no-bg asset packages.",
+                "path": "nodes/asset_prepare/runs/001/output/page_spec.json",
+                "format_id": "drawai.page_spec.v1",
+                "type": "page_spec",
+                "description": "Materialized PageSpec with raster materialization paths.",
             },
         ),
         node_config={"node_id": "svg_agent", "provider_id": "kimi_cli", "model": "kimi-k2"},
@@ -110,8 +111,71 @@ def test_svg_agent_prompt_uses_same_agent_contract() -> None:
     assert "OVERALL SVG/PPT PROFILE" in prompt.text
     assert prompt.outputs[0]["path"] == "output/semantic.svg"
     assert prompt.outputs[0]["format_id"] == "drawai.semantic_svg.v1"
-    assert "nodes/asset_processors/runs/001/output/asset_packages.json" in prompt.text
+    assert "nodes/asset_prepare/runs/001/output/page_spec.json" in prompt.text
     assert "output/semantic.svg" in prompt.text
+    assert "semantic_0.svg, rendered_0.png, validation_report_0.json" in prompt.text
+    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in prompt.text
+    assert "Do not run a third refinement round" in prompt.text
+    assert "A complete valid final SVG is better than an unfinished extra refinement" in prompt.text
+    assert "semantic_3.svg" not in prompt.text
+    assert "Do not look for unconnected OCR, template, layout, request, or parser files." in prompt.text
+    assert "OCR boxes JSON" not in prompt.text
+    assert "Template IR" not in prompt.text
+    assert "Write each declared output exactly" in prompt.text
+
+
+def test_svg_agent_prompt_filters_pagespec_tools_for_image_only_inputs() -> None:
+    prompt = render_agent_prompt(
+        svg_agent_preset(),
+        inputs=(
+            {
+                "path": "nodes/input/runs/001/output/image.png",
+                "format_id": "drawai.image.v1",
+                "type": "image",
+                "description": "Original page image.",
+            },
+        ),
+        node_config={
+            "node_id": "svg_agent",
+            "drawai_tools": ["format", "page-spec-assets", "svg-validate"],
+        },
+    )
+
+    assert "If the connected input list includes no PageSpec" in prompt.text
+    assert "Tool `format`" in prompt.text
+    assert "Tool `page-spec-assets`" not in prompt.text
+    assert "Tool `svg-validate`" not in prompt.text
+    assert "Rendered PNGs and per-round validation reports are optional in image-only runs" in prompt.text
+
+
+def test_page_spec_refine_prompt_defines_id_changes_and_validation() -> None:
+    prompt = render_agent_prompt(
+        agent_preset_by_id("page_spec_refine"),
+        inputs=(
+            {
+                "path": "nodes/input/runs/001/output/image.png",
+                "format_id": "drawai.image.v1",
+                "type": "image",
+                "description": "Original page image.",
+            },
+            {
+                "path": "nodes/page_spec_fuse/runs/001/output/page_spec.json",
+                "format_id": "drawai.page_spec.v1",
+                "type": "page_spec",
+                "description": "Fused PageSpec evidence.",
+            },
+        ),
+        node_config={"node_id": "page_spec_refine"},
+    )
+
+    assert "The refined PageSpec elements array is the handoff" in prompt.text
+    assert "Choose crop_nobg" in prompt.text
+    assert "Preserve stable ids" in prompt.text
+    assert "\"adjusted\"" in prompt.text
+    assert "format validate --format-id drawai.page_spec.v1" in prompt.text
+    assert "Do not embed any other full schema" in prompt.text
+    assert "element candidates" not in prompt.text
+    assert "element plans" not in prompt.text
 
 
 def test_custom_agent_prompt_uses_configured_output_formats() -> None:

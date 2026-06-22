@@ -8,7 +8,6 @@ from typing import Any, Sequence
 
 from .agent_execution import AgentExecutionRequest, execute_agent_prompt
 from .agents import agent_preset_by_id, default_agent_provider_registry, render_agent_prompt
-from .node_runs import write_input_manifest
 from .templates import (
     copy_builtin_template_to_workspace,
     list_workflow_templates,
@@ -16,6 +15,7 @@ from .templates import (
     load_workflow_template_by_id,
 )
 from .validation import validate_workflow_template
+from drawai.tooling import resolve_drawai_tool_command_prefix
 
 
 def workflow_cli(argv: Sequence[str] | None = None) -> int:
@@ -54,7 +54,7 @@ def workflow_cli(argv: Sequence[str] | None = None) -> int:
     run_agent.add_argument("preset_id", help="Agent preset id.")
     run_agent.add_argument("--run-root", type=Path, required=True, help="Workflow run root used to resolve relative input paths.")
     run_agent.add_argument("--workdir", type=Path, required=True, help="Agent node work directory. Prompt, logs, and outputs are written here.")
-    run_agent.add_argument("--input-manifest", type=Path, required=True, help="Input manifest JSON with an inputs array.")
+    run_agent.add_argument("--input-manifest", type=Path, required=True, help="JSON file with an inputs array used to render the prompt.")
     run_agent.add_argument("--config", type=Path, help="Agent node config JSON.")
     run_agent.add_argument("--provider", help="Provider override, for example codex_sdk, codex_cli, or kimi_cli.")
     run_agent.add_argument("--node-id", default="agent", help="Node id for prompt/log metadata.")
@@ -159,7 +159,7 @@ def _run_agent_command(args: argparse.Namespace) -> int:
     if not isinstance(inputs, list):
         raise ValueError("input manifest inputs must be an array")
     workdir.mkdir(parents=True, exist_ok=True)
-    write_input_manifest(workdir, inputs=tuple(item for item in inputs if isinstance(item, dict)))
+    repo_root = Path(__file__).resolve().parents[3]
     prompt = render_agent_prompt(
         agent_preset_by_id(args.preset_id),
         inputs=tuple(item for item in inputs if isinstance(item, dict)),
@@ -167,9 +167,10 @@ def _run_agent_command(args: argparse.Namespace) -> int:
         runtime_context={
             "workflow_run_root": run_root,
             "node_workdir": workdir,
-            "repo_root": Path(__file__).resolve().parents[3],
+            "agent_cwd": run_root,
+            "repo_root": repo_root,
             "attempt_id": workdir.name,
-            "input_manifest": workdir / "input_manifest.json",
+            "drawai_tool_command_prefix": resolve_drawai_tool_command_prefix(repo_root, cwd=run_root),
         },
     )
     result = execute_agent_prompt(

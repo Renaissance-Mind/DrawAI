@@ -8,6 +8,7 @@ import os
 import posixpath
 import re
 import shutil
+import sqlite3
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -241,6 +242,14 @@ def create_app(
                 agent_preset_by_id(preset_id),
                 inputs=tuple(item for item in inputs if isinstance(item, dict)),
                 node_config=node_config,
+                runtime_context={
+                    "workflow_run_root": "<workflow_run_root>",
+                    "node_workdir": f"<workflow_run_root>/nodes/{node_config.get('node_id') or '<agent_node_id>'}/runs/<attempt_id>",
+                    "agent_cwd": "<workflow_run_root>",
+                    "repo_root": str(Path(__file__).resolve().parents[3]),
+                    "attempt_id": "<attempt_id>",
+                    "drawai_tool_command_prefix": "<drawai_tool_command_prefix>",
+                },
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -459,6 +468,7 @@ def create_app(
         return {
             "case": _case_to_api_with_preview(resolved_store, case),
             "stage_runs": stage_runs,
+            "workflow_node_runs": _workflow_node_runs_progress(root),
             "files": _standard_progress_files(case_id, root),
             "svg_attempts": _svg_attempts_progress(case_id, root),
             "pptx_export": _pptx_export_progress(case_id, root),
@@ -2311,6 +2321,31 @@ def _svg_attempts_progress(case_id: str, root: Path) -> list[dict[str, Any]]:
     return attempts
 
 
+def _workflow_node_runs_progress(root: Path) -> list[dict[str, Any]]:
+    nodes_root = root / "nodes"
+    if not nodes_root.is_dir():
+        return []
+    runs: list[dict[str, Any]] = []
+    for run_path in sorted(nodes_root.glob("*/runs/*/node_run.json")):
+        payload = _read_json_file(run_path)
+        if not isinstance(payload, dict):
+            continue
+        node_id = str(payload.get("node_id") or run_path.parents[2].name)
+        attempt_id = str(payload.get("attempt_id") or run_path.parent.name)
+        runs.append(
+            {
+                "node_id": node_id,
+                "attempt_id": attempt_id,
+                "status": str(payload.get("status") or ""),
+                "started_at": str(payload.get("started_at") or ""),
+                "ended_at": str(payload.get("ended_at") or ""),
+                "error_message": str(payload.get("error") or ""),
+                "workdir": _case_relative_path(root, run_path.parent),
+            }
+        )
+    return runs
+
+
 def _svg_attempt_summary(attempt_dir: Path, files: list[dict[str, Any]]) -> dict[str, Any]:
     validation_report = _read_json_file(attempt_dir / "validation_report.json")
     final_report = _read_json_file(attempt_dir / "final_report.json")
@@ -2429,6 +2464,13 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
         "node_run": None,
         "input_manifest": None,
         "files": [],
+        "agent_logs": {
+            "files": [],
+            "trace_events": [],
+            "session_summary": {},
+            "session_events": [],
+            "runtime_log_tail": [],
+        },
         "elements": [],
     }
     if run_dir is None:
@@ -2439,6 +2481,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
     input_manifest = _read_json_object_if_exists(run_dir / "input_manifest.json")
     workdir = _case_relative_path(root, run_dir)
     output_files = _workflow_node_output_files(case, root, run_dir, node_run)
+    agent_logs = _workflow_node_agent_logs(case, root, run_dir, node_run)
     base_payload.update(
         {
             "title": str((node_run or {}).get("node_id") or safe_node_id),
@@ -2447,6 +2490,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
             "node_run": node_run,
             "input_manifest": input_manifest,
             "files": output_files,
+            "agent_logs": agent_logs,
         }
     )
 
@@ -2456,7 +2500,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
         return base_payload
 
     kind, relative_path, payload = overlay_source
-    elements = _workflow_viewer_elements_from_payload(payload, kind)
+    elements = _workflow_viewer_elements_from_payload(payload, kind, root=root)
     if not elements:
         base_payload["message"] = "这个节点产物已生成，但没有可绘制的 bbox。"
         base_payload["kind"] = kind
@@ -2515,7 +2559,25 @@ def _workflow_node_output_files(
             path = item.get("path")
             if isinstance(path, str) and path:
                 relative_paths.append(path)
-        for key in ("prompt_path", "stdout_path", "stderr_path"):
+            for key in (
+                "prompt_path",
+                "stdout_path",
+                "stderr_path",
+                "trace_path",
+                "session_log_path",
+                "execution_manifest_path",
+            ):
+                path = item.get(key)
+                if isinstance(path, str) and path:
+                    relative_paths.append(path)
+        for key in (
+            "prompt_path",
+            "stdout_path",
+            "stderr_path",
+            "trace_path",
+            "session_log_path",
+            "execution_manifest_path",
+        ):
             path = node_run.get(key)
             if isinstance(path, str) and path:
                 relative_paths.append(path)
@@ -2534,6 +2596,217 @@ def _workflow_node_output_files(
     return records
 
 
+AGENT_LOG_FILE_CANDIDATES = (
+    "prompt.md",
+    "agent_execution_request.json",
+    "agent_execution.json",
+    "codex_sdk_trace.jsonl",
+    "codex_sdk_final_response.txt",
+    "codex_sdk_error.txt",
+    "codex_cli_trace.jsonl",
+    "codex_cli_events.jsonl",
+    "codex_cli_stderr.txt",
+    "kimi_trace.jsonl",
+    "kimi_events.jsonl",
+    "kimi_stderr.txt",
+    "codex_session_log/live_manifest.json",
+    "codex_session_log/manifest.json",
+    "codex_session_log/turn_result_summary.json",
+    "codex_session_log/codex_session_events.jsonl",
+    "codex_session_log/codex_runtime_events.jsonl",
+    "codex_session_log/logs_2.sqlite",
+    "codex_session_log/state_5.sqlite",
+)
+
+
+def _workflow_node_agent_logs(
+    case: CaseRecord,
+    root: Path,
+    run_dir: Path,
+    node_run: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    relative_paths: list[str] = []
+    for relative_path in AGENT_LOG_FILE_CANDIDATES:
+        path = run_dir / relative_path
+        if path.exists():
+            relative_paths.append(_case_relative_path(root, path))
+    if node_run:
+        for key in (
+            "prompt_path",
+            "stdout_path",
+            "stderr_path",
+            "trace_path",
+            "session_log_path",
+            "execution_manifest_path",
+        ):
+            value = node_run.get(key)
+            if isinstance(value, str) and value:
+                relative_paths.append(value)
+        for item in _json_list(node_run.get("outputs")):
+            for key in (
+                "prompt_path",
+                "stdout_path",
+                "stderr_path",
+                "trace_path",
+                "session_log_path",
+                "execution_manifest_path",
+            ):
+                value = item.get(key)
+                if isinstance(value, str) and value:
+                    relative_paths.append(value)
+
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for relative_path in relative_paths:
+        if relative_path in seen:
+            continue
+        seen.add(relative_path)
+        path = _resolve_case_path(root, relative_path)
+        if path.is_dir():
+            manifest = path / "manifest.json"
+            live_manifest = path / "live_manifest.json"
+            if manifest.is_file():
+                records.append(_case_file_record(case.case_id, root, "session_manifest", _case_relative_path(root, manifest)))
+            if live_manifest.is_file():
+                records.append(
+                    _case_file_record(case.case_id, root, "session_live_manifest", _case_relative_path(root, live_manifest))
+                )
+            continue
+        records.append(_case_file_record(case.case_id, root, path.name, relative_path))
+
+    trace_events = _agent_trace_events(run_dir)
+    session_dir = run_dir / "codex_session_log"
+    return {
+        "files": records,
+        "trace_events": trace_events,
+        "session_summary": _read_json_object_if_exists(session_dir / "turn_result_summary.json"),
+        "session_events": _agent_session_events(session_dir / "codex_session_events.jsonl"),
+        "runtime_log_tail": _codex_runtime_event_tail(session_dir / "codex_runtime_events.jsonl")
+        or _codex_runtime_log_tail(session_dir / "logs_2.sqlite"),
+    }
+
+
+def _agent_trace_events(run_dir: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for name in ("codex_sdk_trace.jsonl", "codex_cli_trace.jsonl", "kimi_trace.jsonl"):
+        path = run_dir / name
+        for item in _read_jsonl_tail(path, limit=80):
+            if isinstance(item, dict):
+                events.append(
+                    {
+                        "source": name,
+                        "type": str(item.get("type") or ""),
+                        "summary": _truncate_progress_text(_compact_json_text(item), limit=800),
+                    }
+                )
+    return events[-80:]
+
+
+def _agent_session_events(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in _read_jsonl_tail(path, limit=120):
+        if not isinstance(item, dict):
+            continue
+        event_item = item.get("item")
+        events.append(
+            {
+                "index": item.get("index"),
+                "kind": _agent_event_kind(event_item),
+                "summary": _truncate_progress_text(_compact_json_text(event_item), limit=1200),
+            }
+        )
+    return events
+
+
+def _codex_runtime_log_tail(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    rows: list[tuple[Any, ...]]
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.2)
+        try:
+            rows = connection.execute(
+                "select ts, level, target, feedback_log_body from logs order by id desc limit 80"
+            ).fetchall()
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error):
+        return []
+    return [
+        {
+            "ts": row[0],
+            "level": str(row[1] or ""),
+            "target": str(row[2] or ""),
+            "message": _truncate_progress_text(str(row[3] or ""), limit=900),
+        }
+        for row in reversed(rows)
+        if str(row[3] or "").strip()
+    ]
+
+
+def _codex_runtime_event_tail(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in _read_jsonl_tail(path, limit=120):
+        if not isinstance(item, dict):
+            continue
+        message = str(item.get("message") or "")
+        event = item.get("event")
+        event_type = str(item.get("event_type") or "")
+        event_kind = str(item.get("event_kind") or "")
+        if isinstance(event, Mapping):
+            event_type = event_type or str(event.get("type") or "")
+            text = event.get("text")
+            delta = event.get("delta")
+            if isinstance(text, str) and text:
+                message = text
+            elif isinstance(delta, str) and delta:
+                message = delta
+        events.append(
+            {
+                "ts": item.get("ts"),
+                "level": str(item.get("level") or ""),
+                "target": str(item.get("target") or ""),
+                "event_type": event_type or event_kind,
+                "message": _truncate_progress_text(message, limit=900),
+            }
+        )
+    return events
+
+
+def _read_jsonl_tail(path: Path, *, limit: int) -> list[Any]:
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    items: list[Any] = []
+    for line in lines[-limit:]:
+        if not line.strip():
+            continue
+        try:
+            items.append(json.loads(line))
+        except json.JSONDecodeError:
+            items.append({"raw": line})
+    return items
+
+
+def _agent_event_kind(value: Any) -> str:
+    if isinstance(value, Mapping):
+        for key in ("type", "kind", "name", "role"):
+            item = value.get(key)
+            if isinstance(item, str) and item:
+                return item
+    return type(value).__name__
+
+
+def _compact_json_text(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(value)
+
+
 def _workflow_node_overlay_source(
     root: Path,
     run_dir: Path,
@@ -2550,7 +2823,7 @@ def _workflow_node_overlay_source(
             kind = _workflow_overlay_kind(output_type, format_id, path)
             if kind:
                 candidates.append((_workflow_overlay_priority(kind), kind, path))
-    for filename in ("elements.json", "candidates.json", "element_analysis.json"):
+    for filename in ("page_spec.json", "elements.json", "candidates.json", "element_analysis.json"):
         path = _case_relative_path(root, run_dir / "output" / filename)
         kind = _workflow_overlay_kind("", "", path)
         if kind:
@@ -2566,17 +2839,21 @@ def _workflow_node_overlay_source(
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         inferred_kind = _workflow_overlay_kind_from_payload(payload, fallback=kind)
-        if _workflow_viewer_elements_from_payload(payload, inferred_kind):
+        if _workflow_viewer_elements_from_payload(payload, inferred_kind, root=root):
             return inferred_kind, relative_path, payload
     return None
 
 
 def _workflow_overlay_kind(output_type: str, format_id: str, path: str) -> str:
     probe = f"{output_type} {format_id} {path}".lower()
+    if "page_spec" in probe or path.endswith("page_spec.json"):
+        return "page_spec"
     if "element_candidates" in probe or path.endswith("candidates.json"):
         return "element_candidates"
     if "element_plans" in probe or path.endswith("elements.json"):
         return "element_plans"
+    if "asset_packages" in probe or path.endswith("asset_packages.json"):
+        return "asset_packages"
     if "element_analysis" in probe or path.endswith("element_analysis.json"):
         return "element_analysis"
     return ""
@@ -2585,10 +2862,14 @@ def _workflow_overlay_kind(output_type: str, format_id: str, path: str) -> str:
 def _workflow_overlay_kind_from_payload(payload: object, *, fallback: str) -> str:
     if isinstance(payload, Mapping):
         schema = str(payload.get("schema") or "")
+        if schema == "drawai.page_spec.v1":
+            return "page_spec"
         if "element_candidate" in schema or "candidates" in payload:
             return "element_candidates"
         if "element_plan" in schema or "run_package" in schema:
             return "element_plans"
+        if schema == "drawai.asset_packages.v1" or "asset_packages" in payload:
+            return "asset_packages"
         if "element_analysis" in schema:
             return "element_analysis"
     return fallback
@@ -2596,16 +2877,27 @@ def _workflow_overlay_kind_from_payload(payload: object, *, fallback: str) -> st
 
 def _workflow_overlay_priority(kind: str) -> int:
     return {
-        "element_plans": 10,
-        "element_candidates": 20,
-        "element_analysis": 30,
+        "page_spec": 10,
+        "element_plans": 20,
+        "asset_packages": 25,
+        "element_candidates": 30,
+        "element_analysis": 40,
     }.get(kind, 100)
 
 
 def _workflow_viewer_elements_from_payload(
     payload: Mapping[str, Any] | list[Any],
     kind: str,
+    *,
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
+    if kind == "page_spec":
+        items = payload.get("elements", []) if isinstance(payload, Mapping) else payload
+        return [
+            element
+            for index, item in enumerate(_json_list(items))
+            if (element := _workflow_viewer_element_from_page_spec(item, index)) is not None
+        ]
     if kind == "element_candidates":
         items = payload.get("candidates", []) if isinstance(payload, Mapping) else payload
         return [
@@ -2627,7 +2919,41 @@ def _workflow_viewer_elements_from_payload(
             for index, item in enumerate(_json_list(items))
             if (element := _workflow_viewer_element_from_analysis(item, index)) is not None
         ]
+    if kind == "asset_packages":
+        items = payload.get("asset_packages", []) if isinstance(payload, Mapping) else payload
+        page_elements_by_id = _workflow_page_spec_items_by_id(root) if root is not None else {}
+        return [
+            element
+            for index, item in enumerate(_json_list(items))
+            if (element := _workflow_viewer_element_from_asset_package(item, index, page_elements_by_id)) is not None
+        ]
     return []
+
+
+def _workflow_viewer_element_from_page_spec(item: Mapping[str, Any], index: int) -> dict[str, Any] | None:
+    bbox = _coerce_bbox_xywh(item.get("box_px"), item.get("geometry"))
+    if bbox is None:
+        return None
+    build = item.get("build")
+    build_mapping = build if isinstance(build, Mapping) else {}
+    element_id = str(item.get("id") or f"E{index + 1:03d}")
+    kind = str(item.get("kind") or "unknown")
+    role = str(item.get("role") or kind)
+    return _workflow_viewer_element(
+        element_id=element_id,
+        bbox=bbox,
+        element_type=kind,
+        source_candidate_ids=_page_spec_source_ids(item) or (element_id,),
+        confidence=_confidence_label(item.get("confidence")),
+        processing_type=str(build_mapping.get("processing_type") or build_mapping.get("mode") or "page_spec"),
+        object_type=role,
+        review_status="page_spec",
+        created_by_stage=str(_mapping_value(item.get("metadata"), "created_by_stage") or "page_spec"),
+        change_reason=str(_mapping_value(item.get("metadata"), "change_reason") or "PageSpec element."),
+        z_order=_int_or_default(item.get("z_index"), index),
+        geometry=item.get("geometry"),
+        parameters=build_mapping.get("parameters") if isinstance(build_mapping.get("parameters"), Mapping) else {},
+    )
 
 
 def _workflow_viewer_element_from_candidate(item: Mapping[str, Any], index: int) -> dict[str, Any] | None:
@@ -2706,6 +3032,45 @@ def _workflow_viewer_element_from_analysis(item: Mapping[str, Any], index: int) 
     )
 
 
+def _workflow_viewer_element_from_asset_package(
+    item: Mapping[str, Any],
+    index: int,
+    page_elements_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    element_id = str(item.get("element_id") or item.get("asset_id") or f"A{index + 1:03d}")
+    page_element = page_elements_by_id.get(element_id)
+    if isinstance(page_element, Mapping):
+        viewer_element = _workflow_viewer_element_from_page_spec(page_element, index)
+        if viewer_element is None:
+            return None
+        processor_type = str(item.get("processor_type") or viewer_element["processing_intent"]["processing_type"])
+        viewer_element["processing_intent"]["processing_type"] = processor_type
+        viewer_element["review_status"] = str(item.get("status") or "asset_package")
+        viewer_element["created_by_stage"] = "asset_prepare"
+        viewer_element["change_reason"] = _asset_package_summary(item, processor_type)
+        return viewer_element
+
+    bbox = _asset_package_bbox(item)
+    if bbox is None:
+        return None
+    processor_type = str(item.get("processor_type") or "asset_package")
+    source_ids = _asset_package_source_ids(item) or (element_id,)
+    return _workflow_viewer_element(
+        element_id=element_id,
+        bbox=bbox,
+        element_type="asset",
+        source_candidate_ids=source_ids,
+        confidence="unknown",
+        processing_type=processor_type,
+        object_type="asset",
+        review_status=str(item.get("status") or "asset_package"),
+        created_by_stage="asset_prepare",
+        change_reason=_asset_package_summary(item, processor_type),
+        z_order=index,
+        geometry={"kind": "bbox", "bbox": [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]},
+    )
+
+
 def _workflow_viewer_element(
     *,
     element_id: str,
@@ -2741,6 +3106,83 @@ def _workflow_viewer_element(
         "created_by_stage": created_by_stage,
         "change_reason": change_reason,
     }
+
+
+def _page_spec_source_ids(item: Mapping[str, Any]) -> tuple[str, ...]:
+    source_refs = item.get("source_refs")
+    if isinstance(source_refs, list | tuple):
+        ids: list[str] = []
+        for ref in source_refs:
+            if isinstance(ref, Mapping) and isinstance(ref.get("id"), str) and ref["id"]:
+                ids.append(ref["id"])
+        if ids:
+            return tuple(ids)
+    return ()
+
+
+def _workflow_page_spec_items_by_id(root: Path | None) -> dict[str, Mapping[str, Any]]:
+    if root is None:
+        return {}
+    page_spec_path = root / "page_spec.json"
+    if not page_spec_path.is_file():
+        return {}
+    payload = json.loads(page_spec_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        return {}
+    items = payload.get("elements")
+    if not isinstance(items, list | tuple):
+        return {}
+    page_elements: dict[str, Mapping[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        element_id = item.get("id")
+        if isinstance(element_id, str) and element_id:
+            page_elements[element_id] = item
+    return page_elements
+
+
+def _asset_package_bbox(item: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+    for metadata in (
+        _mapping_value(item.get("metadata"), "last_run_metadata"),
+        _mapping_value(_mapping_value(item.get("active_result"), "metadata"), "crop_bbox_xyxy"),
+    ):
+        if isinstance(metadata, Mapping):
+            bbox = _coerce_bbox_xyxy_to_xywh(metadata.get("crop_bbox_xyxy"))
+            if bbox is not None:
+                return bbox
+        else:
+            bbox = _coerce_bbox_xyxy_to_xywh(metadata)
+            if bbox is not None:
+                return bbox
+    return None
+
+
+def _asset_package_source_ids(item: Mapping[str, Any]) -> tuple[str, ...]:
+    runs = item.get("processor_runs")
+    if not isinstance(runs, list | tuple) or not runs:
+        return ()
+    first_run = runs[0]
+    if not isinstance(first_run, Mapping):
+        return ()
+    input_refs = first_run.get("input_refs")
+    if not isinstance(input_refs, Mapping):
+        return ()
+    return _string_sequence(input_refs.get("source_candidate_ids"))
+
+
+def _asset_package_summary(item: Mapping[str, Any], processor_type: str) -> str:
+    status = str(item.get("status") or "unknown")
+    asset_id = str(item.get("asset_id") or "")
+    if asset_id:
+        return f"Asset {asset_id} prepared with {processor_type}; status={status}."
+    return f"Asset prepared with {processor_type}; status={status}."
+
+
+def _mapping_value(value: object, key: str) -> object:
+    if isinstance(value, Mapping):
+        return value.get(key)
+    return None
 
 
 def _coerce_bbox_xywh(value: object, geometry: object = None) -> tuple[float, float, float, float] | None:

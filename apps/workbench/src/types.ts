@@ -179,6 +179,16 @@ export interface StageRunRecord {
   error_message: string;
 }
 
+export interface WorkflowNodeRunRecord {
+  node_id: string;
+  attempt_id: string;
+  status: string;
+  started_at: string;
+  ended_at: string;
+  error_message: string;
+  workdir: string;
+}
+
 export interface CaseProgressFile {
   label: string;
   relative_path: string;
@@ -206,6 +216,13 @@ export interface WorkflowNodeViewer {
   node_run: Record<string, unknown> | null;
   input_manifest: Record<string, unknown> | null;
   files: CaseProgressFile[];
+  agent_logs: {
+    files: CaseProgressFile[];
+    trace_events: Array<Record<string, unknown>>;
+    session_summary: Record<string, unknown>;
+    session_events: Array<Record<string, unknown>>;
+    runtime_log_tail: Array<Record<string, unknown>>;
+  };
   elements: V2ElementPlan[];
 }
 
@@ -412,6 +429,7 @@ export interface CaseDetail {
 export interface CaseProgress {
   case: CaseRecord;
   stage_runs: StageRunRecord[];
+  workflow_node_runs: WorkflowNodeRunRecord[];
   files: CaseProgressFile[];
   svg_attempts: SvgAttemptProgress[];
   pptx_export: PptxExportProgress;

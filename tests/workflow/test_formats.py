@@ -14,6 +14,7 @@ def test_default_format_registry_contains_core_formats() -> None:
 
     assert "drawai.image.v1" in registry
     assert "drawai.element_candidates.v1" in registry
+    assert "drawai.page_spec.v1" in registry
     assert "drawai.semantic_svg.v1" in registry
     assert "drawai.pptx.v1" in registry
 
@@ -87,6 +88,71 @@ def test_validate_element_candidates_rejects_missing_required_fields(tmp_path: P
 
     assert not result.ok
     assert any("source_parser" in error for error in result.errors)
+
+
+def test_validate_page_spec_accepts_canonical_page_elements(tmp_path: Path) -> None:
+    page_spec_path = tmp_path / "page_spec.json"
+    page_spec_path.write_text(
+        json.dumps(
+            {
+                "schema": "drawai.page_spec.v1",
+                "page_id": "page-1",
+                "source": {"image": "source.png", "width_px": 100, "height_px": 80},
+                "canvas": {"width_px": 100, "height_px": 80},
+                "elements": [
+                    {
+                        "id": "E001",
+                        "kind": "text",
+                        "role": "title",
+                        "box_px": [4, 6, 40, 10],
+                        "z_index": 1,
+                        "confidence": "high",
+                        "text": "DrawAI",
+                        "build": {"mode": "editable_text", "processing_type": "svg_self_draw"},
+                        "source_refs": [{"kind": "candidate", "id": "ocr:T001"}],
+                    },
+                    {
+                        "id": "G001",
+                        "kind": "group",
+                        "box_px": [0, 0, 100, 80],
+                        "children": ["E001"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = validate_format_file("drawai.page_spec.v1", page_spec_path)
+
+    assert result.ok
+    assert result.errors == ()
+
+
+def test_validate_page_spec_rejects_missing_children(tmp_path: Path) -> None:
+    page_spec_path = tmp_path / "page_spec.json"
+    page_spec_path.write_text(
+        json.dumps(
+            {
+                "schema": "drawai.page_spec.v1",
+                "page_id": "page-1",
+                "elements": [
+                    {
+                        "id": "G001",
+                        "kind": "group",
+                        "box_px": [0, 0, 100, 80],
+                        "children": ["E404"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = validate_format_file("drawai.page_spec.v1", page_spec_path)
+
+    assert not result.ok
+    assert any("missing child" in error for error in result.errors)
 
 
 def test_validate_semantic_svg_accepts_svg_root(tmp_path: Path) -> None:

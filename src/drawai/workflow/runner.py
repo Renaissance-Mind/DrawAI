@@ -15,7 +15,6 @@ from .node_runs import (
     finish_node_run_blocked,
     finish_node_run_failed,
     finish_node_run_ok,
-    write_input_manifest,
 )
 from .schema import (
     WorkflowEdge,
@@ -136,7 +135,6 @@ class WorkflowRunner:
                 resource_id=resource_id,
             )
             inputs = _collect_node_inputs(self.template, node, incoming_edges, outputs_by_port)
-            write_input_manifest(record.workdir, inputs=inputs)
 
             if blocked_sources:
                 error = "blocked by upstream node failure"
@@ -177,6 +175,9 @@ class WorkflowRunner:
                     prompt_path=_exception_metadata_path(exc, "prompt_path", root),
                     stdout_path=_exception_metadata_path(exc, "stdout_path", root),
                     stderr_path=_exception_metadata_path(exc, "stderr_path", root),
+                    trace_path=_exception_metadata_path(exc, "trace_path", root),
+                    session_log_path=_exception_metadata_path(exc, "session_log_path", root),
+                    execution_manifest_path=_exception_metadata_path(exc, "execution_manifest_path", root),
                     exit_code=_exception_exit_code(exc),
                 )
                 node_status[node.node_id] = "failed"
@@ -192,6 +193,9 @@ class WorkflowRunner:
                 prompt_path=run_metadata["prompt_path"],
                 stdout_path=run_metadata["stdout_path"],
                 stderr_path=run_metadata["stderr_path"],
+                trace_path=run_metadata["trace_path"],
+                session_log_path=run_metadata["session_log_path"],
+                execution_manifest_path=run_metadata["execution_manifest_path"],
                 exit_code=run_metadata["exit_code"],
             )
             for port_id, port_outputs in _outputs_by_port(outputs).items():
@@ -323,6 +327,10 @@ def _collect_node_inputs(
                 item = dict(output)
                 item["target_node_id"] = node.node_id
                 item["target_port_id"] = target_port.port_id
+                if not item.get("description"):
+                    item["description"] = target_port.description or source_port.description
+                item.setdefault("source_port_label", source_port.label)
+                item.setdefault("target_port_label", target_port.label)
                 collected.append(item)
     return tuple(collected)
 
@@ -400,10 +408,20 @@ def _node_run_metadata(outputs: tuple[Mapping[str, Any], ...]) -> dict[str, Any]
         "prompt_path": "",
         "stdout_path": "",
         "stderr_path": "",
+        "trace_path": "",
+        "session_log_path": "",
+        "execution_manifest_path": "",
         "exit_code": 0,
     }
     for output in outputs:
-        for field_name in ("prompt_path", "stdout_path", "stderr_path"):
+        for field_name in (
+            "prompt_path",
+            "stdout_path",
+            "stderr_path",
+            "trace_path",
+            "session_log_path",
+            "execution_manifest_path",
+        ):
             value = output.get(field_name)
             if isinstance(value, str) and value and not metadata[field_name]:
                 metadata[field_name] = value

@@ -138,73 +138,54 @@ const BUILTIN_WORKFLOW_FOLDER_ID = "builtin";
 const CUSTOM_WORKFLOW_FOLDER_ID = "custom";
 const WORKFLOW_FOLDERS_STORAGE_KEY = "drawai.workflow.folders";
 const DEFAULT_AGENT_TIMEOUT_SECONDS = 1800;
+const SVG_AGENT_TIMEOUT_SECONDS = 7200;
 const DEFAULT_WORKFLOW_FOLDERS: WorkflowFolder[] = [
   { folder_id: BUILTIN_WORKFLOW_FOLDER_ID, name: "DrawAI默认工作流", builtin: true },
   { folder_id: CUSTOM_WORKFLOW_FOLDER_ID, name: "自定义工作流" }
 ];
 const AGENT_DEFAULT_TASKS: Record<string, string> = {
-  run0_element_refine: `DrawAI asset post-processing and element-plans task.
+  page_spec_refine: `DrawAI PageSpec refinement task.
 
-We are performing an image vectorization task: a bitmap image will eventually be transformed into an editable representation. The whole process has three parts:
-- Asset parsing: divide the image into independent assets. Each asset may be text, an icon, table, frame, arrow, and so on.
-- Asset post-processing: refine the pre-parsed assets.
-- Editable reconstruction: combine assets and finish the final visual result.
+You are operating on one page. The connected PageSpec is the only structured page model for this node. The refined PageSpec elements array is the handoff to every downstream node.
 
-Some assets should become editable forms, such as text, frames, arrows, and simple vector graphics. Some assets should instead be cropped from the original image and pasted back into their original positions. The parser/OCR/fusion outputs are evidence, not truth. Execute the second stage, asset post-processing, and produce refined DrawAI element plans that later asset materialization and SVG generation will consume.
+Goal: read the original page image and the connected drawai.page_spec.v1 file, then write a refined drawai.page_spec.v1 file to the declared output path.
 
-Task 1: refine the connected candidates into minimum independent assets.
-Each output element should be the smallest independent visual part, such as one icon, image, frame, arrow, text line, chart mark, chart block, or diagram component.
-- Split a candidate when one box contains multiple independent parts.
-- Add a new element when an asset is visible in the original image but not covered by any current candidate.
-- Adjust the bbox when the current position is wrong or misses part of a component.
-- Remove or merge a candidate only when it is clearly duplicate, noise, or wholly represented by another retained element.
-- Preserve traceability through source_candidate_ids. Use stable IDs for split or added elements.
-- Bboxes must be visual extents in image pixels. For straight lines/dividers, give at least 1 pixel of thickness.
-- For geometry_kind="mask", use mask_preview PNGs and the mask preview sheet as visual evidence. Do not adjust or resize the mask region; preserve its bbox/geometry when keeping it.
+Do not inspect DrawAI repository source code, import internal DrawAI modules, or call internal Python APIs to learn schema behavior. Use the declared DrawAI CLI tools, especially format describe and format validate, for format contracts and validation.
 
-Task 2: run a bounded visualization/refinement loop, at most 3 iterations.
-1. Write reports/element_plans_codex/refine_iteration_<N>.json.
-2. Run assets_visualization.py with the original image and that iteration JSON.
-3. Inspect reports/element_plans_codex/assets_visualization_iteration_<N>.png.
-4. Correct assets, splits/merges, removals, and bbox coordinates.
-5. Save the final refined element-plans JSON to the declared output path, normally output/elements.json.
+Refine elements directly in PageSpec: adjust bbox, kind, role, z_index, text, style, measurement, build.mode, build.processing_type, build.asset_id, grouping, and source_refs when the image requires it. Split combined boxes, add missing visual elements, and delete duplicates/noise by removing them from elements.
 
-Task 3: classify every final retained element into exactly one processing intent.
-- svg_self_draw: editable SVG primitives/text/paths for text, arrows, boxes, lines, charts, simple diagrams, and simple icons.
-- crop: precise source-image crop with local background preserved for screenshots, photos, dense textures, heatmaps, complex small raster icons, or background-coupled details.
-- crop_nobg: crop after background removal/transparent subject extraction when foreground should sit over reconstructed SVG background.
+For retained or new elements, set build.processing_type to svg_self_draw, crop, crop_nobg, or chart_rebuild_reserved. Use crop for rectangular raster material whose background must stay attached. Use crop_nobg for separable foreground objects that should sit on reconstructed SVG background after background removal.
 
-Important coverage rules:
-- Treat SAM/OCR/current asset plan as evidence, not truth.
-- Output only retained final element plans. Do not output removal_records, strategy_summary, refinement_summary, categories, notes, or old element_analysis fields.
-- Do not skip real visual assets. Every retained or merged original candidate should appear in source_candidate_ids on at least one output element. Clearly duplicate/noise candidates may be omitted.
-- The element_type field must be a concrete DrawAI element type: text, icon, picture, table, chart, diagram, arrow, frame, grid, symbol, content_box, or unknown.
-- New IDs are allowed only for split or added refined elements.
-- If uncertain, choose the most faithful final-source strategy and mark confidence low or medium.
-
-Final JSON format: drawai.element_plans.v1. Write a top-level schema="drawai.element_plans.v1" and an elements array of retained element plans only. Each element plan must include schema="drawai.element_plan.v1", element_id, source_candidate_ids, element_type, bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent {object_type, processing_type svg_self_draw|crop|crop_nobg, parameters}, review_status="agent_refined", created_by_stage="refine_elements", and concise change_reason. The declared JSON file is the source of truth.`,
+Preserve stable ids: keep retained/adjusted ids, do not globally renumber, use new ids only for added/split children, and record changes in metadata.refine_changes. Before finishing, validate the declared output with the DrawAI format tool.`,
   svg_generation: `IMAGE VECTORIZATION TASK
 Goal: convert one bitmap figure into an editable, PPT-stable SVG.
 
 OVERALL DRAWAI PIPELINE
-1. Asset parsing: split the bitmap figure into independent visual assets.
-2. Asset post-processing: refine assets, adjust bboxes, split/merge elements, add missing elements, and decide svg_self_draw/crop/crop_nobg source strategy.
+1. Asset parsing: SAM/OCR produce PageSpec element evidence for one page.
+2. PageSpec refinement and asset preparation: refine elements and materialize crop/crop_nobg outputs into element.materialization in the PageSpec bundle.
 3. Image editabilization: reconstruct the whole figure as editable SVG/PPT by combining SVG primitives/text with allowed raster crop assets.
 
-The current Agent node executes stage 3 only. Do not redo stage 1 or stage 2. Use their outputs as evidence, especially refined element/source analysis and the asset manifest. Create one complete first-pass SVG, then refine it for up to 3 rounds inside the same Agent run.
+The current Agent node executes stage 3 only. Do not redo parsing, refinement, or asset preparation. Use the original image as visual truth. If the connected input list includes no PageSpec, treat this as the direct-image path from the start. When a materialized PageSpec input is connected, use it as the structured plan and use only its element.materialization outputs as raster asset sources.
+
+You may use ordinary shell utilities or short local scripts to inspect connected files and write node-local outputs. For DrawAI-specific behavior, do not inspect repository source code, import internal DrawAI modules, or call internal Python APIs; use only the declared DrawAI CLI tools and their help / format describe contracts.
 
 Primary reading order:
-1. Original/current reference image and refined element/source analysis.
-2. Asset manifest and native_backfill_request before inserting any raster href.
-3. OCR only when text details need help.
-4. SVG template IR or layout IR only as fallback hints.
+1. Original/current reference image and connected materialized PageSpec when present.
+2. When a PageSpec input is connected, compute PageSpec materialization hrefs via page-spec-assets --svg-dir svg before inserting any raster href. In image-only runs, skip this step entirely.
+3. Do not look for unconnected OCR, template, layout, request, or parser files.
+
+Path model:
+- The declared SVG output is the downstream semantic output.
+- In PageSpec-connected runs, write auxiliary semantic_0.svg/rendered_0.png/validation_report_0.json, semantic_1.svg/rendered_1.png/validation_report_1.json, optional semantic_2.svg/rendered_2.png/validation_report_2.json, rendered.png, validation_report_final.json, iteration_log.md, and iteration_log.jsonl inside the same node output directory.
+- In image-only runs, write semantic_0.svg, semantic_1.svg when a refinement round is used, optional semantic_2.svg only when validation failed, semantic.svg, validation_report_final.json, iteration_log.md, and iteration_log.jsonl. rendered*.png files are optional in image-only runs.
+- DrawAI mirrors the declared final SVG to svg/semantic.svg after the node succeeds. When a PageSpec input is connected, compute PageSpec asset hrefs with page-spec-assets --svg-dir svg and validate PageSpec-connected SVGs with svg-validate --href-base-dir svg. In image-only runs, skip PageSpec asset hrefs entirely.
 
 SOURCE POLICY
 - svg_self_draw: editable SVG primitives/text for text, formulas, arrows, frames, tables, axes, borders, simple charts, simple icons, and simple diagram components.
 - crop: exact local crop image for screenshots, photos, dense raster texture, heatmaps, complex small icons, or details unsuitable for faithful SVG redraw.
 - crop_nobg: no-background crop image when a foreground object should sit over reconstructed editable SVG background.
 - Use refined source labels as the default; override only when visible evidence and current render show another strategy is more faithful.
-- Insert only hrefs listed in asset_manifest or native_backfill_request.
+- Insert only hrefs returned by page-spec-assets for PageSpec materialization outputs.
 - Do not use raster images to cover text, arrows, panels, tables, formulas, axes, or structure that should remain editable.
 
 RUN1 / COMPLETE FIRST PASS
@@ -212,49 +193,49 @@ RUN1 / COMPLETE FIRST PASS
 - It must be a complete whole-figure SVG, not a placeholder map, skeleton, gray-box map, or list of asset boxes.
 - Cover the whole canvas.
 - Use SVG/text for svg_self_draw elements.
-- Use manifest image hrefs for crop/crop_nobg elements when available.
+- Use PageSpec materialization image hrefs for crop/crop_nobg elements when available.
 - Preserve refined bboxes unless visible evidence shows they need adjustment.
-- Render/validate semantic_0.svg to rendered_0.png and validation_report_0.json.
+- In PageSpec-connected runs, render/validate semantic_0.svg to rendered_0.png and validation_report_0.json with svg-validate --href-base-dir svg.
 - Record Run1 in iteration_log.md and iteration_log.jsonl.
 
-REFINE LOOP / MAX 3 ROUNDS
-At each round, render the latest SVG, compare against the original image, inspect whole figure first then local regions, and fix the highest-impact issues. Consider layout mismatch, text mismatch, connector/arrow mismatch, shape/table/axis mismatch, asset source mismatch, editability regression, PPT stability issues, and validator issues.
+REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS
+At each round, render the latest SVG with svg-validate when a PageSpec input is connected. In image-only runs, render only if a renderer is available through declared tools; otherwise inspect the SVG structure and compare against the original image directly. Inspect whole figure first then local regions, and fix the highest-impact issues. Default to one refinement round, skip it only when Run1 is already acceptable, and run a second round only for validator failures or a clearly blocking structure issue.
 
 Round outputs:
-- Round 1 writes semantic_1.svg, rendered_1.png, validation_report_1.json.
-- Round 2 writes semantic_2.svg, rendered_2.png, validation_report_2.json.
-- Round 3 writes semantic_3.svg, rendered_3.png, validation_report_3.json.
+- In PageSpec-connected runs, Round 1 writes semantic_1.svg, rendered_1.png, and validation_report_1.json.
+- In PageSpec-connected runs, optional Round 2 writes semantic_2.svg, rendered_2.png, and validation_report_2.json.
+- In image-only runs, Round 1 writes semantic_1.svg when used, and optional Round 2 writes semantic_2.svg only when validation failed. Rendered PNGs and per-round validation reports are optional in image-only runs; validation_report_final.json remains required.
 
-Stop before 3 rounds only when the render is close enough, editable structures remain editable, crop/crop_nobg regions use allowed sources, validation is ok, and another round is unlikely to help.
+Stop after Run1 or Round 1 when validation is ok, the render is coherent, editable structures remain editable, crop/crop_nobg regions use allowed sources, and another round would only improve minor details.
 
 FINALIZATION
 - Choose the latest acceptable SVG as final.
 - Write semantic.svg and the declared SVG output.
-- Render/validate semantic.svg to rendered.png and validation_report_final.json.
+- In PageSpec-connected runs, render/validate semantic.svg to rendered.png and validation_report_final.json with svg-validate --href-base-dir svg. In image-only runs, validate the declared SVG with the format tool and record the result in validation_report_final.json.
 - Write iteration_log.md and iteration_log.jsonl.
 
 OVERALL SVG/PPT PROFILE
-Target DrawAI Scientific SVG Profile v1 for editable PPT conversion. Use rect, circle/ellipse, line/polyline/path, polygon, text/tspan, g, and simple defs/markers/gradients. Use image only for explicit manifest raster assets. Do not output CSS style blocks, filters, masks, clipPath, foreignObject, textPath, pattern fills, base64 images, external image URLs, absolute paths, symbol, or use. Prefer direct presentation attributes. Preserve editable text/formulas with text/tspan and Unicode math/superscript/subscript. Mark non-editable raster assets data-pb-editable="false" and editable vectors/text data-pb-editable="true".`,
+Target DrawAI Scientific SVG Profile v1 for editable PPT conversion. Use rect, circle/ellipse, line/polyline/path, polygon, text/tspan, g, and simple defs/markers/gradients. Use image only for explicit PageSpec materialized raster assets. Do not output CSS style blocks, filters, masks, clipPath, foreignObject, textPath, pattern fills, base64 images, external image URLs, absolute paths, symbol, or use. Prefer direct presentation attributes. Preserve editable text/formulas with text/tspan and Unicode math/superscript/subscript. Mark non-editable raster assets data-pb-editable="false" and editable vectors/text data-pb-editable="true".`,
   custom_agent: `Use the connected input files as context and produce exactly the output files declared by this node configuration.
 
 This is a configurable DrawAI Agent node. The node editor controls the task, input inclusion, input descriptions, output declarations, provider, model/profile/reasoning settings, timeout, and runtime constraints. Read the connected files listed in the prompt, follow the declared output formats, and write only the declared outputs.`
 };
 const AGENT_DEFAULT_CONSTRAINTS: Record<string, string[]> = {
-  run0_element_refine: [
-    "Use only the connected input files listed in this prompt and explicitly declared built-in script files.",
-    "Do not render final SVG/PPT and do not modify repository code. This node only refines/classifies assets.",
-    "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
-    "Do not print full request JSON to the terminal or logs; start from compact candidate tables and read exact details only when needed.",
-    "Output only drawai.element_plans.v1 JSON; do not output codex element analysis, summaries, notes, or removal records.",
-    "Write the declared output files exactly, in UTF-8 JSON or markdown according to the output declaration."
+  page_spec_refine: [
+    "Use only connected input files listed in this prompt and declared DrawAI tools.",
+    "Do not inspect repository source code, import internal DrawAI modules, or call internal DrawAI APIs; use declared DrawAI CLI tools for schema/tool contracts.",
+    "Do not render final SVG/PPT. This node only refines one PageSpec page.",
+    "Deleted elements must be absent from the output elements array; record deletion only in metadata.refine_changes.",
+    "Write the declared PageSpec output exactly as UTF-8 JSON."
   ],
   svg_generation: [
-    "Use only connected input files listed in this prompt and explicitly declared built-in script files.",
-    "Do not redo parsing or asset-source analysis; consume the connected refined elements and asset manifest as evidence.",
+    "Use only connected input files listed in this prompt and declared DrawAI tools.",
+    "Do not inspect repository source code, import internal DrawAI modules, or call internal DrawAI APIs; use declared DrawAI CLI tools for DrawAI-specific behavior.",
+    "Do not redo parsing or PageSpec refinement; consume the connected materialized PageSpec when present and the original image as evidence.",
     "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
     "Do not invent image hrefs, external URLs, file:// URLs, absolute paths, or base64 images.",
     "Do not rasterize panels, arrows, text, formulas, grids, tables, axes, or whole diagram structure.",
-    "Write the declared SVG/render/log outputs exactly and keep the final chat response short."
+    "Write the declared final SVG plus task-requested auxiliary render/report/log files inside this node output directory and keep the final chat response short."
   ],
   custom_agent: [
     "Treat every connected input file as explicit node context.",
@@ -264,26 +245,16 @@ const AGENT_DEFAULT_CONSTRAINTS: Record<string, string[]> = {
 };
 const WORKFLOW_TYPE_CONTRACTS: Record<string, string> = {
   image: "Raster image file. Use it as visual evidence; do not rewrite it unless this node declares an image output.",
-  element_candidates:
-    "Parser candidate elements before fusion/refinement. JSON contains candidates with candidate_id, source_parser, element_type, bbox [x, y, width, height], geometry, confidence, optional text, evidence_files, provenance, and raw_ref.",
-  element_plans:
-    "Refined/planned DrawAI elements. JSON contains elements with element_id, source_candidate_ids, element_type, bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent {object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason.",
-  element_analysis:
-    "Legacy Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, source, strategy_summary, refinement_summary, categories, refinement_actions, elements, optional removal_records, and notes. Each retained element uses box_id or element_id, source_candidate_ids, refinement_action, category svg_self_draw|crop|crop_nobg, confidence, visual_role, reason, evidence, bbox [x1, y1, x2, y2], type, current_pipeline_method, and recommended_asset_source. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
-  asset_packages:
-    "Processed asset package collection. JSON contains asset_packages with asset_id, element_id, processor_type, status pending|running|ok|failed|unsupported, files, metadata, processor_runs, all_results, active_result, editable_payload, and failure.",
+  page_spec:
+    "Canonical page composition model. JSON contains schema drawai.page_spec.v1, page_id, source, canvas, optional background, and elements with id, kind, box_px, z_index, role, build instructions, style, measurement, source_refs, metadata, optional group links, and optional materialization outputs.",
   semantic_svg: "Editable SVG file with an <svg> root following the DrawAI semantic SVG/PPT profile.",
   pptx: "PowerPoint Open XML .pptx package.",
   final_outputs: "Output-node manifest listing collected deliverables and optional mirrored paths."
 };
 const WORKFLOW_FORMAT_CONTRACTS: Record<string, string> = {
   "drawai.image.v1": "Openable raster image file, usually PNG/JPEG/WebP.",
-  "drawai.element_candidates.v1": "UTF-8 JSON object with a candidates array, or a JSON array of element candidate objects.",
-  "drawai.element_plans.v1": "UTF-8 JSON object with an elements array, or a JSON array of element plan objects.",
-  "drawai.codex_element_analysis.v1":
-    "UTF-8 JSON object with schema drawai.codex_element_analysis.v1 and an elements array. Retained elements use box_id/element_id, bbox as x1,y1,x2,y2, category svg_self_draw|crop|crop_nobg, source_candidate_ids, type, confidence, reason, and evidence. Top-level removal_records cover removed/merged source candidates and must include action or refinement_action removed|merged, source_candidate_ids or removed_source_candidate_ids, and reason or removal_reason.",
-  "drawai.asset_package.v1": "UTF-8 JSON object for one DrawAI asset package.",
-  "drawai.asset_packages.v1": "UTF-8 JSON object with an asset_packages array, or a JSON array of asset package objects.",
+  "drawai.page_spec.v1":
+    "UTF-8 JSON object with schema drawai.page_spec.v1. It is the PageSpec-first DAG artifact: source, canvas, optional background, canonical page elements, and optional bundle-relative materialization outputs.",
   "drawai.semantic_svg.v1": "SVG XML file whose document root is <svg>.",
   "drawai.pptx.v1": "Valid zipped PowerPoint Open XML package containing [Content_Types].xml and ppt/presentation.xml.",
   "drawai.final_outputs.v1": "UTF-8 JSON object with an outputs array generated by an output node."
@@ -296,7 +267,7 @@ const DEFAULT_SAM_PROMPTS: SamPromptConfig[] = [
   { id: "icon", text: "icon", confidence_threshold: 0.3 },
   { id: "picture", text: "picture", confidence_threshold: 0.3 }
 ];
-const NODE_PICKER_GROUP_ORDER = ["Parser", "Agent", "Processor", "Review", "Fusion", "Export"];
+const NODE_PICKER_GROUP_ORDER = ["Processor", "Agent", "Review", "Export"];
 const WORKFLOW_FORMAT_OPTIONS: WorkflowFormatOption[] = [
   {
     format_id: "drawai.image.v1",
@@ -305,28 +276,10 @@ const WORKFLOW_FORMAT_OPTIONS: WorkflowFormatOption[] = [
     description: "Generated or edited image file."
   },
   {
-    format_id: "drawai.element_candidates.v1",
-    type: "element_candidates",
-    label: "Element Candidates",
-    description: "Parser-style element candidate JSON."
-  },
-  {
-    format_id: "drawai.element_plans.v1",
-    type: "element_plans",
-    label: "Element Plans",
-    description: "DrawAI element plan JSON."
-  },
-  {
-    format_id: "drawai.codex_element_analysis.v1",
-    type: "element_analysis",
-    label: "Element Analysis",
-    description: "Legacy Run0 asset/source analysis JSON."
-  },
-  {
-    format_id: "drawai.asset_packages.v1",
-    type: "asset_packages",
-    label: "Asset Packages",
-    description: "Renderable asset package JSON."
+    format_id: "drawai.page_spec.v1",
+    type: "page_spec",
+    label: "Page Spec",
+    description: "Canonical page composition JSON."
   },
   {
     format_id: "drawai.semantic_svg.v1",
@@ -351,90 +304,23 @@ const WORKFLOW_ANY_TYPES = WORKFLOW_FORMAT_OPTIONS.map((option) => option.type);
 
 const NODE_PRESETS: NodePreset[] = [
   {
-    key: "sam-parser",
-    node_type: "parser",
-    title: "SAM Parser",
-    icon: "P",
-    description: "Segment visual structure with configurable text prompts and thresholds.",
-    inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
-    outputs: [port("candidates", "Candidates", ["element_candidates"], "drawai.element_candidates.v1", false)],
-    config: { parser_id: "sam3_structure_parser", resource: "sam3", prompts: DEFAULT_SAM_PROMPTS }
-  },
-  {
-    key: "ocr-parser",
-    node_type: "parser",
-    title: "OCR Parser",
-    icon: "P",
-    description: "Extract text candidates from the source image.",
-    inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
-    outputs: [port("candidates", "Candidates", ["element_candidates"], "drawai.element_candidates.v1", false)],
-    config: { parser_id: "ocr_text_parser", resource: "ocr" }
-  },
-  {
-    key: "merge",
-    node_type: "fusion",
-    title: "Merge",
-    icon: "M",
-    description: "Merge compatible outputs before passing to a single-input node.",
-    inputs: [port("candidates", "Candidates", ["element_candidates"], "drawai.element_candidates.v1", true, "many")],
-    outputs: [port("elements", "Elements", ["element_plans"], "drawai.element_plans.v1", false)],
-    config: { fusion_id: "priority_nms" }
-  },
-  {
-    key: "asset-refine-agent",
-    node_type: "agent",
-    title: "Asset Refine Agent",
-    icon: "A",
-    description: "Agent node that refines element plans.",
-    inputs: [
-      port("image", "Image", ["image"], "drawai.image.v1"),
-      port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1")
-    ],
-    outputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1", false)],
-    config: {
-      preset_id: "run0_element_refine",
-      provider_id: "codex_sdk",
-      reasoning_effort: "high",
-      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
-      task: AGENT_DEFAULT_TASKS.run0_element_refine,
-      constraints: AGENT_DEFAULT_CONSTRAINTS.run0_element_refine,
-      scripts: [
-        {
-          script_id: "assets_visualization",
-          path: "scripts/assets_visualization.py",
-          description: "Renders Run0 element-plan bbox JSON over the source image for visual QA iterations.",
-          usage:
-            "python {script} --image <image> --json <iteration_json> --output <png> --summary-output <summary_json> --color-mode action --label-mode id_type"
-        }
-      ],
-      outputs: [
-        {
-          port_id: "elements",
-          path: "output/elements.json",
-          format_id: "drawai.element_plans.v1",
-          type: "element_plans",
-          description: "Run0 refined DrawAI element plans for asset materialization and SVG generation."
-        }
-      ]
-    }
-  },
-  {
     key: "svg-agent",
     node_type: "agent",
     title: "SVG Agent",
     icon: "A",
     description: "Agent node that generates semantic SVG.",
     inputs: [
-      port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1"),
-      port("asset_packages", "Asset Packages", ["asset_packages"], "drawai.asset_packages.v1")
+      port("image", "Image", ["image"], "drawai.image.v1"),
+      port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
     ],
     outputs: [port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1", false, "single", "deliverable")],
     config: {
       preset_id: "svg_generation",
       provider_id: "codex_sdk",
-      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+      timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
       task: AGENT_DEFAULT_TASKS.svg_generation,
       constraints: AGENT_DEFAULT_CONSTRAINTS.svg_generation,
+      drawai_tools: ["format", "page-spec-assets", "svg-validate"],
       outputs: [
         {
           port_id: "semantic_svg",
@@ -472,34 +358,119 @@ const NODE_PRESETS: NodePreset[] = [
     }
   },
   {
-    key: "asset-planner",
+    key: "sam-parse",
     node_type: "processor",
-    title: "Asset Planner",
+    title: "SAM Parse",
     icon: "R",
-    description: "Validate Run0 element plans and generate the asset draft.",
-    inputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1")],
-    outputs: [port("elements", "Element Plans", ["element_plans"], "drawai.element_plans.v1", false)],
-    config: { processor_id: "asset_planner" }
+    description: "Run SAM prompts and write visual elements as PageSpec.",
+    inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
+    outputs: [port("sam_page_spec", "SAM Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "sam_parse", stage: "sam_parse", prompts: DEFAULT_SAM_PROMPTS }
   },
   {
-    key: "asset-processors",
+    key: "ocr-parse",
     node_type: "processor",
-    title: "Asset Processors",
+    title: "OCR Parse",
     icon: "R",
-    description: "Run fixed asset processors and produce asset packages.",
-    inputs: [port("elements", "Elements", ["element_plans"], "drawai.element_plans.v1")],
-    outputs: [port("asset_packages", "Asset Packages", ["asset_packages"], "drawai.asset_packages.v1", false)],
-    config: { processor_id: "asset_processors" }
+    description: "Run OCR and write text elements as PageSpec.",
+    inputs: [port("image", "Image", ["image"], "drawai.image.v1")],
+    outputs: [port("ocr_page_spec", "OCR Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "ocr_parse", stage: "ocr_parse" }
+  },
+  {
+    key: "page-spec-fuse",
+    node_type: "processor",
+    title: "PageSpec Fuse",
+    icon: "R",
+    description: "Fuse SAM and OCR PageSpec evidence into one PageSpec.",
+    inputs: [
+      port("sam_page_spec", "SAM Page Spec", ["page_spec"], "drawai.page_spec.v1"),
+      port("ocr_page_spec", "OCR Page Spec", ["page_spec"], "drawai.page_spec.v1")
+    ],
+    outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "page_spec_fuse", stage: "fuse_elements" }
+  },
+  {
+    key: "page-spec-refine",
+    node_type: "agent",
+    title: "PageSpec Refine",
+    icon: "A",
+    description: "Agent node that refines one PageSpec directly.",
+    inputs: [
+      port("image", "Image", ["image"], "drawai.image.v1"),
+      port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
+    ],
+    outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: {
+      preset_id: "page_spec_refine",
+      provider_id: "codex_sdk",
+      reasoning_effort: "high",
+      timeout_seconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+      task: AGENT_DEFAULT_TASKS.page_spec_refine,
+      constraints: AGENT_DEFAULT_CONSTRAINTS.page_spec_refine,
+      drawai_tools: ["format"],
+      outputs: [
+        {
+          port_id: "page_spec",
+          path: "output/page_spec.json",
+          format_id: "drawai.page_spec.v1",
+          type: "page_spec",
+          description: "Refined one-page PageSpec JSON."
+        }
+      ]
+    }
+  },
+  {
+    key: "asset-prepare",
+    node_type: "processor",
+    title: "Asset Prepare",
+    icon: "R",
+    description: "Materialize raster PageSpec elements into the PageSpec bundle.",
+    inputs: [
+      port("image", "Image", ["image"], "drawai.image.v1"),
+      port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
+    ],
+    outputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { processor_id: "asset_prepare", stage: "process_assets" }
+  },
+  {
+    key: "svg-compose",
+    node_type: "agent",
+    title: "SVG Compose",
+    icon: "A",
+    description: "Agent node that composes semantic SVG from materialized PageSpec.",
+    inputs: [
+      port("image", "Image", ["image"], "drawai.image.v1"),
+      port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")
+    ],
+    outputs: [port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1", false, "single", "deliverable")],
+    config: {
+      preset_id: "svg_generation",
+      provider_id: "codex_sdk",
+      timeout_seconds: SVG_AGENT_TIMEOUT_SECONDS,
+      task: AGENT_DEFAULT_TASKS.svg_generation,
+      constraints: AGENT_DEFAULT_CONSTRAINTS.svg_generation,
+      drawai_tools: ["format", "page-spec-assets", "svg-validate"],
+      outputs: [
+        {
+          port_id: "semantic_svg",
+          path: "output/semantic.svg",
+          format_id: "drawai.semantic_svg.v1",
+          type: "semantic_svg",
+          description: "Editable semantic SVG rooted at an svg element."
+        }
+      ]
+    }
   },
   {
     key: "human",
     node_type: "human_review",
-    title: "Asset Confirm",
+    title: "PageSpec Confirm",
     icon: "H",
-    description: "Human review node that opens the assets canvas/table page.",
-    inputs: [port("asset_packages", "Asset Packages", ["asset_packages"], "drawai.asset_packages.v1")],
-    outputs: [port("asset_packages", "Confirmed Assets", ["asset_packages"], "drawai.asset_packages.v1", false)],
-    config: { review_surface: "assets", result_path: "output/confirmed_asset_packages.json" }
+    description: "Human review node that confirms a PageSpec before later materialization.",
+    inputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")],
+    outputs: [port("page_spec", "Confirmed PageSpec", ["page_spec"], "drawai.page_spec.v1", false)],
+    config: { review_surface: "page_spec", result_path: "output/page_spec.json" }
   },
   {
     key: "export",
@@ -507,7 +478,10 @@ const NODE_PRESETS: NodePreset[] = [
     title: "SVG to PPT",
     icon: "E",
     description: "Fixed export node.",
-    inputs: [port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1")],
+    inputs: [
+      port("semantic_svg", "Semantic SVG", ["semantic_svg"], "drawai.semantic_svg.v1"),
+      port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1", false)
+    ],
     outputs: [port("pptx", "PPTX", ["pptx"], "drawai.pptx.v1", false, "single", "deliverable")],
     config: { exporter_id: "svg_to_ppt" }
   },
@@ -1331,9 +1305,11 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
     const presetId = String(selectedNode.config.preset_id || "custom_agent");
     const defaultOption = presetId === "custom_agent"
       ? workflowFormatOption("drawai.image.v1")
-      : presetId === "run0_element_refine"
-        ? workflowFormatOption("drawai.element_plans.v1")
-        : workflowFormatOption("drawai.element_plans.v1");
+      : presetId === "page_spec_refine"
+        ? workflowFormatOption("drawai.page_spec.v1")
+        : presetId === "svg_generation"
+          ? workflowFormatOption("drawai.semantic_svg.v1")
+          : workflowFormatOption("drawai.page_spec.v1");
     const output: AgentOutputConfig = {
       port_id: portId,
       path: defaultOutputPathForPort(portId, defaultOption.format_id),
@@ -1883,6 +1859,15 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                         onChange={(event) => updateSelectedNodeConfig({ timeout_seconds: event.target.value ? Number(event.target.value) : "" })}
                       />
                     </label>
+                    <label>
+                      <span>DrawAI Tools</span>
+                      <input
+                        value={agentDrawAIToolsText(selectedNode)}
+                        disabled={readOnly}
+                        placeholder="format"
+                        onChange={(event) => updateSelectedNodeConfig({ drawai_tools: drawAIToolsFromText(event.target.value) })}
+                      />
+                    </label>
                   </div>
                 </div>
 
@@ -2413,17 +2398,16 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
     `- Provider: ${providerId}`,
     "- Workflow run root: <workflow_run_root>",
     `- Current node workdir: <workflow_run_root>/nodes/${node.node_id}/runs/<attempt_id>`,
-    `- Agent process cwd: <workflow_run_root>/nodes/${node.node_id}/runs/<attempt_id>`,
+    "- Agent process cwd: <workflow_run_root>",
     "- Repository root: <repository_root>",
-    "- Input manifest path: input_manifest.json",
-    "- Node run manifest path: node_run.json",
+    `- Node run manifest path: <workflow_run_root>/nodes/${node.node_id}/runs/<attempt_id>/node_run.json`,
     ...options.map(([key, value]) => `- ${key}: ${value}`),
     "",
     "## Task",
     agentTaskText(node),
     "",
     "## Connected Input Files",
-    "The DrawAI harness records every connected input in input_manifest.json inside the current node workdir. Use the node-workdir-relative path when opening files from the Agent process."
+    "Every connected input is listed below. Open only these files, using the path from the Agent cwd when possible."
   ];
 
   if (selectedInputs.length > 0) {
@@ -2434,7 +2418,7 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
         `  Type: ${String(input.type || "unspecified")}`,
         `  Run-root path: ${String(input.path || "")}`,
         `  Absolute path: ${inputAbsolutePath(String(input.path || ""))}`,
-        `  From Agent cwd: ${inputPathFromNodeWorkdir(String(input.path || ""))}`,
+        `  From Agent cwd: ${inputPathFromAgentCwd(String(input.path || ""))}`,
         `  Description: ${String(input.description || "No description supplied.")}`
       );
     });
@@ -2445,15 +2429,17 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
   lines.push(
     "",
     "## Declared Output Files",
-    "Write exactly these files relative to the Agent process cwd. The harness resolves and records them in node_run.json after the run."
+    "Write each declared output exactly; these are the semantic files consumed by downstream nodes. The Agent cwd is the workflow run root, so use the run-root path when creating outputs. When the task explicitly asks for render/report/log helper files, keep those auxiliary files inside the current node output directory."
   );
   outputs.forEach((output) => {
+    const finalPath = outputPathFromRunRoot(node.node_id, output.path);
     lines.push(
       `- Port: ${output.port_id}`,
       `  Format: ${output.format_id}`,
       `  Type: ${output.type}`,
-      `  Write path from Agent cwd: ${output.path}`,
-      `  Final run-root path: ${outputPathFromRunRoot(node.node_id, output.path)}`,
+      `  Node-output relative path: ${output.path}`,
+      `  Write path from Agent cwd: ${finalPath}`,
+      `  Final run-root path: ${finalPath}`,
       `  Final absolute path: ${outputAbsolutePath(node.node_id, output.path)}`,
       `  Description: ${output.description}`
     );
@@ -2464,7 +2450,7 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
     lines.push(
       "",
       "## Built-in Script Files",
-      "These scripts are explicitly available to this Agent node. Use them only when they help produce the declared outputs, and keep all generated files inside the current node workdir unless an output declaration says otherwise."
+      "These scripts are explicitly available to this Agent node. Use them only when they help produce the declared outputs."
     );
     scripts.forEach((script) => {
       const path = String(script.path || "");
@@ -2476,6 +2462,21 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
         `  Description: ${String(script.description || "No description supplied.")}`
       );
       if (usage) lines.push(`  Usage: ${usage}`);
+    });
+  }
+
+  const tools = agentDrawAIToolsForInputs(agentDrawAITools(node), selectedInputs);
+  if (tools.length > 0) {
+    lines.push(
+      "",
+      "## DrawAI Tools",
+      "Use only the DrawAI tools listed here. They are CLI product interfaces, not direct Python function calls.",
+      "For DrawAI-specific behavior, use this CLI surface and the tool help/format contracts; do not inspect repository source code or import internal DrawAI modules.",
+      "Exact command prefix from the Agent cwd: `<drawai_tool_command_prefix>`",
+      "Run `<command prefix> help <tool_id>` for the full contract of a tool before using unfamiliar parameters."
+    );
+    tools.forEach((toolId) => {
+      lines.push("", `### Tool \`${toolId}\``, drawAIToolDescription(toolId));
     });
   }
 
@@ -2507,10 +2508,42 @@ function agentScriptsForNode(node: WorkflowNode): Array<Record<string, unknown>>
   return raw.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
 }
 
-function inputPathFromNodeWorkdir(path: string): string {
+function agentDrawAITools(node: WorkflowNode): string[] {
+  const raw = node.config.drawai_tools;
+  const tools = ["format"];
+  if (Array.isArray(raw)) {
+    raw.forEach((item) => {
+      if (typeof item === "string" && item.trim()) tools.push(item.trim());
+    });
+  }
+  return orderedUnique(tools);
+}
+
+function agentDrawAIToolsForInputs(tools: string[], inputs: AgentInputPreview[]): string[] {
+  const hasPageSpec = inputs.some((input) => input.type === "page_spec" || input.format_id === "drawai.page_spec.v1");
+  if (hasPageSpec) return tools;
+  return tools.filter((toolId) => toolId !== "page-spec-assets" && toolId !== "svg-validate");
+}
+
+function agentDrawAIToolsText(node: WorkflowNode): string {
+  return agentDrawAITools(node).join(", ");
+}
+
+function drawAIToolsFromText(text: string): string[] {
+  return orderedUnique(text.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean));
+}
+
+function drawAIToolDescription(toolId: string): string {
+  if (toolId === "format") return "Inspect and validate DrawAI workflow file formats.";
+  if (toolId === "page-spec-assets") return "List materialized PageSpec element assets and compute SVG hrefs from a target SVG directory.";
+  if (toolId === "svg-validate") return "Validate and render a semantic SVG using canvas and materialized asset information from PageSpec.";
+  return "Configured DrawAI CLI tool. Run the tool help command for the exact interface.";
+}
+
+function inputPathFromAgentCwd(path: string): string {
   if (!path) return "";
   if (path.startsWith("/")) return path;
-  return `../../../${stripCurrentDirPrefix(path)}`;
+  return stripCurrentDirPrefix(path);
 }
 
 function inputAbsolutePath(path: string): string {

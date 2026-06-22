@@ -8,6 +8,7 @@ import re
 import signal
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -494,6 +495,7 @@ def _render_svg_with_browser(root: etree._Element, svg_dir: Path, rendered_path:
             "--no-first-run",
             "--no-default-browser-check",
             "--allow-file-access-from-files",
+            *_browser_renderer_keychain_flags(),
             f"--user-data-dir={user_data_dir}",
             f"--window-size={width},{height}",
             "--force-device-scale-factor=1",
@@ -537,6 +539,12 @@ def _render_svg_with_browser(root: etree._Element, svg_dir: Path, rendered_path:
             return (stderr or stdout or f"exit code {process.returncode}").strip()
         return "browser completed without writing screenshot"
     return None
+
+
+def _browser_renderer_keychain_flags(platform: str | None = None) -> list[str]:
+    if (platform or sys.platform) != "darwin":
+        return []
+    return ["--use-mock-keychain", "--password-store=basic"]
 
 
 def _stop_browser_renderer(process: subprocess.Popen[str], *, force: bool = False) -> None:

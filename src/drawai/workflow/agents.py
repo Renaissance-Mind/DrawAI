@@ -10,11 +10,15 @@ from typing import Any, Literal
 from .agent_prompt_defaults import (
     CUSTOM_AGENT_CONSTRAINTS,
     CUSTOM_AGENT_TASK,
+    PAGE_SPEC_REFINE_CONSTRAINTS,
+    PAGE_SPEC_REFINE_TASK,
     RUN0_ELEMENT_REFINE_CONSTRAINTS,
     RUN0_ELEMENT_REFINE_TASK,
     SVG_GENERATION_CONSTRAINTS,
     SVG_GENERATION_TASK,
 )
+from drawai.tooling import render_drawai_tool_prompt_section
+
 from .formats import default_format_contract_descriptions, default_format_registry
 
 AgentProviderKind = Literal["sdk", "cli"]
@@ -29,6 +33,7 @@ DANGEROUS_AGENT_CONFIG_KEYS = (
     "shell_command",
 )
 DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
+SVG_AGENT_TIMEOUT_SECONDS = 7200
 
 TYPE_CONTRACTS = {
     "image": "Raster image file. Use it as visual evidence; do not rewrite it unless this node declares an image output.",
@@ -40,6 +45,11 @@ TYPE_CONTRACTS = {
         "Refined/planned DrawAI elements. JSON contains elements with element_id, source_candidate_ids, element_type, "
         "bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent "
         "{object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason."
+    ),
+    "page_spec": (
+        "Canonical one-page composition model. JSON contains schema drawai.page_spec.v1, page_id, source, canvas, "
+        "optional background, and elements with id, kind, box_px, z_index, role, build instructions, style, "
+        "measurement, source_refs, metadata, and optional group parent/children links."
     ),
     "element_analysis": (
         "Legacy Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, "
@@ -223,6 +233,25 @@ def run0_agent_preset() -> AgentPreset:
     )
 
 
+def page_spec_refine_agent_preset() -> AgentPreset:
+    return AgentPreset(
+        preset_id="page_spec_refine",
+        title="PageSpec Refine",
+        provider_id="codex_sdk",
+        task=PAGE_SPEC_REFINE_TASK,
+        outputs=(
+            AgentOutputDeclaration(
+                port_id="page_spec",
+                path="output/page_spec.json",
+                format_id="drawai.page_spec.v1",
+                type="page_spec",
+                description="Refined one-page PageSpec JSON. Elements are the source of truth; metadata.refine_changes is only an audit log.",
+            ),
+        ),
+        constraints=(*PAGE_SPEC_REFINE_CONSTRAINTS,),
+    )
+
+
 def svg_agent_preset() -> AgentPreset:
     return AgentPreset(
         preset_id="svg_generation",
@@ -264,6 +293,8 @@ def custom_agent_preset() -> AgentPreset:
 def agent_preset_by_id(preset_id: str) -> AgentPreset:
     if preset_id == "run0_element_refine":
         return run0_agent_preset()
+    if preset_id == "page_spec_refine":
+        return page_spec_refine_agent_preset()
     if preset_id == "svg_generation":
         return svg_agent_preset()
     if preset_id == "custom_agent":
@@ -286,6 +317,7 @@ def render_agent_prompt(
     outputs = _configured_outputs(preset, config)
     options = _agent_options(config)
     scripts = _configured_scripts(preset, config, runtime)
+    drawai_tools = _drawai_tools_for_inputs(_configured_drawai_tools(config), selected_inputs)
     text = _render_prompt_text(
         node_id=str(config.get("node_id") or "<agent_node_id>"),
         provider_id=provider_id,
@@ -295,6 +327,7 @@ def render_agent_prompt(
         task=_agent_task(preset, config),
         constraints=_agent_constraints(preset, config),
         scripts=scripts,
+        drawai_tools=drawai_tools,
         runtime_context=runtime,
     )
     return AgentPrompt(
@@ -317,6 +350,7 @@ def _render_prompt_text(
     task: str,
     constraints: tuple[str, ...],
     scripts: tuple[Mapping[str, Any], ...],
+    drawai_tools: tuple[str, ...],
     runtime_context: Mapping[str, str],
 ) -> str:
     workflow_run_root = (
@@ -326,17 +360,20 @@ def _render_prompt_text(
         runtime_context.get("node_workdir")
         or f"{workflow_run_root}/nodes/{node_id}/runs/<attempt_id>"
     )
+    agent_cwd = runtime_context.get("agent_cwd") or workflow_run_root
     repo_root = runtime_context.get("repo_root") or "<repository_root>"
-    input_manifest = runtime_context.get("input_manifest") or "input_manifest.json"
+    drawai_tool_command_prefix = (
+        runtime_context.get("drawai_tool_command_prefix")
+        or "<drawai_tool_command_prefix>"
+    )
     lines = [
         "## Agent Runtime Settings",
         f"- Provider: {provider_id}",
         f"- Workflow run root: {workflow_run_root}",
         f"- Current node workdir: {node_workdir}",
-        f"- Agent process cwd: {node_workdir}",
+        f"- Agent process cwd: {agent_cwd}",
         f"- Repository root: {repo_root}",
-        f"- Input manifest path: {input_manifest}",
-        "- Node run manifest path: node_run.json",
+        f"- Node run manifest path: {node_workdir}/node_run.json",
     ]
     for key, value in options.items():
         lines.append(f"- {key}: {value}")
@@ -349,11 +386,9 @@ def _render_prompt_text(
             "",
             "## Connected Input Files",
             (
-                "The DrawAI harness records every connected input in input_manifest.json "
-                "inside the current node workdir. Use the node-workdir-relative path "
-                "when opening files from the Agent process. First read input_manifest.json, "
-                "then open the listed files needed for this node; the Format and Type contracts "
-                "below describe how to interpret each file."
+                "Every connected input is listed below. Open only these files, using the "
+                "path from the Agent cwd when possible. The Format and Type contracts below "
+                "describe how to interpret each file."
             ),
         ]
     )
@@ -367,7 +402,7 @@ def _render_prompt_text(
                     f"  Type: {item.get('type') or 'unspecified'}",
                     f"  Run-root path: {item['path']}",
                     f"  Absolute path: {_input_absolute_path(item['path'], runtime_context)}",
-                    f"  From Agent cwd: {_input_path_from_node_workdir(item['path'], runtime_context)}",
+                    f"  From Agent cwd: {_input_path_from_agent_cwd(item['path'], runtime_context)}",
                     f"  Description: {item.get('description') or 'No description supplied.'}",
                 ]
             )
@@ -379,19 +414,23 @@ def _render_prompt_text(
             "",
             "## Declared Output Files",
             (
-                "Write exactly these files relative to the Agent process cwd. The "
-                "harness resolves and records them in node_run.json after the run."
+                "Write each declared output exactly; these are the semantic files consumed by downstream nodes. "
+                "The Agent cwd is the workflow run root, so use the run-root path when creating outputs. "
+                "When the task explicitly asks for render/report/log helper files, keep those auxiliary files "
+                "inside the current node output directory. The harness records declared outputs in node_run.json after the run."
             ),
         ]
     )
     for output in outputs:
+        final_run_root_path = _output_path_from_run_root(node_id, output["path"], runtime_context)
         lines.extend(
             [
                 f"- Port: {output['port_id']}",
                 f"  Format: {output['format_id']}",
                 f"  Type: {output['type']}",
-                f"  Write path from Agent cwd: {output['path']}",
-                f"  Final run-root path: {_output_path_from_run_root(node_id, output['path'], runtime_context)}",
+                f"  Node-output relative path: {output['path']}",
+                f"  Write path from Agent cwd: {final_run_root_path}",
+                f"  Final run-root path: {final_run_root_path}",
                 f"  Final absolute path: {_output_absolute_path(node_id, output['path'], runtime_context)}",
                 f"  Description: {output['description']}",
             ]
@@ -404,7 +443,7 @@ def _render_prompt_text(
                 "## Built-in Script Files",
                 (
                     "These scripts are explicitly available to this Agent node. Use them only when they help produce "
-                    "the declared outputs, and keep all generated files inside the current node workdir unless an "
+                    "the declared outputs, and keep all generated files inside the current node output directory unless an "
                     "output declaration says otherwise."
                 ),
             ]
@@ -424,6 +463,9 @@ def _render_prompt_text(
             )
             if usage:
                 lines.append(f"  Usage: {usage}")
+
+    if drawai_tools:
+        lines.extend(["", render_drawai_tool_prompt_section(drawai_tools, command_prefix=drawai_tool_command_prefix)])
 
     lines.extend(["", "## Type And Format Contracts"])
     format_contracts = default_format_contract_descriptions()
@@ -450,7 +492,7 @@ def _render_prompt_text(
     return "\n".join(lines).strip() + "\n"
 
 
-def _input_path_from_node_workdir(
+def _input_path_from_agent_cwd(
     path: object, runtime_context: Mapping[str, str] | None = None
 ) -> str:
     path_value = str(path or "")
@@ -459,13 +501,13 @@ def _input_path_from_node_workdir(
     if path_value.startswith("/"):
         return path_value
     runtime = runtime_context or {}
-    node_workdir = runtime.get("node_workdir")
+    agent_cwd = runtime.get("agent_cwd") or runtime.get("workflow_run_root")
     workflow_run_root = runtime.get("workflow_run_root")
-    if node_workdir and workflow_run_root:
+    if agent_cwd and workflow_run_root:
         return _relative_from_node_workdir(
-            Path(workflow_run_root) / path_value, Path(node_workdir)
+            Path(workflow_run_root) / path_value, Path(agent_cwd)
         )
-    return f"../../../{path_value.lstrip('./')}"
+    return path_value.lstrip("./")
 
 
 def _input_absolute_path(
@@ -664,10 +706,10 @@ def _configured_scripts(
         )
         usage = str(script.get("usage") or "")
         resolved_path = _script_path_for_prompt(path, runtime_context)
-        node_workdir = runtime_context.get("node_workdir")
+        agent_cwd = runtime_context.get("agent_cwd") or runtime_context.get("workflow_run_root")
         from_agent_cwd = (
-            _relative_from_node_workdir(Path(resolved_path), Path(node_workdir))
-            if node_workdir and Path(resolved_path).is_absolute()
+            _relative_from_node_workdir(Path(resolved_path), Path(agent_cwd))
+            if agent_cwd and Path(resolved_path).is_absolute()
             else resolved_path
         )
         normalized.append(
@@ -700,9 +742,10 @@ def _runtime_context(runtime_context: Mapping[str, Any] | None) -> Mapping[str, 
     for key in (
         "workflow_run_root",
         "node_workdir",
+        "agent_cwd",
         "repo_root",
         "attempt_id",
-        "input_manifest",
+        "drawai_tool_command_prefix",
     ):
         value = raw.get(key)
         if value not in (None, ""):
@@ -729,6 +772,8 @@ def _validate_agent_config(config: Mapping[str, Any]) -> None:
     for field_name in ("model", "profile", "provider_id"):
         if field_name in config and not isinstance(config[field_name], str):
             raise ValueError(f"{field_name} must be a string")
+    if "drawai_tools" in config and not isinstance(config["drawai_tools"], list | tuple):
+        raise ValueError("drawai_tools must be an array of tool ids")
 
 
 def _agent_options(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -737,6 +782,34 @@ def _agent_options(config: Mapping[str, Any]) -> Mapping[str, Any]:
         if key in config and config[key] not in (None, ""):
             options[key] = config[key]
     return options
+
+
+def _configured_drawai_tools(config: Mapping[str, Any]) -> tuple[str, ...]:
+    raw_tools = config.get("drawai_tools")
+    tool_ids: list[str] = ["format"]
+    if raw_tools is not None:
+        for index, raw_tool in enumerate(raw_tools):
+            if not isinstance(raw_tool, str) or not raw_tool.strip():
+                raise ValueError(f"drawai_tools[{index}] must be a non-empty string")
+            tool_ids.append(raw_tool.strip())
+    return _ordered_unique(tool_ids)
+
+
+PAGE_SPEC_ONLY_DRAWAI_TOOLS = frozenset({"page-spec-assets", "svg-validate"})
+
+
+def _drawai_tools_for_inputs(
+    tool_ids: Sequence[str],
+    inputs: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    has_page_spec = any(
+        str(item.get("type") or "") == "page_spec"
+        or str(item.get("format_id") or "") == "drawai.page_spec.v1"
+        for item in inputs
+    )
+    if has_page_spec:
+        return tuple(tool_ids)
+    return tuple(tool_id for tool_id in tool_ids if tool_id not in PAGE_SPEC_ONLY_DRAWAI_TOOLS)
 
 
 def _agent_task(preset: AgentPreset, config: Mapping[str, Any]) -> str:
