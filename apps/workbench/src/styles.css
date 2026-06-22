@@ -3334,18 +3334,29 @@ button.asset-status-unsupported {
 }
 
 .workbench-agent-settings-dialog {
-  width: min(860px, calc(100vw - 48px));
+  width: min(980px, calc(100vw - 48px));
+  height: min(700px, calc(100vh - 48px));
   max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
 }
 
 .agent-settings-body {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
   padding: 18px;
 }
 
+.workbench-agent-settings-dialog .settings-actions {
+  flex: 0 0 auto;
+}
+
 .agent-settings-error {
-  margin-bottom: 12px;
+  flex: 0 0 auto;
   border: 1px solid #f3b9b4;
   border-radius: 6px;
   background: var(--danger-soft);
@@ -3355,21 +3366,95 @@ button.asset-status-unsupported {
   line-height: 1.45;
 }
 
-.agent-settings-grid {
+.agent-settings-shell {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 0.9fr) minmax(280px, 1.1fr);
+  grid-template-columns: 116px minmax(230px, 280px) minmax(320px, 1fr);
   gap: 16px;
 }
 
+.settings-nav,
+.agent-settings-list-panel,
 .agent-settings-list,
 .agent-settings-panel {
   min-width: 0;
+  min-height: 0;
+}
+
+.settings-nav {
+  border-right: 1px solid rgba(220, 228, 222, 0.86);
+  padding: 2px 10px 0 0;
+}
+
+.settings-nav-item {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 7px 0 7px 4px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.settings-nav-item:hover {
+  background: transparent;
+  color: var(--ink);
+}
+
+.settings-nav-item.active {
+  border-color: transparent;
+  background: transparent;
+  color: var(--teal);
+  box-shadow: none;
+}
+
+.settings-nav-marker {
+  width: 6px;
+  height: 22px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.agent-settings-list-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(220, 228, 222, 0.86);
+  padding-right: 16px;
+}
+
+.agent-settings-list-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.agent-settings-list-head span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-settings-list-head strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
 }
 
 .agent-settings-list {
-  display: grid;
-  align-content: start;
-  gap: 8px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .agent-settings-empty {
@@ -3381,29 +3466,43 @@ button.asset-status-unsupported {
 }
 
 .agent-option {
-  min-height: 74px;
+  position: relative;
+  min-height: 78px;
   display: grid;
   gap: 5px;
-  border-color: var(--line);
-  border-radius: 6px;
-  background: #ffffff;
-  padding: 11px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(220, 228, 222, 0.82);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 11px 8px 11px 13px;
   text-align: left;
 }
 
 .agent-option:hover {
-  border-color: rgba(8, 120, 79, 0.42);
-  background: #f8fbf8;
+  background: linear-gradient(90deg, rgba(8, 120, 79, 0.06), transparent 68%);
 }
 
 .agent-option.active {
-  border-color: rgba(8, 120, 79, 0.7);
-  background: var(--teal-soft);
-  box-shadow: 0 0 0 3px rgba(8, 120, 79, 0.09);
+  border-color: rgba(220, 228, 222, 0.82);
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.agent-option.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--teal);
 }
 
 .agent-option.missing:not(.active) {
-  background: #fbfbfa;
+  color: var(--muted);
 }
 
 .agent-option-main {
@@ -3419,6 +3518,9 @@ button.asset-status-unsupported {
   color: var(--ink);
   font-size: 14px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-option-meta,
@@ -3433,6 +3535,46 @@ button.asset-status-unsupported {
 
 .agent-command {
   color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-settings-pager {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.agent-settings-pager button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-soft);
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.agent-settings-pager button:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.agent-settings-pager span {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .agent-status {
@@ -3457,6 +3599,8 @@ button.asset-status-unsupported {
   display: grid;
   align-content: start;
   gap: 14px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .agent-validation-card {
@@ -5466,12 +5610,32 @@ button.asset-status-unsupported {
 
 @media (max-width: 980px) {
   .workbench-agent-settings-dialog {
-    width: min(620px, calc(100vw - 28px));
+    width: min(700px, calc(100vw - 28px));
   }
 
-  .agent-settings-grid,
   .settings-form-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agent-settings-shell {
+    grid-template-columns: 88px minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .settings-nav {
+    padding-right: 8px;
+  }
+
+  .agent-settings-list-panel {
+    min-height: 324px;
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .agent-settings-panel {
+    grid-column: 2;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .agent-settings-body {
@@ -5498,6 +5662,38 @@ button.asset-status-unsupported {
     right: 12px;
     width: min(300px, calc(100% - 24px));
     max-height: min(360px, calc(100% - 24px));
+  }
+}
+
+@media (max-width: 680px) {
+  .workbench-agent-settings-dialog {
+    width: min(520px, calc(100vw - 48px));
+    height: min(720px, calc(100vh - 48px));
+  }
+
+  .agent-settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    display: flex;
+    border-right: 0;
+    border-bottom: 1px solid rgba(220, 228, 222, 0.86);
+    padding: 0 0 10px;
+  }
+
+  .settings-nav-item {
+    width: auto;
+    padding: 5px 0;
+  }
+
+  .settings-nav-marker {
+    width: 22px;
+    height: 3px;
+  }
+
+  .agent-settings-panel {
+    grid-column: auto;
   }
 }
 

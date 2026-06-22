@@ -142,6 +142,7 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   reasoning_effort: "",
   timeout_seconds: 0
 };
+const AGENT_SETTINGS_PAGE_SIZE = 4;
 
 const strategyLabels: Record<SourceStrategy, string> = {
   svg_self_draw: "SVG",
@@ -1456,6 +1457,24 @@ function WorkbenchAgentSettingsDialog({
 
   const agents = response?.agents || [];
   const selectedAgent = agents.find((agent) => agent.provider_id === draft.selected_provider_id) || agents[0] || null;
+  const [agentPage, setAgentPage] = useState(0);
+  const agentPageCount = Math.max(1, Math.ceil(agents.length / AGENT_SETTINGS_PAGE_SIZE));
+  const visibleAgents = useMemo(
+    () => agents.slice(agentPage * AGENT_SETTINGS_PAGE_SIZE, (agentPage + 1) * AGENT_SETTINGS_PAGE_SIZE),
+    [agentPage, agents]
+  );
+  const selectAgentProvider = (providerId: string) => {
+    const nextIndex = agents.findIndex((agent) => agent.provider_id === providerId);
+    if (nextIndex >= 0) {
+      setAgentPage(Math.floor(nextIndex / AGENT_SETTINGS_PAGE_SIZE));
+    }
+    setDraft((current) => ({ ...current, selected_provider_id: providerId }));
+  };
+
+  useEffect(() => {
+    setAgentPage((current) => Math.min(current, Math.max(0, agentPageCount - 1)));
+  }, [agentPageCount]);
+
   const saveSettings = async () => {
     setSaving(true);
     setLocalError("");
@@ -1493,33 +1512,66 @@ function WorkbenchAgentSettingsDialog({
         </header>
         <div className="agent-settings-body">
           {localError && <div className="agent-settings-error">{localError}</div>}
-          <div className="agent-settings-grid">
-            <div className="agent-settings-list" aria-label="本地 Agent">
-              {loading && <div className="agent-settings-empty">加载中</div>}
-              {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
-              {agents.map((agent) => (
+          <div className="agent-settings-shell">
+            <nav className="settings-nav" aria-label="设置导航">
+              <button type="button" className="settings-nav-item active" aria-current="page">
+                <span className="settings-nav-marker" aria-hidden="true" />
+                <span>Agent</span>
+              </button>
+            </nav>
+            <div className="agent-settings-list-panel">
+              <div className="agent-settings-list-head">
+                <span>本地 Agent</span>
+                <strong>{loading ? "..." : agents.length}</strong>
+              </div>
+              <div className="agent-settings-list" aria-label="本地 Agent">
+                {loading && <div className="agent-settings-empty">加载中</div>}
+                {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
+                {visibleAgents.map((agent) => (
+                  <button
+                    type="button"
+                    key={agent.provider_id}
+                    className={`agent-option${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
+                    onClick={() => selectAgentProvider(agent.provider_id)}
+                  >
+                    <span className="agent-option-main">
+                      <strong>{agent.label}</strong>
+                      <span className={`agent-status ${agent.available ? "ok" : "missing"}`}>{agent.available ? "可用" : "未通过"}</span>
+                    </span>
+                    <span className="agent-option-meta">{agent.kind.toUpperCase()}</span>
+                    <span className="agent-command">{agent.command.length ? agent.command.join(" ") : "SDK"}</span>
+                    {agent.version && <span className="agent-version">{agent.version}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="agent-settings-pager" aria-label="Agent 翻页">
                 <button
                   type="button"
-                  key={agent.provider_id}
-                  className={`agent-option${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
-                  onClick={() => setDraft((current) => ({ ...current, selected_provider_id: agent.provider_id }))}
+                  aria-label="上一页"
+                  disabled={loading || agentPage <= 0}
+                  onClick={() => setAgentPage((current) => Math.max(0, current - 1))}
                 >
-                  <span className="agent-option-main">
-                    <strong>{agent.label}</strong>
-                    <span className={`agent-status ${agent.available ? "ok" : "missing"}`}>{agent.available ? "可用" : "未通过"}</span>
-                  </span>
-                  <span className="agent-option-meta">{agent.kind.toUpperCase()}</span>
-                  <span className="agent-command">{agent.command.length ? agent.command.join(" ") : "SDK"}</span>
-                  {agent.version && <span className="agent-version">{agent.version}</span>}
+                  ‹
                 </button>
-              ))}
+                <span>
+                  {agentPage + 1} / {agentPageCount}
+                </span>
+                <button
+                  type="button"
+                  aria-label="下一页"
+                  disabled={loading || agentPage >= agentPageCount - 1}
+                  onClick={() => setAgentPage((current) => Math.min(agentPageCount - 1, current + 1))}
+                >
+                  ›
+                </button>
+              </div>
             </div>
             <div className="agent-settings-panel">
               <label className="settings-field">
                 <span>全局 Agent</span>
                 <select
                   value={draft.selected_provider_id}
-                  onChange={(event) => setDraft((current) => ({ ...current, selected_provider_id: event.target.value }))}
+                  onChange={(event) => selectAgentProvider(event.target.value)}
                   disabled={loading}
                 >
                   {agents.map((agent) => (
