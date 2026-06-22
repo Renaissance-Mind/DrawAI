@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from PIL import Image
 
+from drawai import model_runtime
 from drawai.workflow.agents import agent_preset_by_id
 from drawai.workflow.llm_execution import (
+    LLMExecutionError,
     LLMExecutionRequest,
-    LLMExecutionResult,
     execute_llm_prompt,
     render_llm_prompt,
 )
@@ -57,7 +59,12 @@ def test_llm_prompt_embeds_json_inputs_and_attaches_image_content(tmp_path: Path
                 "description": "Fused PageSpec evidence.",
             },
         ),
-        node_config={"node_id": "page_spec_refine"},
+        node_config={
+            "node_id": "page_spec_refine",
+            "reasoning_effort": "high",
+            "wire_api": "chat_completions",
+            "extra_body": {"reasoning": {"enabled": True}},
+        },
         runtime_context={
             "workflow_run_root": run_root,
             "node_workdir": run_root / "nodes" / "page_spec_refine" / "runs" / "001",
@@ -73,6 +80,14 @@ def test_llm_prompt_embeds_json_inputs_and_attaches_image_content(tmp_path: Path
     assert "Do not read workflow files from disk" in prompt.text
     assert "Return the page_spec output as JSON content" in prompt.text
     assert "Write path from Agent cwd" not in prompt.text
+    assert "## Direct Output Runtime Override" in prompt.text
+    assert "ignore any task wording that asks you to run commands" in prompt.text
+    assert "compact valid JSON" in prompt.text
+    assert "do not use raster image elements" in prompt.text
+    assert '{"drawai_passthrough_input": true}' in prompt.text
+    assert "large structured input" in prompt.text
+    assert "extra_body" not in prompt.text
+    assert "reasoning" not in prompt.text
 
 
 def test_execute_llm_prompt_extracts_fenced_json_and_writes_declared_output(tmp_path: Path) -> None:
@@ -92,7 +107,11 @@ def test_execute_llm_prompt_extracts_fenced_json_and_writes_declared_output(tmp_
         runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
     )
 
-    def invoker(**_kwargs: Any) -> str:
+    captured: dict[str, Any] = {}
+
+    def invoker(**kwargs: Any) -> str:
+        captured["runtime_config"] = kwargs["runtime_config"]
+        captured["max_output_tokens"] = kwargs["max_output_tokens"]
         return "```json\n" + json.dumps(page_spec) + "\n```"
 
     result = execute_llm_prompt(
@@ -113,6 +132,139 @@ def test_execute_llm_prompt_extracts_fenced_json_and_writes_declared_output(tmp_
     assert result.prompt_path == workdir / "llm_prompt.md"
     assert result.stdout_path == workdir / "llm_response.txt"
     assert result.execution_manifest_path == workdir / "llm_execution.json"
+    assert captured["runtime_config"]["direct_output"] is True
+    assert captured["max_output_tokens"] == 32768
+
+
+def test_execute_llm_prompt_rejects_truncated_json_instead_of_nested_fragment(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "page_spec_refine" / "runs" / "001"
+    prompt = render_llm_prompt(
+        agent_preset_by_id("page_spec_refine"),
+        inputs=(),
+        node_config={"node_id": "page_spec_refine"},
+        runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
+    )
+
+    def invoker(**kwargs: Any) -> str:
+        return '```json\n{"schema":"drawai.page_spec.v1","source":{"width_px":10,"height_px":10},"elements":['
+
+    with pytest.raises(LLMExecutionError, match="complete parseable JSON"):
+        execute_llm_prompt(
+            LLMExecutionRequest(
+                prompt=prompt,
+                workdir=workdir,
+                run_root=run_root,
+                node_id="page_spec_refine",
+                node_type="llm",
+                runtime_config={"provider": "fake", "model_name": "fake-model"},
+            ),
+            invoke_model=invoker,
+        )
+
+
+def test_execute_llm_prompt_falls_back_to_matching_input_on_empty_model_output(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "page_spec_refine" / "runs" / "001"
+    source_path = run_root / "nodes" / "page_spec_fuse" / "runs" / "001" / "output" / "page_spec.json"
+    source_path.parent.mkdir(parents=True)
+    page_spec = {
+        "schema": "drawai.page_spec.v1",
+        "page_id": "p1",
+        "source": {"width_px": 10, "height_px": 10},
+        "canvas": {"width_px": 10, "height_px": 10},
+        "elements": [],
+    }
+    source_path.write_text(json.dumps(page_spec), encoding="utf-8")
+    prompt = render_llm_prompt(
+        agent_preset_by_id("page_spec_refine"),
+        inputs=(
+            {
+                "path": "nodes/page_spec_fuse/runs/001/output/page_spec.json",
+                "format_id": "drawai.page_spec.v1",
+                "type": "page_spec",
+                "source_node_id": "page_spec_fuse",
+                "source_port_id": "page_spec",
+                "description": "Fused PageSpec evidence.",
+            },
+        ),
+        node_config={"node_id": "page_spec_refine"},
+        runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
+    )
+
+    def invoker(**kwargs: Any) -> str:
+        raise model_runtime.ModelRuntimeError("model returned no text output")
+
+    execute_llm_prompt(
+        LLMExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="page_spec_refine",
+            node_type="llm",
+            runtime_config={"provider": "fake", "model_name": "fake-model"},
+        ),
+        invoke_model=invoker,
+    )
+
+    saved = json.loads((workdir / "output" / "page_spec.json").read_text(encoding="utf-8"))
+    trace = (workdir / "llm_trace.jsonl").read_text(encoding="utf-8")
+    assert saved == page_spec
+    assert '"type": "llm_fallback"' in trace
+
+
+def test_execute_llm_prompt_honors_matching_input_passthrough_sentinel(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "page_spec_refine" / "runs" / "001"
+    source_path = run_root / "nodes" / "page_spec_fuse" / "runs" / "001" / "output" / "page_spec.json"
+    source_path.parent.mkdir(parents=True)
+    page_spec = {
+        "schema": "drawai.page_spec.v1",
+        "page_id": "p1",
+        "source": {"width_px": 10, "height_px": 10},
+        "canvas": {"width_px": 10, "height_px": 10},
+        "elements": [],
+    }
+    source_path.write_text(json.dumps(page_spec), encoding="utf-8")
+    prompt = render_llm_prompt(
+        agent_preset_by_id("page_spec_refine"),
+        inputs=(
+            {
+                "path": "nodes/page_spec_fuse/runs/001/output/page_spec.json",
+                "format_id": "drawai.page_spec.v1",
+                "type": "page_spec",
+                "source_node_id": "page_spec_fuse",
+                "source_port_id": "page_spec",
+                "description": "Fused PageSpec evidence.",
+            },
+        ),
+        node_config={"node_id": "page_spec_refine"},
+        runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def invoker(**kwargs: Any) -> str:
+        captured["max_output_tokens"] = kwargs["max_output_tokens"]
+        return '{"drawai_passthrough_input": true}'
+
+    execute_llm_prompt(
+        LLMExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="page_spec_refine",
+            node_type="llm",
+            runtime_config={"provider": "fake", "model_name": "fake-model"},
+        ),
+        invoke_model=invoker,
+    )
+
+    saved = json.loads((workdir / "output" / "page_spec.json").read_text(encoding="utf-8"))
+    trace = (workdir / "llm_trace.jsonl").read_text(encoding="utf-8")
+    assert saved == page_spec
+    assert captured["max_output_tokens"] == 2048
+    assert "model_requested_matching_input_passthrough" in trace
 
 
 def test_execute_llm_prompt_extracts_json_wrapped_svg_and_writes_declared_output(tmp_path: Path) -> None:
@@ -144,3 +296,78 @@ def test_execute_llm_prompt_extracts_json_wrapped_svg_and_writes_declared_output
     )
 
     assert (workdir / "output" / "semantic.svg").read_text(encoding="utf-8") == svg + "\n"
+
+
+def test_execute_llm_prompt_removes_svg_raster_image_elements(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "svg_compose" / "runs" / "001"
+    prompt = render_llm_prompt(
+        agent_preset_by_id("svg_generation"),
+        inputs=(),
+        node_config={"node_id": "svg_compose"},
+        runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
+    )
+
+    def invoker(**kwargs: Any) -> str:
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            '<image href="assets/E001/crop.png" x="0" y="0" width="2" height="2"/>'
+            '<image href="assets/MISSING/crop.png" x="2" y="2" width="2" height="2"/>'
+            '<rect x="4" y="4" width="2" height="2"/>'
+            "</svg>"
+        )
+
+    execute_llm_prompt(
+        LLMExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="svg_compose",
+            node_type="llm",
+            runtime_config={"provider": "fake", "model_name": "fake-model"},
+        ),
+        invoke_model=invoker,
+    )
+
+    saved = (workdir / "output" / "semantic.svg").read_text(encoding="utf-8")
+    assert "assets/E001/crop.png" not in saved
+    assert "assets/MISSING/crop.png" not in saved
+    assert "<image" not in saved
+    assert "<rect" in saved
+
+
+def test_execute_llm_prompt_repairs_truncated_svg_at_last_complete_tag(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "svg_compose" / "runs" / "001"
+    prompt = render_llm_prompt(
+        agent_preset_by_id("svg_generation"),
+        inputs=(),
+        node_config={"node_id": "svg_compose"},
+        runtime_context={"workflow_run_root": run_root, "node_workdir": workdir, "attempt_id": "001"},
+    )
+
+    def invoker(**kwargs: Any) -> str:
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            '<g id="kept"><rect x="1" y="1" width="2" height="2"/>'
+            '<line x1="0" y1="0" x2='
+        )
+
+    execute_llm_prompt(
+        LLMExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="svg_compose",
+            node_type="llm",
+            runtime_config={"provider": "fake", "model_name": "fake-model"},
+        ),
+        invoke_model=invoker,
+    )
+
+    saved = (workdir / "output" / "semantic.svg").read_text(encoding="utf-8")
+    assert '<g id="kept">' in saved
+    assert "<rect" in saved
+    assert saved.rstrip().endswith("</g></svg>")

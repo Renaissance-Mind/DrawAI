@@ -5,6 +5,7 @@ import json
 import mimetypes
 import re
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,8 +45,21 @@ LLM_OUTPUT_JSON_FORMATS = {
 LLM_OUTPUT_SVG_FORMATS = {"drawai.semantic_svg.v1"}
 
 LLM_OUTPUT_TEXT_TYPES = {"page_spec", "element_plans", "element_analysis", "asset_packages", "final_outputs"}
+DEFAULT_LLM_DIRECT_OUTPUT_TOKENS = 32768
+DEFAULT_LLM_PASSTHROUGH_OUTPUT_TOKENS = 2048
+LLM_PROMPT_RUNTIME_OPTION_EXCLUDES = {
+    "extra_body",
+    "reasoning_effort",
+    "timeout_seconds",
+    "wire_api",
+}
 
 FENCE_RE = re.compile(r"```\s*([A-Za-z0-9_.+-]*)\s*\n(.*?)```", re.DOTALL)
+SVG_TAG_RE = re.compile(r"<\s*(/?)\s*([A-Za-z_][\w:.-]*)([^<>]*?)(/?)\s*>", re.DOTALL)
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
+ET.register_namespace("", SVG_NAMESPACE)
+ET.register_namespace("xlink", XLINK_NAMESPACE)
 
 ModelInvoker = Callable[..., str]
 
@@ -173,16 +187,39 @@ def execute_llm_prompt(
         },
     )
     invoker = invoke_model or model_runtime.invoke_multimodal_text
-    response_text = invoker(
-        image_paths=request.prompt.image_paths,
-        prompt=request.prompt.text,
-        task_name=f"drawai.workflow.llm.{request.node_id}",
-        runtime_config=_runtime_config_for_model(request),
-        trace_path=trace_path,
-        max_output_tokens=int(request.prompt.options.get("max_output_tokens") or 16384),
-    )
-    stdout_path.write_text(str(response_text), encoding="utf-8")
-    _write_declared_outputs(request, str(response_text), prompt_path=prompt_path, stdout_path=stdout_path)
+    fallback_used = False
+    response_text = ""
+    try:
+        response_text = invoker(
+            image_paths=request.prompt.image_paths,
+            prompt=request.prompt.text,
+            task_name=f"drawai.workflow.llm.{request.node_id}",
+            runtime_config=_runtime_config_for_model(request),
+            trace_path=trace_path,
+            max_output_tokens=_max_output_tokens_for_request(request),
+        )
+        stdout_path.write_text(str(response_text), encoding="utf-8")
+        if _passthrough_requested(str(response_text)) and _write_matching_input_fallback(
+            request,
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+            trace_path=trace_path,
+            reason="model_requested_matching_input_passthrough",
+        ):
+            fallback_used = True
+        else:
+            _write_declared_outputs(request, str(response_text), prompt_path=prompt_path, stdout_path=stdout_path)
+    except (model_runtime.ModelRuntimeError, LLMExecutionError) as exc:
+        if not _write_matching_input_fallback(
+            request,
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+            trace_path=trace_path,
+            reason="matching_input_passthrough",
+            error=exc,
+        ):
+            raise
+        fallback_used = True
     _append_trace(
         trace_path,
         {
@@ -191,6 +228,7 @@ def execute_llm_prompt(
             "node_id": request.node_id,
             "duration_ms": int((time.monotonic() - started_at) * 1000),
             "response_chars": len(str(response_text)),
+            "fallback_used": fallback_used,
             "output_paths": [
                 _relative_or_absolute(_declared_output_path(request, output, prompt_path=prompt_path), request.run_root)
                 for output in request.prompt.outputs
@@ -230,8 +268,41 @@ def _render_llm_prompt_text(
         f"- Node run manifest path: {node_workdir}/node_run.json",
     ]
     for key, value in options.items():
+        if str(key) in LLM_PROMPT_RUNTIME_OPTION_EXCLUDES:
+            continue
         lines.append(f"- {key}: {value}")
 
+    lines.extend(
+        [
+            "",
+            "## Direct Output Runtime Override",
+            (
+                "This node runs in LLM direct-output mode: return the declared content in the final assistant "
+                "message only."
+            ),
+            (
+                "If the task text mentions writing files, running commands, validation tools, terminal loops, "
+                "or saving paths, treat that as output-quality guidance and ignore any task wording that asks "
+                "you to run commands or create files yourself."
+            ),
+            (
+                "When JSON or SVG is required, return compact valid JSON/SVG directly, with no markdown fence, "
+                "no prose, and no duplicated schema examples."
+            ),
+            (
+                "For SVG outputs, do not use raster image elements, local file references, or CSS urls. Use editable "
+                "vector shapes and text instead."
+            ),
+            "The DrawAI runner extracts your response, saves it to the declared output path, and validates it after the model call.",
+        ]
+    )
+    if _has_matching_input_passthrough(inputs, outputs):
+        lines.append(
+            'If the declared output should be identical to the unique connected input with the same type/format, return exactly {"drawai_passthrough_input": true}.'
+        )
+        lines.append(
+            "Prefer that passthrough sentinel for a large structured input unless you have high-confidence necessary edits."
+        )
     lines.extend(
         [
             "",
@@ -421,6 +492,11 @@ def _write_output_content(
         return
     if format_id in LLM_OUTPUT_SVG_FORMATS or type_name == "semantic_svg":
         svg = _extract_svg_text(source_text, prompt_path=prompt_path, stdout_path=stdout_path)
+        svg = _sanitize_svg_raster_image_refs(
+            svg,
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+        )
         output_path.write_text(svg.rstrip() + "\n", encoding="utf-8")
         return
     output_path.write_text(source_text.strip() + "\n", encoding="utf-8")
@@ -442,6 +518,22 @@ def _extract_json_payload(
     direct = _try_json(stripped)
     if direct is not None:
         return direct
+    if stripped.startswith("```"):
+        for _language, content in _fenced_blocks(stripped, preferred=("json", "javascript", "js", "")):
+            parsed = _try_json(content.strip())
+            if parsed is not None:
+                return parsed
+        raise LLMExecutionError(
+            "LLM response did not contain complete parseable JSON in its fenced output",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+        )
+    if stripped[0] in "{[":
+        raise LLMExecutionError(
+            "LLM response did not contain complete parseable JSON",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+        )
     for _language, content in _fenced_blocks(stripped, preferred=("json", "javascript", "js", "")):
         parsed = _try_json(content.strip())
         if parsed is not None:
@@ -460,6 +552,94 @@ def _extract_json_payload(
     )
 
 
+def _write_matching_input_fallback(
+    request: LLMExecutionRequest,
+    *,
+    prompt_path: Path,
+    stdout_path: Path,
+    trace_path: Path,
+    reason: str,
+    error: Exception | None = None,
+) -> bool:
+    if len(request.prompt.outputs) != 1:
+        return False
+    output = request.prompt.outputs[0]
+    input_item = _single_matching_input(request.prompt.inputs, output)
+    if input_item is None:
+        return False
+    source_path = _request_input_path(request, str(input_item.get("path") or ""))
+    if not source_path.is_file():
+        return False
+    if not stdout_path.exists():
+        stdout_path.write_text("", encoding="utf-8")
+    output_path = _declared_output_path(request, output, prompt_path=prompt_path)
+    source_text = source_path.read_text(encoding="utf-8")
+    _write_output_content(
+        output_path,
+        source_text,
+        output,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+    )
+    _append_trace(
+        trace_path,
+        {
+            "type": "llm_fallback",
+            "provider_id": request.prompt.provider_id,
+            "node_id": request.node_id,
+            "reason": reason,
+            "source_input_path": _relative_or_absolute(source_path, request.run_root),
+            "output_path": _relative_or_absolute(output_path, request.run_root),
+            **({"error_type": type(error).__name__, "error": str(error)} if error is not None else {}),
+        },
+    )
+    return True
+
+
+def _passthrough_requested(text: str) -> bool:
+    stripped = text.strip()
+    payload = _try_json(stripped)
+    if payload is None and stripped.startswith("```"):
+        for _language, content in _fenced_blocks(stripped, preferred=("json", "javascript", "js", "")):
+            payload = _try_json(content.strip())
+            if payload is not None:
+                break
+    return isinstance(payload, Mapping) and payload.get("drawai_passthrough_input") is True
+
+
+def _has_matching_input_passthrough(
+    inputs: Sequence[Mapping[str, Any]],
+    outputs: Sequence[Mapping[str, Any]],
+) -> bool:
+    return len(outputs) == 1 and _single_matching_input(inputs, outputs[0]) is not None
+
+
+def _single_matching_input(
+    inputs: Sequence[Mapping[str, Any]],
+    output: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    output_format = str(output.get("format_id") or "")
+    output_type = str(output.get("type") or "")
+    matches = [
+        item
+        for item in inputs
+        if (output_format and str(item.get("format_id") or "") == output_format)
+        or (output_type and str(item.get("type") or "") == output_type)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _request_input_path(request: LLMExecutionRequest, path_value: str) -> Path:
+    if not path_value:
+        raise LLMExecutionError("LLM fallback input path must be a non-empty string")
+    path = Path(path_value)
+    if path.is_absolute():
+        return path.expanduser().resolve(strict=False)
+    return (request.run_root / path).expanduser().resolve(strict=False)
+
+
 def _extract_svg_text(
     text: str,
     *,
@@ -469,10 +649,16 @@ def _extract_svg_text(
     stripped = text.strip()
     if stripped.startswith("<svg") and stripped.endswith("</svg>"):
         return stripped
+    repaired = _repair_truncated_svg(stripped)
+    if repaired is not None:
+        return repaired
     for _language, content in _fenced_blocks(stripped, preferred=("svg", "xml", "html", "")):
         candidate = content.strip()
         if candidate.startswith("<svg") and candidate.endswith("</svg>"):
             return candidate
+        repaired = _repair_truncated_svg(candidate)
+        if repaired is not None:
+            return repaired
     parsed = _try_json(stripped)
     if isinstance(parsed, Mapping):
         for key in ("svg", "semantic_svg", "content", "output"):
@@ -483,11 +669,93 @@ def _extract_svg_text(
     end = stripped.rfind("</svg>")
     if start >= 0 and end >= start:
         return stripped[start : end + len("</svg>")].strip()
+    if start >= 0:
+        repaired = _repair_truncated_svg(stripped[start:])
+        if repaired is not None:
+            return repaired
     raise LLMExecutionError(
         "LLM response did not contain a complete SVG document",
         prompt_path=prompt_path,
         stdout_path=stdout_path,
     )
+
+
+def _repair_truncated_svg(text: str) -> str | None:
+    candidate = text.strip()
+    if not candidate.startswith("<svg") or candidate.endswith("</svg>"):
+        return None
+    last_tag_end = candidate.rfind(">")
+    if last_tag_end < 0:
+        return None
+    candidate = candidate[: last_tag_end + 1]
+    stack: list[str] = []
+    for match in SVG_TAG_RE.finditer(candidate):
+        raw_tag = match.group(0)
+        tag_name = match.group(2)
+        if raw_tag.startswith("<?") or raw_tag.startswith("<!"):
+            continue
+        if match.group(1):
+            for index in range(len(stack) - 1, -1, -1):
+                if stack[index] == tag_name:
+                    del stack[index:]
+                    break
+            continue
+        if match.group(4) or match.group(3).rstrip().endswith("/"):
+            continue
+        stack.append(tag_name)
+    if not stack or stack[0].split(":")[-1] != "svg":
+        return None
+    repaired = candidate + "".join(f"</{tag_name}>" for tag_name in reversed(stack))
+    try:
+        root = ET.fromstring(repaired)
+    except ET.ParseError:
+        return None
+    if _xml_local_name(root.tag) != "svg":
+        return None
+    return repaired
+
+
+def _sanitize_svg_raster_image_refs(
+    svg: str,
+    *,
+    prompt_path: Path,
+    stdout_path: Path,
+) -> str:
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as exc:
+        raise LLMExecutionError(
+            "LLM response SVG was not parseable XML",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+        ) from exc
+    if _xml_local_name(root.tag) != "svg":
+        raise LLMExecutionError(
+            "LLM response SVG root element was not <svg>",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+        )
+
+    parent_by_child = {child: parent for parent in root.iter() for child in list(parent)}
+    changed = False
+    for element in list(root.iter()):
+        if _xml_local_name(element.tag) != "image":
+            continue
+        parent = parent_by_child.get(element)
+        if parent is None:
+            element.clear()
+        else:
+            parent.remove(element)
+        changed = True
+    if not changed:
+        return svg
+    return ET.tostring(root, encoding="unicode")
+
+
+def _xml_local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[1]
+    return tag
 
 
 def _output_response_text(
@@ -645,6 +913,7 @@ def _runtime_config_for_model(request: LLMExecutionRequest) -> dict[str, Any]:
     runtime = dict(request.runtime_config)
     runtime["provider"] = str(runtime.get("provider") or request.prompt.provider_id)
     runtime["connection_id"] = str(runtime.get("connection_id") or request.prompt.provider_id)
+    runtime["direct_output"] = True
     model = request.prompt.options.get("model")
     if model:
         runtime["model_name"] = str(model)
@@ -653,6 +922,15 @@ def _runtime_config_for_model(request: LLMExecutionRequest) -> dict[str, Any]:
         if value not in (None, ""):
             runtime[key] = value
     return runtime
+
+
+def _max_output_tokens_for_request(request: LLMExecutionRequest) -> int:
+    configured = request.prompt.options.get("max_output_tokens")
+    if configured not in (None, ""):
+        return int(configured)
+    if _has_matching_input_passthrough(request.prompt.inputs, request.prompt.outputs):
+        return DEFAULT_LLM_PASSTHROUGH_OUTPUT_TOKENS
+    return DEFAULT_LLM_DIRECT_OUTPUT_TOKENS
 
 
 def _image_paths(

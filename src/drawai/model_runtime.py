@@ -8,7 +8,8 @@ import mimetypes
 import os
 from ipaddress import ip_address
 import re
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
@@ -16,6 +17,14 @@ from urllib.parse import urlparse
 
 class ModelRuntimeError(ValueError):
     """Raised when the DrawAI model runtime cannot invoke a vision model."""
+
+
+RATE_LIMIT_RETRY_DELAYS_SECONDS = (10.0, 30.0, 60.0)
+_MAX_TOKENS_RANGE_RE = re.compile(r"Range of max_tokens should be \[1,\s*(\d+)\]", re.IGNORECASE)
+_MAX_TOKENS_AT_MOST_RE = re.compile(
+    r"(?:max_output_tokens|max_tokens)[^\d]{0,80}(?:<=|at most|less than or equal to|should be)\s*(\d+)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -96,7 +105,14 @@ def invoke_multimodal_text(
             "runtime_config is required for DrawAI model runtime usage without an injected invoker"
         )
     normalized_image_paths = _normalize_image_paths(image_paths)
-    settings = _resolve_settings(runtime_config)
+    resolved_settings = _resolve_settings(runtime_config)
+    direct_output = _runtime_direct_output(runtime_config)
+    settings_attempts = (
+        _direct_output_settings_attempts(resolved_settings)
+        if direct_output
+        else (resolved_settings,)
+    )
+    settings = settings_attempts[0]
     if settings.provider_connection is None:
         raise ModelRuntimeError("runtime_config did not resolve to a provider connection")
     timeout_seconds = _runtime_timeout_seconds(runtime_config)
@@ -122,39 +138,47 @@ def invoke_multimodal_text(
             }
         )
     trace = Path(trace_path) if trace_path is not None else None
-    _append_trace(
-        trace,
-        {
-            "type": "request",
-            "task_name": task_name,
-            "provider": settings.provider,
-            "connection_id": settings.connection_id,
-            "model_name": settings.model_name,
-            "images": image_traces,
-            "max_output_tokens": int(max_output_tokens),
-            "timeout_seconds": timeout_seconds,
-        },
-    )
     _raise_if_running_loop()
-    if settings.wire_api == "chat_completions":
-        output = asyncio.run(
-            _invoke_openai_compatible_chat_completion(
-                settings=settings,
-                input_content=input_content,
-                max_output_tokens=max_output_tokens,
-                timeout_seconds=timeout_seconds,
-            )
+    output = ""
+    for attempt_index, attempt_settings in enumerate(settings_attempts, start=1):
+        _append_trace(
+            trace,
+            {
+                "type": "request",
+                "task_name": task_name,
+                "provider": attempt_settings.provider,
+                "connection_id": attempt_settings.connection_id,
+                "model_name": attempt_settings.model_name,
+                "wire_api": attempt_settings.wire_api,
+                "direct_output": direct_output,
+                "attempt": attempt_index,
+                "attempts": len(settings_attempts),
+                "extra_body": attempt_settings.extra_body,
+                "images": image_traces,
+                "max_output_tokens": int(max_output_tokens),
+                "timeout_seconds": timeout_seconds,
+            },
         )
-    else:
-        output = asyncio.run(
-            _invoke_openai_compatible_response(
-                settings=settings,
-                input_content=input_content,
-                max_output_tokens=max_output_tokens,
-                timeout_seconds=timeout_seconds,
-            )
+        output = _invoke_provider_sync(
+            settings=attempt_settings,
+            input_content=input_content,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+            task_name=task_name,
+            trace_path=trace,
         )
-    if not output:
+        if output and output.strip():
+            break
+        _append_trace(
+            trace,
+            {
+                "type": "empty_response",
+                "task_name": task_name,
+                "attempt": attempt_index,
+                "attempts": len(settings_attempts),
+            },
+        )
+    if not output or not output.strip():
         raise ModelRuntimeError(f"model returned no text output for task {task_name!r}")
     _append_trace(
         trace,
@@ -166,6 +190,83 @@ def invoke_multimodal_text(
         },
     )
     return output
+
+
+def _invoke_provider_sync(
+    *,
+    settings: RuntimeSettings,
+    input_content: list[dict[str, Any]],
+    max_output_tokens: int,
+    timeout_seconds: float,
+    task_name: str,
+    trace_path: Path | None,
+) -> str:
+    effective_max_output_tokens = int(max_output_tokens)
+    rate_limit_retry_count = 0
+    provider_retry_count = 0
+    while True:
+        try:
+            if settings.wire_api == "chat_completions":
+                return asyncio.run(
+                    _invoke_openai_compatible_chat_completion(
+                        settings=settings,
+                        input_content=input_content,
+                        max_output_tokens=effective_max_output_tokens,
+                        timeout_seconds=timeout_seconds,
+                    )
+                )
+            return asyncio.run(
+                _invoke_openai_compatible_response(
+                    settings=settings,
+                    input_content=input_content,
+                    max_output_tokens=effective_max_output_tokens,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
+        except Exception as exc:
+            token_cap = _max_output_token_cap_from_error(exc)
+            if token_cap is not None and effective_max_output_tokens > token_cap:
+                _append_trace(
+                    trace_path,
+                    {
+                        "type": "provider_retry",
+                        "task_name": task_name,
+                        "reason": "max_output_tokens_cap",
+                        "retry": provider_retry_count + 1,
+                        "previous_max_output_tokens": effective_max_output_tokens,
+                        "next_max_output_tokens": token_cap,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+                effective_max_output_tokens = token_cap
+                provider_retry_count += 1
+                continue
+            if (
+                _is_retryable_rate_limit(exc)
+                and rate_limit_retry_count < len(RATE_LIMIT_RETRY_DELAYS_SECONDS)
+            ):
+                delay_seconds = RATE_LIMIT_RETRY_DELAYS_SECONDS[rate_limit_retry_count]
+                _append_trace(
+                    trace_path,
+                    {
+                        "type": "provider_retry",
+                        "task_name": task_name,
+                        "reason": "rate_limit",
+                        "retry": provider_retry_count + 1,
+                        "delay_seconds": delay_seconds,
+                        "max_output_tokens": effective_max_output_tokens,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+                time.sleep(delay_seconds)
+                rate_limit_retry_count += 1
+                provider_retry_count += 1
+                continue
+            raise ModelRuntimeError(
+                f"model provider call failed for task {task_name!r}: {exc}"
+            ) from exc
 
 
 async def _invoke_openai_compatible_response(
@@ -399,6 +500,76 @@ def _runtime_timeout_seconds(runtime_config: RuntimeSettings | dict[str, Any]) -
     if timeout <= 0:
         raise ModelRuntimeError("runtime_config.timeout_seconds must be positive")
     return timeout
+
+
+def _runtime_direct_output(runtime_config: RuntimeSettings | dict[str, Any]) -> bool:
+    if isinstance(runtime_config, Mapping):
+        return bool(runtime_config.get("direct_output"))
+    return False
+
+
+def _direct_output_settings_attempts(settings: RuntimeSettings) -> tuple[RuntimeSettings, ...]:
+    primary = replace(settings, extra_body=_direct_output_extra_body(settings.extra_body))
+    stripped_extra_body = _direct_output_stripped_extra_body(primary.extra_body)
+    if stripped_extra_body == primary.extra_body:
+        return (primary,)
+    return (primary, replace(primary, extra_body=stripped_extra_body))
+
+
+def _direct_output_extra_body(extra_body: Mapping[str, Any]) -> dict[str, Any]:
+    data = dict(extra_body)
+    reasoning = data.get("reasoning")
+    if isinstance(reasoning, Mapping):
+        normalized_reasoning = dict(reasoning)
+        normalized_reasoning["enabled"] = False
+        data["reasoning"] = normalized_reasoning
+    thinking = data.get("thinking")
+    if isinstance(thinking, Mapping):
+        normalized_thinking = dict(thinking)
+        normalized_thinking["type"] = "disabled"
+        data["thinking"] = normalized_thinking
+    return data
+
+
+def _direct_output_stripped_extra_body(extra_body: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in extra_body.items()
+        if str(key).lower() not in {"reasoning", "thinking"}
+    }
+
+
+def _max_output_token_cap_from_error(exc: Exception) -> int | None:
+    text = _error_text(exc)
+    for pattern in (_MAX_TOKENS_RANGE_RE, _MAX_TOKENS_AT_MOST_RE):
+        match = pattern.search(text)
+        if match is None:
+            continue
+        cap = int(match.group(1))
+        if cap > 0:
+            return cap
+    return None
+
+
+def _is_retryable_rate_limit(exc: Exception) -> bool:
+    text = _error_text(exc).lower()
+    class_name = type(exc).__name__.lower()
+    return (
+        "ratelimit" in class_name
+        or "rate_limit" in text
+        or "limit_burst_rate" in text
+        or "too quickly" in text
+        or "429" in text
+    )
+
+
+def _error_text(exc: Exception) -> str:
+    parts = [str(exc)]
+    for attr_name in ("message", "code", "type", "body"):
+        value = getattr(exc, attr_name, None)
+        if value not in (None, ""):
+            parts.append(str(value))
+    return "\n".join(parts)
 
 
 def _raise_if_running_loop() -> None:
