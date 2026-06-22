@@ -17,6 +17,8 @@ import type {
   V2Compatibility,
   V2ElementPlan,
   V2RunPackage,
+  WorkbenchAgentSettings,
+  WorkbenchAgentSettingsResponse,
   WorkflowNodeViewer
 } from "./types";
 
@@ -143,6 +145,17 @@ function drawAiNetworkError(path: string, error: unknown): Error {
 
 export function getHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>("/api/health");
+}
+
+export function getWorkbenchAgentSettings(): Promise<WorkbenchAgentSettingsResponse> {
+  return requestJson<WorkbenchAgentSettingsResponse>("/api/workbench/agent-settings");
+}
+
+export function saveWorkbenchAgentSettings(settings: WorkbenchAgentSettings): Promise<WorkbenchAgentSettingsResponse> {
+  return requestJson<WorkbenchAgentSettingsResponse>("/api/workbench/agent-settings", {
+    method: "PUT",
+    body: JSON.stringify(settings)
+  });
 }
 
 export function listBatches(): Promise<{ batches: BatchDetail["batch"][] }> {

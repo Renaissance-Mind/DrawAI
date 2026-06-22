@@ -24,6 +24,11 @@ from lxml import etree
 
 from ..artifacts import write_json
 from .assets import process_asset_plan_elements, read_asset_draft, validate_asset_plan, write_asset_draft
+from .agent_settings import (
+    read_workbench_agent_settings,
+    workbench_agent_settings_payload,
+    write_workbench_agent_settings,
+)
 from ..codex_python_sdk_imagegen import (
     CodexPythonSdkImageGenError,
     CodexImageGenResult,
@@ -223,6 +228,21 @@ def create_app(
             ]
         }
 
+    @app.get("/api/workbench/agent-settings")
+    def get_workbench_agent_settings_api() -> dict[str, Any]:
+        return workbench_agent_settings_payload(resolved_store.workspace)
+
+    @app.put("/api/workbench/agent-settings")
+    async def save_workbench_agent_settings_api(request: Request) -> dict[str, Any]:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Workbench agent settings payload must be an object")
+        try:
+            write_workbench_agent_settings(resolved_store.workspace, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return workbench_agent_settings_payload(resolved_store.workspace)
+
     @app.post("/api/workflow/agent-prompt-preview")
     async def workflow_agent_prompt_preview_api(request: Request) -> dict[str, Any]:
         payload = await request.json()
@@ -334,6 +354,10 @@ def create_app(
             load_workflow_template_by_id(resolved_store.workspace, workflow_template_id)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"workflow template is not available: {workflow_template_id}") from exc
+        try:
+            agent_settings = read_workbench_agent_settings(resolved_store.workspace)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         batch = resolved_store.create_batch(
             name=str(payload.get("name") or "DrawAI batch"),
             input_mode=input_mode,  # type: ignore[arg-type]
@@ -370,6 +394,7 @@ def create_app(
                 ocr_base_url=resolved_settings.ocr_base_url,
                 ocr_timeout_seconds=resolved_settings.ocr_timeout_seconds,
                 rmbg_base_url=resolved_settings.rmbg_base_url,
+                agent_settings=agent_settings.to_dict(),
             )
             resolved_store.update_case_config_path(case.case_id, config_path)
         resolved_runner.submit_batch(batch.batch_id)

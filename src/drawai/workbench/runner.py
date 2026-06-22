@@ -7,7 +7,6 @@ import threading
 import time
 from collections.abc import Callable
 from collections.abc import Mapping
-from collections.abc import Sequence
 from contextlib import ExitStack, contextmanager
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
@@ -41,7 +40,7 @@ from drawai.workflow.agent_execution import (
     AgentExecutionResult,
     execute_agent_prompt,
 )
-from drawai.workflow.agents import agent_preset_by_id, render_agent_prompt
+from drawai.workflow.agents import agent_preset_by_id, default_agent_provider_registry, render_agent_prompt
 from drawai.workflow.formats import element_plans_from_payload
 from drawai.workflow.runner import NodeRunContext, WorkflowRunner
 from drawai.workflow.schema import WorkflowEdge, WorkflowTemplate
@@ -54,6 +53,14 @@ from .assets import (
     materialize_approved_assets,
     read_asset_draft,
     write_asset_draft,
+)
+from .agent_settings import (
+    WorkbenchAgentSettings,
+    apply_workbench_agent_settings_to_config_payload,
+    apply_workbench_agent_settings_to_node_config,
+    normalize_workbench_agent_settings,
+    read_workbench_agent_settings,
+    workbench_agent_runtime_options,
 )
 from .models import CaseRecord, WorkbenchSettings
 from .store import WorkbenchStore
@@ -139,9 +146,6 @@ class WorkbenchRunner:
             "codex": {"limit": max(1, settings.codex_concurrency), "queued": 0, "running": 0},
             "rmbg": {"limit": max(1, settings.rmbg_concurrency), "queued": 0, "running": 0},
             "export": {"limit": max(1, settings.export_concurrency), "queued": 0, "running": 0},
-            "agent_provider:codex_sdk": {"limit": max(1, settings.codex_concurrency), "queued": 0, "running": 0},
-            "agent_provider:codex_cli": {"limit": max(1, settings.codex_concurrency), "queued": 0, "running": 0},
-            "agent_provider:kimi_cli": {"limit": 2, "queued": 0, "running": 0},
         }
         self._resource_locks = {
             "sam3": threading.Semaphore(max(1, settings.sam_concurrency)),
@@ -149,10 +153,11 @@ class WorkbenchRunner:
             "codex": threading.Semaphore(max(1, settings.codex_concurrency)),
             "rmbg": threading.Semaphore(max(1, settings.rmbg_concurrency)),
             "export": threading.Semaphore(max(1, settings.export_concurrency)),
-            "agent_provider:codex_sdk": threading.Semaphore(max(1, settings.codex_concurrency)),
-            "agent_provider:codex_cli": threading.Semaphore(max(1, settings.codex_concurrency)),
-            "agent_provider:kimi_cli": threading.Semaphore(2),
         }
+        for provider in default_agent_provider_registry().values():
+            limit = max(1, provider.default_max_concurrent)
+            self._resource_activity[provider.resource_key] = {"limit": limit, "queued": 0, "running": 0}
+            self._resource_locks[provider.resource_key] = threading.Semaphore(limit)
         self._mark_interrupted_running_cases()
 
     def shutdown(self) -> None:
@@ -315,6 +320,7 @@ class WorkbenchRunner:
             ocr_base_url=self.settings.ocr_base_url,
             ocr_timeout_seconds=self.settings.ocr_timeout_seconds,
             rmbg_base_url=self.settings.rmbg_base_url,
+            agent_settings=read_workbench_agent_settings(self.store.workspace).to_dict(),
         )
         self.store.update_case_config_path(case.case_id, config_path)
         return self.store.get_case(case.case_id)
@@ -323,7 +329,9 @@ class WorkbenchRunner:
         case = self._refresh_case_runtime_config(self.store.get_case(case_id))
         batch = self.store.get_batch(case.batch_id)
         try:
+            agent_settings = read_workbench_agent_settings(self.store.workspace)
             template = load_workflow_template_by_id(self.store.workspace, batch.workflow_template_id)
+            template = _workflow_template_with_agent_settings(template, agent_settings)
             review_template = _workflow_until_first_human_review(template)
             run_template = template if batch.auto_run_svg_after_analysis or review_template is None else review_template
             parser_ids = _workflow_parser_ids(run_template)
@@ -340,7 +348,13 @@ class WorkbenchRunner:
                         parser_ids=parser_ids,
                     ),
                     "fusion": lambda context, inputs: self._run_workflow_fusion_node(case, context, inputs, stage_state),
-                    "agent": lambda context, inputs: self._run_workflow_agent_node(case, context, inputs, stage_state),
+                    "agent": lambda context, inputs: self._run_workflow_agent_node(
+                        case,
+                        context,
+                        inputs,
+                        stage_state,
+                        agent_settings=agent_settings,
+                    ),
                     "processor": lambda context, inputs: self._run_workflow_processor_node(case, context, inputs, stage_state),
                     "human_review": lambda context, inputs: self._run_workflow_review_node(
                         case,
@@ -477,9 +491,14 @@ class WorkbenchRunner:
         context: NodeRunContext,
         inputs: tuple[Mapping[str, Any], ...],
         stage_state: dict[str, bool],
+        *,
+        agent_settings: WorkbenchAgentSettings,
     ) -> tuple[Mapping[str, Any], ...]:
         preset_id = str(context.node.config.get("preset_id") or "custom_agent")
-        node_config = {**dict(context.node.config), "node_id": context.node.node_id}
+        node_config = apply_workbench_agent_settings_to_node_config(
+            {**dict(context.node.config), "node_id": context.node.node_id},
+            agent_settings,
+        )
         tool_command_prefix = resolve_drawai_tool_command_prefix(_repo_root(), cwd=context.run_root)
         prompt = render_agent_prompt(
             agent_preset_by_id(preset_id),
@@ -494,6 +513,9 @@ class WorkbenchRunner:
                 "drawai_tool_command_prefix": tool_command_prefix,
             },
         )
+        runtime_options = workbench_agent_runtime_options(agent_settings)
+        if runtime_options:
+            prompt = replace(prompt, options={**dict(prompt.options), **runtime_options})
         resource = f"agent_provider:{prompt.provider_id}"
         with self._resource_slot(resource):
             result = self.agent_executor(
@@ -1194,6 +1216,25 @@ def _pipeline_failure_message(summary: dict[str, Any]) -> str:
     return ""
 
 
+def _workflow_template_with_agent_settings(
+    template: WorkflowTemplate,
+    settings: WorkbenchAgentSettings,
+) -> WorkflowTemplate:
+    nodes = tuple(
+        replace(
+            node,
+            config=apply_workbench_agent_settings_to_node_config(
+                {**dict(node.config), "node_id": node.node_id},
+                settings,
+            ),
+        )
+        if node.node_type == "agent"
+        else node
+        for node in template.nodes
+    )
+    return replace(template, nodes=nodes)
+
+
 def _workflow_until_first_human_review(template: WorkflowTemplate) -> WorkflowTemplate | None:
     review_node_id = _first_human_review_node_id(template)
     if not review_node_id:
@@ -1613,6 +1654,7 @@ def create_case_config(
     ocr_base_url: str = "",
     ocr_timeout_seconds: float | None = None,
     rmbg_base_url: str = "",
+    agent_settings: Mapping[str, Any] | None = None,
 ) -> Path:
     base_path = Path(base_config_path).expanduser().resolve()
     with base_path.open("r", encoding="utf-8") as handle:
@@ -1657,6 +1699,11 @@ def create_case_config(
         rmbg_config["base_url"] = rmbg_base_url.rstrip("/")
         materialization_config["rmbg"] = rmbg_config
         payload["asset_materialization"] = materialization_config
+    if agent_settings is not None:
+        apply_workbench_agent_settings_to_config_payload(
+            payload,
+            normalize_workbench_agent_settings(agent_settings),
+        )
     target = Path(target_path).expanduser().resolve(strict=False)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")

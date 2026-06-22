@@ -305,3 +305,60 @@ def test_kimi_cli_agent_uses_isolated_skills_dir(tmp_path: Path, monkeypatch: py
     assert skills_dir == workdir / "_isolated_kimi_skills"
     assert skills_dir.is_dir()
     assert result.session_log_path == workdir / "kimi_session.zip"
+
+
+def test_execute_agent_prompt_runs_generic_local_cli_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bin_dir = tmp_path / "bin"
+    _write_executable(
+        bin_dir / "claude",
+            "\n".join(
+                [
+                    "/bin/mkdir -p nodes/agent/runs/001/output",
+                    "/bin/cat >/dev/null",
+                    "printf '{\"ok\": true}\\n' > nodes/agent/runs/001/output/result.json",
+                    "echo 'claude done'",
+                ]
+            )
+        + "\n",
+    )
+    monkeypatch.setenv("PATH", str(bin_dir))
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "agent" / "runs" / "001"
+    workdir.mkdir(parents=True)
+    prompt = AgentPrompt(
+        preset_id="custom_agent",
+        provider_id="claude_cli",
+        text="Write output/result.json.",
+        inputs=(),
+        outputs=(
+            {
+                "port_id": "result",
+                "path": "output/result.json",
+                "format_id": "drawai.element_plans.v1",
+                "type": "element_plans",
+                "description": "Result.",
+            },
+        ),
+        options={"timeout_seconds": 5},
+    )
+
+    result = execute_agent_prompt(
+        AgentExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="agent",
+            node_type="agent",
+        )
+    )
+
+    assert result.provider_id == "claude_cli"
+    assert (workdir / "output" / "result.json").read_text(encoding="utf-8") == '{"ok": true}\n'
+    assert (workdir / "claude_cli_stdout.txt").read_text(encoding="utf-8") == "claude done\n"
+
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(0o755)
+    return path

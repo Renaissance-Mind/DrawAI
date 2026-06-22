@@ -4,6 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import yaml
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -11,9 +12,10 @@ from drawai.workflow.agent_execution import AgentExecutionRequest, AgentExecutio
 from drawai.workflow.node_runs import begin_node_run
 from drawai.workflow.runner import NodeRunContext
 from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
+from drawai.workbench.agent_settings import WorkbenchAgentSettings
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
-from drawai.workbench.runner import WorkbenchRunner
+from drawai.workbench.runner import WorkbenchRunner, _workflow_template_with_agent_settings
 from drawai.workbench.store import WorkbenchStore
 from drawai.workflow.templates import load_workflow_template_by_id, user_workflow_template_path
 
@@ -117,6 +119,107 @@ def test_workbench_workflow_provider_api_lists_provider_scoped_limits(tmp_path: 
     providers = {item["provider_id"]: item for item in response.json()["providers"]}
     assert providers["codex_sdk"]["resource_key"] == "agent_provider:codex_sdk"
     assert providers["kimi_cli"]["resource_key"] == "agent_provider:kimi_cli"
+
+
+def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    kimi = _write_executable(bin_dir / "kimi", "echo 'kimi 1.2.3'\n")
+    monkeypatch.setenv("PATH", str(bin_dir))
+    client = _client(tmp_path)
+
+    response = client.get("/api/workbench/agent-settings")
+
+    assert response.status_code == 200
+    agents = {item["provider_id"]: item for item in response.json()["agents"]}
+    assert agents["kimi_cli"]["available"] is True
+    assert agents["kimi_cli"]["status"] == "ok"
+    assert agents["kimi_cli"]["executable_path"] == str(kimi)
+    assert agents["kimi_cli"]["version"] == "kimi 1.2.3"
+
+    save_response = client.put(
+        "/api/workbench/agent-settings",
+        json={
+            "selected_provider_id": "kimi_cli",
+            "model": "kimi-code/kimi-for-coding",
+            "reasoning_effort": "high",
+            "timeout_seconds": 3600,
+        },
+    )
+
+    assert save_response.status_code == 200
+    settings = save_response.json()["settings"]
+    assert settings["selected_provider_id"] == "kimi_cli"
+    assert settings["model"] == "kimi-code/kimi-for-coding"
+    assert settings["reasoning_effort"] == "high"
+    assert settings["timeout_seconds"] == 3600
+
+
+def test_create_batch_applies_saved_workbench_agent_to_case_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    _write_executable(bin_dir / "kimi", "echo 'kimi 1.2.3'\n")
+    monkeypatch.setenv("PATH", str(bin_dir))
+    client = _client(tmp_path)
+    source = tmp_path / "single.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    save_response = client.put(
+        "/api/workbench/agent-settings",
+        json={
+            "selected_provider_id": "kimi_cli",
+            "model": "kimi-code/kimi-for-coding",
+            "reasoning_effort": "medium",
+            "timeout_seconds": 240,
+        },
+    )
+    assert save_response.status_code == 200
+
+    response = client.post(
+        "/api/batches",
+        json={
+            "name": "agent config batch",
+            "input_mode": "local_dir",
+            "local_dir": str(source),
+            "auto_run_svg_after_analysis": False,
+            "max_concurrent_cases": 1,
+            "base_config_path": str(_base_config(tmp_path)),
+        },
+    )
+
+    assert response.status_code == 200
+    config_path = Path(response.json()["cases"][0]["config_path"])
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["svg"]["generation_backend"] == "agent_cli"
+    assert payload["model_runtime"]["provider"] == "agent-cli"
+    assert payload["model_runtime"]["connection_id"] == "kimi"
+    assert payload["model_runtime"]["model_name"] == "kimi-code/kimi-for-coding"
+    assert payload["model_runtime"]["reasoning_effort"] == "medium"
+    assert payload["model_runtime"]["timeout_seconds"] == 240
+    assert payload["model_runtime"]["cli"]["agent"] == "kimi"
+    assert payload["model_runtime"]["cli"]["command"][0] == str(bin_dir / "kimi")
+
+
+def test_workbench_agent_settings_rewrites_workflow_agent_provider_metadata(tmp_path: Path) -> None:
+    template = load_workflow_template_by_id(tmp_path / "workspace", "default_drawai_dag")
+
+    effective = _workflow_template_with_agent_settings(
+        template,
+        WorkbenchAgentSettings(
+            selected_provider_id="kimi_cli",
+            reasoning_effort="medium",
+            timeout_seconds=900,
+        ),
+    )
+
+    agent_nodes = [node for node in effective.nodes if node.node_type == "agent"]
+    assert agent_nodes
+    assert {node.config["provider_id"] for node in agent_nodes} == {"kimi_cli"}
+    assert {node.config["reasoning_effort"] for node in agent_nodes} == {"medium"}
+    assert {node.config["timeout_seconds"] for node in agent_nodes} == {900}
 
 
 def test_create_batch_binds_selected_workflow_template(tmp_path: Path) -> None:
@@ -373,6 +476,13 @@ def _base_config(tmp_path: Path) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    return path
+
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(0o755)
     return path
 
 

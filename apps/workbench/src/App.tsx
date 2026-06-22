@@ -17,6 +17,7 @@ import {
   getHealth,
   getRunPackage,
   getSvgSource,
+  getWorkbenchAgentSettings,
   getWorkflowNodeViewer,
   isDrawAiApiStatus,
   listBatches,
@@ -26,6 +27,7 @@ import {
   runCaseStage,
   runBatch,
   saveAssetDraft,
+  saveWorkbenchAgentSettings,
   setActiveAssetResult,
   type WorkbenchRerunStage,
 } from "./api";
@@ -55,6 +57,9 @@ import type {
   V2AssetStatus,
   V2ElementPlan,
   V2RunPackage,
+  WorkbenchAgentDiscovery,
+  WorkbenchAgentSettings,
+  WorkbenchAgentSettingsResponse,
   WorkflowNodeRunRecord,
   WorkflowNodeViewer
 } from "./types";
@@ -129,6 +134,12 @@ const DEFAULT_IMAGEGEN_CONNECTION: ImageGenConnectionSettings = {
   baseUrl: "",
   apiKey: "",
   model: "gpt-image-2"
+};
+const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
+  selected_provider_id: "codex_sdk",
+  model: "",
+  reasoning_effort: "",
+  timeout_seconds: 0
 };
 
 const strategyLabels: Record<SourceStrategy, string> = {
@@ -229,6 +240,7 @@ export default function App() {
   const [boardMode, setBoardMode] = useState<BoardMode>(() => initialBoardMode());
   const [submitOpen, setSubmitOpen] = useState(false);
   const [imageGenSettingsOpen, setImageGenSettingsOpen] = useState(false);
+  const [workbenchAgentSettingsOpen, setWorkbenchAgentSettingsOpen] = useState(false);
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
   const [error, setError] = useState("");
   const [assetsRunPendingCaseId, setAssetsRunPendingCaseId] = useState("");
@@ -951,6 +963,17 @@ export default function App() {
               <SettingsIcon />
             </button>
           )}
+          {activeView === "board" && boardMode !== "generate" && (
+            <button
+              type="button"
+              className="topbar-icon-button"
+              title="Agent 设置"
+              aria-label="Agent 设置"
+              onClick={() => setWorkbenchAgentSettingsOpen(true)}
+            >
+              <SettingsIcon />
+            </button>
+          )}
           <BackendStatusIndicator health={health} healthError={healthError} />
           <a
             className="github-link"
@@ -1115,6 +1138,13 @@ export default function App() {
             saveImageGenConnectionSettings(nextConnection);
             setImageGenSettingsOpen(false);
           }}
+        />
+      )}
+      {workbenchAgentSettingsOpen && (
+        <WorkbenchAgentSettingsDialog
+          onClose={() => setWorkbenchAgentSettingsOpen(false)}
+          onSaved={() => setWorkbenchAgentSettingsOpen(false)}
+          onError={setError}
         />
       )}
       {taskRenameTarget && (
@@ -1376,6 +1406,228 @@ function ImageGenSettingsDialog({
       </section>
     </div>
   );
+}
+
+function WorkbenchAgentSettingsDialog({
+  onClose,
+  onSaved,
+  onError
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [response, setResponse] = useState<WorkbenchAgentSettingsResponse | null>(null);
+  const [draft, setDraft] = useState<WorkbenchAgentSettings>(DEFAULT_WORKBENCH_AGENT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    setLocalError("");
+    try {
+      const nextResponse = await getWorkbenchAgentSettings();
+      setResponse(nextResponse);
+      setDraft(normalizeWorkbenchAgentDraft(nextResponse.settings));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setLocalError(message);
+      onError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  const agents = response?.agents || [];
+  const selectedAgent = agents.find((agent) => agent.provider_id === draft.selected_provider_id) || agents[0] || null;
+  const saveSettings = async () => {
+    setSaving(true);
+    setLocalError("");
+    try {
+      const nextResponse = await saveWorkbenchAgentSettings(normalizeWorkbenchAgentDraft(draft));
+      setResponse(nextResponse);
+      setDraft(normalizeWorkbenchAgentDraft(nextResponse.settings));
+      onSaved();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setLocalError(message);
+      onError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="settings-dialog workbench-agent-settings-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Agent 设置"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="settings-dialog-head">
+          <div>
+            <span>Agent</span>
+            <strong>运行设置</strong>
+          </div>
+          <button type="button" className="settings-close" aria-label="关闭" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <div className="agent-settings-body">
+          {localError && <div className="agent-settings-error">{localError}</div>}
+          <div className="agent-settings-grid">
+            <div className="agent-settings-list" aria-label="本地 Agent">
+              {loading && <div className="agent-settings-empty">加载中</div>}
+              {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
+              {agents.map((agent) => (
+                <button
+                  type="button"
+                  key={agent.provider_id}
+                  className={`agent-option${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
+                  onClick={() => setDraft((current) => ({ ...current, selected_provider_id: agent.provider_id }))}
+                >
+                  <span className="agent-option-main">
+                    <strong>{agent.label}</strong>
+                    <span className={`agent-status ${agent.available ? "ok" : "missing"}`}>{agent.available ? "可用" : "未通过"}</span>
+                  </span>
+                  <span className="agent-option-meta">{agent.kind.toUpperCase()}</span>
+                  <span className="agent-command">{agent.command.length ? agent.command.join(" ") : "SDK"}</span>
+                  {agent.version && <span className="agent-version">{agent.version}</span>}
+                </button>
+              ))}
+            </div>
+            <div className="agent-settings-panel">
+              <label className="settings-field">
+                <span>全局 Agent</span>
+                <select
+                  value={draft.selected_provider_id}
+                  onChange={(event) => setDraft((current) => ({ ...current, selected_provider_id: event.target.value }))}
+                  disabled={loading}
+                >
+                  {agents.map((agent) => (
+                    <option key={agent.provider_id} value={agent.provider_id}>
+                      {agent.label}
+                    </option>
+                  ))}
+                  {agents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
+                </select>
+              </label>
+              <label className="settings-field">
+                <span>模型</span>
+                <input
+                  value={draft.model}
+                  onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
+                  placeholder={selectedAgent?.provider_id === "codex_sdk" ? "留空使用默认模型" : "例如 kimi-code/kimi-for-coding"}
+                  autoComplete="off"
+                />
+              </label>
+              <div className="settings-form-row">
+                <label className="settings-field">
+                  <span>推理强度</span>
+                  <select
+                    value={draft.reasoning_effort}
+                    onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
+                  >
+                    <option value="">默认</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>超时秒数</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={draft.timeout_seconds || ""}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, timeout_seconds: Number(event.target.value || 0) }))
+                    }
+                    placeholder="默认"
+                  />
+                </label>
+              </div>
+              {selectedAgent && <AgentValidationCard agent={selectedAgent} />}
+            </div>
+          </div>
+        </div>
+        <footer className="settings-actions">
+          <button type="button" onClick={() => void loadSettings()} disabled={loading || saving}>
+            刷新验证
+          </button>
+          <button type="button" onClick={onClose} disabled={saving}>
+            取消
+          </button>
+          <button type="button" className="primary" onClick={() => void saveSettings()} disabled={loading || saving}>
+            {saving ? "保存中" : "保存"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {
+  return (
+    <div className={`agent-validation-card${agent.available ? " ok" : " missing"}`}>
+      <div className="agent-validation-title">
+        <span>{agent.available ? "验证通过" : "需要处理"}</span>
+        <strong>{agent.label}</strong>
+      </div>
+      <dl>
+        <div>
+          <dt>命令</dt>
+          <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
+        </div>
+        {agent.executable_path && (
+          <div>
+            <dt>路径</dt>
+            <dd>{agent.executable_path}</dd>
+          </div>
+        )}
+        {agent.version && (
+          <div>
+            <dt>版本</dt>
+            <dd>{agent.version}</dd>
+          </div>
+        )}
+        <div>
+          <dt>状态</dt>
+          <dd>{agent.detail}</dd>
+        </div>
+        {agent.auth.detail && (
+          <div>
+            <dt>认证</dt>
+            <dd>{agent.auth.detail}</dd>
+          </div>
+        )}
+        {agent.fix && (
+          <div>
+            <dt>处理</dt>
+            <dd>{agent.fix}</dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): WorkbenchAgentSettings {
+  const timeout = Number(settings.timeout_seconds || 0);
+  return {
+    selected_provider_id: settings.selected_provider_id || DEFAULT_WORKBENCH_AGENT_SETTINGS.selected_provider_id,
+    model: (settings.model || "").trim(),
+    reasoning_effort: (settings.reasoning_effort || "").trim(),
+    timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0
+  };
 }
 
 function TaskRenameDialog({

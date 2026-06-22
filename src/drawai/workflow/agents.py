@@ -200,6 +200,33 @@ def default_agent_provider_registry() -> dict[str, AgentProviderSpec]:
             executable="kimi",
             description="Kimi CLI provider for file-backed Agent nodes.",
         ),
+        "claude_cli": AgentProviderSpec(
+            provider_id="claude_cli",
+            label="Claude CLI",
+            kind="cli",
+            resource_key="agent_provider:claude_cli",
+            default_max_concurrent=1,
+            executable="claude",
+            description="Claude CLI provider for file-backed Agent nodes.",
+        ),
+        "openclaw_cli": AgentProviderSpec(
+            provider_id="openclaw_cli",
+            label="OpenClaw CLI",
+            kind="cli",
+            resource_key="agent_provider:openclaw_cli",
+            default_max_concurrent=1,
+            executable="openclaw",
+            description="OpenClaw provider for file-backed Agent nodes.",
+        ),
+        "hermes_cli": AgentProviderSpec(
+            provider_id="hermes_cli",
+            label="Hermes CLI",
+            kind="cli",
+            resource_key="agent_provider:hermes_cli",
+            default_max_concurrent=1,
+            executable="hermes",
+            description="Hermes CLI provider for file-backed Agent nodes.",
+        ),
     }
 
 

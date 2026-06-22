@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from drawai.codex_cli import resolve_codex_executable
+from drawai.agent_cli_svg import AgentCliSvgError, invoke_agent_cli_text
 from drawai.codex_python_sdk_svg import (
     CODEX_SESSION_LOG_DIRS,
     CODEX_SESSION_LOG_FILES,
@@ -28,6 +29,13 @@ from drawai.codex_python_sdk_svg import (
 )
 
 from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
+
+
+GENERIC_AGENT_CLI_PROVIDERS: dict[str, str] = {
+    "claude_cli": "claude",
+    "openclaw_cli": "openclaw",
+    "hermes_cli": "hermes",
+}
 
 
 @dataclass(frozen=True)
@@ -88,6 +96,13 @@ def execute_agent_prompt(request: AgentExecutionRequest) -> AgentExecutionResult
         result = _execute_codex_cli_agent(request, prompt_path=prompt_path)
     elif provider_id == "kimi_cli":
         result = _execute_kimi_cli_agent(request, prompt_path=prompt_path)
+    elif provider_id in GENERIC_AGENT_CLI_PROVIDERS:
+        result = _execute_generic_agent_cli_agent(
+            request,
+            prompt_path=prompt_path,
+            provider_id=provider_id,
+            agent=GENERIC_AGENT_CLI_PROVIDERS[provider_id],
+        )
     else:
         raise AgentExecutionError(
             f"unsupported Agent provider: {provider_id}",
@@ -323,12 +338,17 @@ def _execute_kimi_cli_agent(
     *,
     prompt_path: Path,
 ) -> AgentExecutionResult:
-    executable = shutil.which("kimi")
-    if executable is None:
-        raise AgentExecutionError("kimi executable was not found", prompt_path=prompt_path)
     options = dict(request.prompt.options)
+    command = _agent_cli_command_option(options)
+    if command:
+        executable = command[0]
+    else:
+        executable = shutil.which("kimi")
+        command = [executable] if executable else []
+    if not executable:
+        raise AgentExecutionError("kimi executable was not found", prompt_path=prompt_path)
     command = [
-        executable,
+        *command,
         "--work-dir",
         str(_agent_cwd(request)),
         "--print",
@@ -370,6 +390,58 @@ def _execute_kimi_cli_agent(
         trace_path=result.trace_path,
         session_log_path=session_log_path,
         exit_code=result.exit_code,
+    )
+
+
+def _execute_generic_agent_cli_agent(
+    request: AgentExecutionRequest,
+    *,
+    prompt_path: Path,
+    provider_id: str,
+    agent: str,
+) -> AgentExecutionResult:
+    options = dict(request.prompt.options)
+    stdout_path = request.workdir / f"{provider_id}_stdout.txt"
+    stderr_path = request.workdir / f"{provider_id}_stderr.txt"
+    trace_path = request.workdir / f"{provider_id}_trace.jsonl"
+    runtime_config: dict[str, Any] = {
+        "provider": "agent-cli",
+        "connection_id": agent,
+        "model_name": str(options.get("model") or ""),
+        "reasoning_effort": str(options.get("reasoning_effort") or ""),
+        "timeout_seconds": _timeout_seconds(options),
+        "cli": {
+            "agent": agent,
+            "command": _agent_cli_command_option(options),
+        },
+    }
+    try:
+        stdout = invoke_agent_cli_text(
+            image_paths=_image_input_paths(request),
+            prompt=request.prompt.text,
+            task_name=f"drawai.workflow.agent.{request.node_id}.{provider_id}",
+            runtime_config=runtime_config,
+            trace_path=trace_path,
+            isolated_cwd=_agent_cwd(request),
+        )
+    except (AgentCliSvgError, OSError, subprocess.TimeoutExpired) as exc:
+        stderr_path.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+        raise AgentExecutionError(
+            f"{provider_id} Agent run failed: {exc}",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path if stdout_path.exists() else None,
+            stderr_path=stderr_path,
+            trace_path=trace_path if trace_path.exists() else None,
+            exit_code=1,
+        ) from exc
+    stdout_path.write_text(stdout, encoding="utf-8")
+    return AgentExecutionResult(
+        provider_id=provider_id,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path if stderr_path.exists() else None,
+        trace_path=trace_path,
+        exit_code=0,
     )
 
 
@@ -757,6 +829,19 @@ def _codex_cli_config_args(options: Mapping[str, Any]) -> list[str]:
     for override in controlled_codex_config_overrides([f'model_reasoning_effort="{reasoning_effort}"']):
         args.extend(["-c", override])
     return args
+
+
+def _agent_cli_command_option(options: Mapping[str, Any]) -> list[str]:
+    raw = options.get("agent_cli_command")
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, Sequence):
+        command = [str(item) for item in raw if str(item)]
+        if command:
+            return command
+    raise ValueError("agent_cli_command must be a string or non-empty list")
 
 
 def _codex_cli_env(codex_home: Path) -> dict[str, str | None]:

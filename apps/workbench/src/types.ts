@@ -38,6 +38,39 @@ export interface RuntimeActivityStatus {
   running: number;
 }
 
+export interface WorkbenchAgentSettings {
+  schema?: string;
+  selected_provider_id: string;
+  model: string;
+  reasoning_effort: string;
+  timeout_seconds: number;
+}
+
+export interface WorkbenchAgentDiscovery {
+  provider_id: string;
+  label: string;
+  kind: string;
+  available: boolean;
+  status: string;
+  detail: string;
+  fix: string;
+  executable_path: string;
+  command: string[];
+  version: string;
+  auth: {
+    available: boolean;
+    detail: string;
+  };
+  workflow_provider_id: string;
+  pipeline_agent: string;
+  description: string;
+}
+
+export interface WorkbenchAgentSettingsResponse {
+  settings: WorkbenchAgentSettings;
+  agents: WorkbenchAgentDiscovery[];
+}
+
 export interface BatchRecord {
   batch_id: string;
   name: string;
