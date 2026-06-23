@@ -303,13 +303,17 @@ def _image_api_url(base_url: Any, *, endpoint: str) -> str:
         raise HTTPException(status_code=400, detail="image generation Base URL must be an http(s) URL")
     path = parsed.path.rstrip("/")
     suffix = f"/images/{endpoint}"
-    if path.endswith(suffix):
-        endpoint_path = path
-    elif path.endswith("/v1"):
-        endpoint_path = f"{path}{suffix}"
-    elif path:
-        endpoint_path = f"{path}/v1/images/{endpoint}"
+    for existing_suffix in ("/images/generations", "/images/edits"):
+        if path.endswith(existing_suffix):
+            endpoint_path = f"{path[: -len(existing_suffix)]}{suffix}"
+            break
     else:
+        endpoint_path = ""
+    if not endpoint_path and path.endswith("/v1"):
+        endpoint_path = f"{path}{suffix}"
+    elif not endpoint_path and path:
+        endpoint_path = f"{path}/v1/images/{endpoint}"
+    elif not endpoint_path:
         endpoint_path = f"/v1/images/{endpoint}"
     return urllib.parse.urlunparse(parsed._replace(path=endpoint_path))
 

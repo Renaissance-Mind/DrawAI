@@ -556,6 +556,20 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
     assert materialized["elements"][1]["materialization"]["processing_type"] == "image_edit"
 
 
+def test_images_api_urls_replace_specific_endpoint_base_urls() -> None:
+    from drawai.workbench.image_processor_providers import image_edit_api_url, image_generation_api_url
+
+    assert image_generation_api_url("https://api.apimart.ai/v1/images/generations") == (
+        "https://api.apimart.ai/v1/images/generations"
+    )
+    assert image_edit_api_url("https://api.apimart.ai/v1/images/generations") == (
+        "https://api.apimart.ai/v1/images/edits"
+    )
+    assert image_generation_api_url("https://api.apimart.ai/v1/images/edits") == (
+        "https://api.apimart.ai/v1/images/generations"
+    )
+
+
 def test_workbench_processor_settings_api_rejects_invalid_processor_settings(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
