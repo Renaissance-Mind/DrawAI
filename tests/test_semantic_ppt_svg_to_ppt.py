@@ -282,10 +282,15 @@ def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_
     with zipfile.ZipFile(output) as archive:
         slide_xml = archive.read("ppt/slides/slide1.xml").decode("utf-8")
     assert "<mc:AlternateContent" in slide_xml
-    assert '<a:defRPr sz="2800" b="1" i="1">' in slide_xml
-    assert '<a:srgbClr val="0070C0"' in slide_xml
-    assert '<a:latin typeface="Times New Roman"' in slide_xml
-    assert '<m:sty m:val="bi"' in slide_xml
+    formula_start = slide_xml.index('name="DrawAI formula formula-gaussian"')
+    formula_xml = slide_xml[formula_start : slide_xml.index("</mc:AlternateContent>", formula_start)]
+    assert 'wrap="none" anchor="ctr" rtlCol="0" lIns="0" tIns="0" rIns="0" bIns="0"' in formula_xml
+    assert "<a:noAutofit" in formula_xml
+    assert "<a:spAutoFit" not in formula_xml
+    assert '<a:defRPr sz="2800" b="1" i="1">' in formula_xml
+    assert '<a:srgbClr val="0070C0"' in formula_xml
+    assert '<a:latin typeface="Times New Roman"' in formula_xml
+    assert '<m:sty m:val="bi"' in formula_xml
     assert "<m:oMathPara" in slide_xml
     assert "converted office math" in slide_xml
     assert "SVG fallback formula only" not in slide_xml

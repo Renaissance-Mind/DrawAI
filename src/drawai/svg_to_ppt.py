@@ -763,9 +763,17 @@ def _append_office_math_shape(
     body_pr = ElementTree.SubElement(
         tx_body,
         f"{{{PPTX_DRAWING_NAMESPACE}}}bodyPr",
-        {"wrap": "none", "anchor": "ctr", "rtlCol": "0"},
+        {
+            "wrap": "none",
+            "anchor": "ctr",
+            "rtlCol": "0",
+            "lIns": "0",
+            "tIns": "0",
+            "rIns": "0",
+            "bIns": "0",
+        },
     )
-    ElementTree.SubElement(body_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}spAutoFit")
+    ElementTree.SubElement(body_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}noAutofit")
     ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}lstStyle")
     paragraph = ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}p")
     paragraph_properties = ElementTree.SubElement(paragraph, f"{{{PPTX_DRAWING_NAMESPACE}}}pPr", {"algn": "ctr"})
