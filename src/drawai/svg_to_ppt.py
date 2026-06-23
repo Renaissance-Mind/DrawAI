@@ -230,6 +230,94 @@ def _parse_formula_bbox(value: str | None) -> tuple[float, float, float, float] 
     return x, y, width, height
 
 
+def _fallback_formula_bbox(element: ElementTree.Element) -> tuple[float, float, float, float] | None:
+    boxes: list[tuple[float, float, float, float]] = []
+    for text_element in element.iter():
+        if _svg_local_name(text_element.tag) != "text":
+            continue
+        box = _fallback_formula_text_bbox(text_element)
+        if box is not None:
+            boxes.append(box)
+    if not boxes:
+        return None
+
+    left = min(box[0] for box in boxes)
+    top = min(box[1] for box in boxes)
+    right = max(box[0] + box[2] for box in boxes)
+    bottom = max(box[1] + box[3] for box in boxes)
+    return left, top, max(1.0, right - left), max(1.0, bottom - top)
+
+
+def _fallback_formula_text_bbox(text_element: ElementTree.Element) -> tuple[float, float, float, float] | None:
+    x = _parse_svg_number(_svg_style_value(text_element, "x"))
+    baseline_y = _parse_svg_number(_svg_style_value(text_element, "y"))
+    font_size = _parse_svg_number(_svg_style_value(text_element, "font-size"))
+    if x is None or baseline_y is None or font_size is None or font_size <= 0:
+        return None
+
+    text = "".join(text_element.itertext()).strip()
+    if not text:
+        return None
+
+    width = _fallback_formula_text_width(text_element, text, font_size)
+    if width is None or width <= 0:
+        return None
+
+    anchor = (_svg_style_value(text_element, "text-anchor") or "").strip().lower()
+    if anchor == "middle":
+        x -= width / 2.0
+    elif anchor == "end":
+        x -= width
+
+    top = baseline_y - font_size * 0.85
+    height = font_size * 1.2
+    return x, top, width, height
+
+
+def _fallback_formula_text_width(
+    text_element: ElementTree.Element,
+    text: str,
+    font_size: float,
+) -> float | None:
+    explicit_length = _parse_svg_number(_svg_style_value(text_element, "textLength"))
+    if explicit_length is not None:
+        return explicit_length
+
+    font_family = _svg_style_value(text_element, "font-family") or ""
+    font_weight = _svg_style_value(text_element, "font-weight") or ""
+    font_style = _svg_style_value(text_element, "font-style") or ""
+    measured = _measure_svg_to_ppt_text_width(text, font_family, font_size, font_weight, font_style)
+    if measured is None:
+        measured = len(text) * font_size * SVG_TO_PPT_TSPAN_TEXT_WIDTH_FALLBACK_EM_RATIO
+
+    letter_spacing = _parse_svg_number(_svg_style_value(text_element, "letter-spacing"))
+    if letter_spacing is not None and len(text) > 1:
+        measured += letter_spacing * (len(text) - 1)
+    return measured
+
+
+def _should_replace_formula_bbox_with_fallback(
+    metadata_bbox: tuple[float, float, float, float],
+    fallback_bbox: tuple[float, float, float, float],
+) -> bool:
+    metadata_center_x = metadata_bbox[0] + metadata_bbox[2] / 2.0
+    metadata_center_y = metadata_bbox[1] + metadata_bbox[3] / 2.0
+    fallback_center_x = fallback_bbox[0] + fallback_bbox[2] / 2.0
+    fallback_center_y = fallback_bbox[1] + fallback_bbox[3] / 2.0
+
+    center_x_delta = abs(metadata_center_x - fallback_center_x)
+    center_y_delta = abs(metadata_center_y - fallback_center_y)
+    if center_x_delta > max(12.0, fallback_bbox[2] * 0.25):
+        return True
+    if center_y_delta > max(8.0, fallback_bbox[3] * 0.75):
+        return True
+    if metadata_bbox[2] < fallback_bbox[2] * 0.45:
+        return True
+    if metadata_bbox[3] < fallback_bbox[3] * 0.45:
+        return True
+    return False
+
+
 def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpec], dict[str, Any]]:
     source = Path(svg_path).resolve(strict=False)
     try:
@@ -239,6 +327,7 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
 
     specs: list[SvgFormulaSpec] = []
     issues: list[dict[str, Any]] = []
+    bbox_corrections: list[dict[str, Any]] = []
     candidate_count = 0
     for index, element in enumerate(root.iter(), start=1):
         if element.get("data-pb-role") != DRAWAI_FORMULA_ROLE:
@@ -260,6 +349,7 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
             )
             continue
         bbox = _parse_formula_bbox(element.get(DRAWAI_FORMULA_BBOX_ATTR))
+        fallback_bbox = _fallback_formula_bbox(element)
         if latex is None:
             issues.append(
                 {
@@ -271,21 +361,43 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
             )
             continue
         if bbox is None:
-            issues.append(
+            if fallback_bbox is None:
+                issues.append(
+                    {
+                        "element_id": element_id,
+                        "issue_type": "formula_bbox_missing",
+                        "severity": "warning",
+                        "message": f"Formula metadata must include {DRAWAI_FORMULA_BBOX_ATTR}=\"x y width height\".",
+                    }
+                )
+                continue
+            bbox = fallback_bbox
+            bbox_corrections.append(
                 {
                     "element_id": element_id,
-                    "issue_type": "formula_bbox_missing",
-                    "severity": "warning",
-                    "message": f"Formula metadata must include {DRAWAI_FORMULA_BBOX_ATTR}=\"x y width height\".",
+                    "old_bbox": None,
+                    "new_bbox": list(bbox),
+                    "reason": "fallback_text_bbox_missing_metadata",
                 }
             )
-            continue
+        elif fallback_bbox is not None and _should_replace_formula_bbox_with_fallback(bbox, fallback_bbox):
+            old_bbox = bbox
+            bbox = fallback_bbox
+            bbox_corrections.append(
+                {
+                    "element_id": element_id,
+                    "old_bbox": list(old_bbox),
+                    "new_bbox": list(bbox),
+                    "reason": "fallback_text_bbox_misaligned",
+                }
+            )
         specs.append(SvgFormulaSpec(element_id=element_id, latex=latex, bbox=bbox, latex_source=latex_source or ""))
 
     report = {
         "candidate_count": candidate_count,
         "convertible_count": len(specs),
         "issues": issues,
+        "bbox_corrections": bbox_corrections,
         "items": [
             {
                 "element_id": spec.element_id,

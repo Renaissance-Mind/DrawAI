@@ -284,3 +284,40 @@ def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_
     assert "<m:oMathPara" in slide_xml
     assert "converted office math" in slide_xml
     assert "SVG fallback formula only" not in slide_xml
+
+
+def test_formula_collection_corrects_misaligned_formula_bbox_from_fallback_text(tmp_path):
+    latex = r"p_0"
+    latex_b64 = base64.b64encode(latex.encode("utf-8")).decode("ascii")
+    source = tmp_path / "semantic.svg"
+    source.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 800">
+  <g id="legend-transport-p0" data-pb-role="formula" data-pb-editable="true"
+     data-pb-formula-latex-b64="{latex_b64}" data-pb-formula-bbox="1936 9 24 15">
+    <text id="legend-transport-p0-fallback" x="1936" y="104"
+          font-family="Times New Roman, Times, serif" font-size="13" fill="#000000"
+          data-pb-editable="true" data-pb-role="formula" data-pb-text-source="visual_inferred"
+          data-pb-orientation="horizontal" font-weight="700" font-style="italic">p<tspan
+          baseline-shift="sub" font-size="8">0</tspan></text>
+  </g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    specs, report = svg_to_ppt._collect_svg_formula_specs(source)
+
+    assert len(specs) == 1
+    assert specs[0].element_id == "legend-transport-p0"
+    assert specs[0].bbox[0] == 1936
+    assert 88 <= specs[0].bbox[1] <= 96
+    assert specs[0].bbox[2] > 8
+    assert specs[0].bbox[3] > 10
+    assert report["items"][0]["bbox"] == list(specs[0].bbox)
+    assert report["bbox_corrections"] == [
+        {
+            "element_id": "legend-transport-p0",
+            "old_bbox": [1936.0, 9.0, 24.0, 15.0],
+            "new_bbox": list(specs[0].bbox),
+            "reason": "fallback_text_bbox_misaligned",
+        }
+    ]
