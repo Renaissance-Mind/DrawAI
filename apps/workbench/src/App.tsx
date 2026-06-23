@@ -35,7 +35,18 @@ import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudi
 import WorkflowWorkspace from "./WorkflowWorkspace";
 import { buildWorkflowPreviewLayout, type WorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
-import { dagRunEdgeState } from "./workflowRunState";
+import {
+  canonicalPipelineStage,
+  currentCaseRecord,
+  dagRunEdgeState,
+  errorDetailText,
+  latestStageRun,
+  mergedStageRuns,
+  stageMatchesNode,
+  workflowNodeRuntimeState,
+  workflowStageSpecState,
+  type DagRunNodeState
+} from "./workflowRunState";
 import { listWorkflowTemplates } from "./workflowApi";
 import type {
   ArtifactRecord,
@@ -71,7 +82,7 @@ type AppView = "board" | "editor" | "svg" | "nodeArtifact";
 type BoardMode = "generate" | "process" | "workflow";
 type CanvasMode = "select" | "add" | "polygon";
 type AssetEditorView = "extraction" | "processing";
-type PipelineNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale";
+type PipelineNodeState = DagRunNodeState;
 type AssetPlanChangeOptions = { track?: boolean };
 type V2FilterDropdownId = "elementTypes" | "processingTypes" | "statuses";
 type V2ElementFilter = {
@@ -320,6 +331,24 @@ export default function App() {
         cases: current.cases.map((item) => (item.case_id === caseRecord.case_id ? { ...item, ...caseRecord } : item))
       };
     });
+  }
+
+  function optimisticRunCaseStatus(caseRecord: CaseRecord, stage: WorkbenchRerunStage): CaseRecord {
+    const canonicalStage = canonicalPipelineStage(stage) || stage;
+    const reconstruction = canonicalStage === "process_assets" || canonicalStage === "compose_svg" || canonicalStage === "export";
+    return {
+      ...caseRecord,
+      status: reconstruction ? "svg_running" : "analysis_running",
+      phase: reconstruction ? "reconstruction" : "analysis",
+      stage: canonicalStage,
+      error_message: "",
+      stale_from_stage: ""
+    };
+  }
+
+  function currentCaseForOptimisticUpdate(target: Pick<CaseRecord, "case_id" | "batch_id">): CaseRecord | null {
+    if (activeCase?.case.case_id === target.case_id) return activeCase.case;
+    return activeBatch?.cases.find((item) => item.case_id === target.case_id) || null;
   }
 
   async function loadAssetsForCase(caseId: string, preferredAssetId = ""): Promise<AssetPlan> {
@@ -814,8 +843,10 @@ export default function App() {
     if (assetsRunPendingCaseId) return;
     const stage = retryStageForCase(item);
     setAssetsRunPendingCaseId(item.case_id);
+    mergeCaseStatus(optimisticRunCaseStatus(item, stage));
     try {
-      await runCaseStage(item.case_id, stage);
+      const response = await runCaseStage(item.case_id, stage);
+      mergeCaseStatus(response.case);
       await selectBatch(item.batch_id);
       await selectCase(item.case_id);
       await refreshBatches();
@@ -829,8 +860,13 @@ export default function App() {
     const target = item || activeCase?.case;
     if (!target || assetsRunPendingCaseId) return;
     setAssetsRunPendingCaseId(target.case_id);
+    const optimisticCase = currentCaseForOptimisticUpdate(target);
+    if (optimisticCase) {
+      mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, "analysis"));
+    }
     try {
-      await runCaseStage(target.case_id, "analysis");
+      const response = await runCaseStage(target.case_id, "analysis");
+      mergeCaseStatus(response.case);
       await selectBatch(target.batch_id);
       await selectCase(target.case_id);
       await refreshBatches();
@@ -1968,14 +2004,16 @@ function TaskDetailPanel({
       </aside>
     );
   }
+  const currentCase = currentCaseRecord(caseDetail.case, progress?.case);
+  const currentDetail = { ...caseDetail, case: currentCase };
   return (
     <aside className="task-detail-panel">
       <DagRunPanel
-        caseDetail={caseDetail}
+        caseDetail={currentDetail}
         progress={progress}
         workflowTemplateId={workflowTemplateId}
-        onOpenAssetsReview={() => onOpenCaseAssets(caseDetail.case.case_id)}
-        onOpenNodeArtifact={(nodeId) => onOpenWorkflowNodeArtifact(caseDetail.case.case_id, nodeId)}
+        onOpenAssetsReview={() => onOpenCaseAssets(currentCase.case_id)}
+        onOpenNodeArtifact={(nodeId) => onOpenWorkflowNodeArtifact(currentCase.case_id, nodeId)}
       />
       {runCompatibility === "legacy_readonly" && (
         <LegacyReadOnlyBanner
@@ -1984,8 +2022,8 @@ function TaskDetailPanel({
           onForkV2FromSource={onForkV2FromSource}
         />
       )}
-      {runCompatibility === "v2" && v2PackageError && <p className="detail-error">{shortenError(v2PackageError)}</p>}
-      {caseDetail.case.error_message && <p className="detail-error">{shortenError(caseDetail.case.error_message)}</p>}
+      {runCompatibility === "v2" && v2PackageError && <ErrorDetail message={v2PackageError} />}
+      {currentCase.error_message && <ErrorDetail message={currentCase.error_message} />}
     </aside>
   );
 }
@@ -2039,11 +2077,13 @@ function DagRunPanel({
   }, [workflowTemplateId]);
 
   const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
-  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
+  const currentCase = currentCaseRecord(caseDetail.case, progress?.case);
+  const currentDetail = { ...caseDetail, case: currentCase };
+  const stageRuns = mergedStageRuns(progress?.stage_runs, caseDetail.stage_runs);
   const nodeRuns = progress?.workflow_node_runs || [];
   const files = progress?.files || [];
   const layout = useMemo(() => (template ? buildWorkflowPreviewLayout(template) : null), [template]);
-  const views = useMemo(() => buildDagNodeViews(template, layout, caseDetail, stageRuns, nodeRuns, files), [template, layout, caseDetail, stageRuns, nodeRuns, files]);
+  const views = useMemo(() => buildDagNodeViews(template, layout, currentDetail, stageRuns, nodeRuns, files), [template, layout, currentDetail, stageRuns, nodeRuns, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   useEffect(() => {
@@ -2076,9 +2116,9 @@ function DagRunPanel({
           <span>Workflow run</span>
           <strong>{template?.name || workflowTemplateId || "Default DrawAI DAG"}</strong>
         </div>
-        <em>{caseDetail.case.name}</em>
+        <em>{currentCase.name}</em>
       </header>
-      {loadError && <p className="detail-error">{shortenError(loadError)}</p>}
+      {loadError && <ErrorDetail message={loadError} />}
       <div className="dag-run-body">
         <div className="dag-run-canvas">
           {layout ? (
@@ -2175,7 +2215,7 @@ function DagRunPanel({
                 <div><dt>Inputs</dt><dd>{selectedView.node.inputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
                 <div><dt>Outputs</dt><dd>{selectedView.node.outputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
               </dl>
-              {selectedView.error && <p className="detail-error">{shortenError(selectedView.error)}</p>}
+              {selectedView.error && <ErrorDetail message={selectedView.error} />}
               <div className="dag-node-actions">
                 <button
                   type="button"
@@ -2195,7 +2235,7 @@ function DagRunPanel({
                   </a>
                 )}
               </div>
-              {viewerError && <p className="detail-error">{shortenError(viewerError)}</p>}
+              {viewerError && <ErrorDetail message={viewerError} />}
             </>
           ) : (
             <EmptyState label="还没有 Workflow 节点" />
@@ -2476,7 +2516,7 @@ function V2AssetPackagePanel({
         </div>
       </header>
 
-      {packageError && <p className="detail-error">{shortenError(packageError)}</p>}
+      {packageError && <ErrorDetail message={packageError} />}
 
       <div className="v2-asset-table-wrap" aria-label="v2 assets 表格">
         {elements.length > 0 ? (
@@ -2605,7 +2645,7 @@ function V2AssetPackagePanel({
             </div>
 
             {selectedPackage?.failure && (
-              <p className="asset-status-failed">{shortenError(selectedPackage.failure)}</p>
+              <ErrorDetail message={selectedPackage.failure} className="asset-status-failed" />
             )}
 
             <div className="v2-result-list">
@@ -3773,7 +3813,8 @@ function SvgResultStudio({
 }
 
 function PipelineProgressPanel({ caseDetail, progress }: { caseDetail: CaseDetail; progress: CaseProgress | null }) {
-  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
+  const currentCase = currentCaseRecord(caseDetail.case, progress?.case);
+  const stageRuns = mergedStageRuns(progress?.stage_runs, caseDetail.stage_runs);
   const files = progress?.files || [];
   return (
     <section className="pipeline-card">
@@ -3786,7 +3827,7 @@ function PipelineProgressPanel({ caseDetail, progress }: { caseDetail: CaseDetai
               <span>{group.subtitle}</span>
             </div>
             {group.nodes.map((node) => {
-              const status = pipelineNodeState(node, caseDetail, stageRuns, files, caseDetail.artifacts);
+              const status = { ...node, ...workflowStageSpecState(node, currentCase, stageRuns, files, caseDetail.artifacts) };
               return <PipelineNodeRow key={node.stage} node={status} />;
             })}
           </div>
@@ -3799,7 +3840,7 @@ function PipelineProgressPanel({ caseDetail, progress }: { caseDetail: CaseDetai
 function PipelineNodeRow({
   node
 }: {
-  node: ReturnType<typeof pipelineNodeState>;
+  node: PipelineNodeView;
 }) {
   return (
     <div className={`pipeline-node ${node.state}`}>
@@ -3807,7 +3848,7 @@ function PipelineNodeRow({
       <div>
         <strong>{node.title}</strong>
         <span>{node.meta}</span>
-        {node.error && <p>{shortenError(node.error)}</p>}
+        {node.error && <ErrorDetail message={node.error} />}
       </div>
       <em>{stateLabel(node.state)}</em>
       {node.description && <div className="pipeline-node-tip" role="tooltip">{node.description}</div>}
@@ -3827,7 +3868,7 @@ function buildDagNodeViews(
   const layoutByNodeId = new Map(layout.nodes.map((nodeLayout) => [nodeLayout.node.node_id, nodeLayout]));
   return template.nodes.map((node) => {
     const nodeLayout = layoutByNodeId.get(node.node_id);
-    const runtime = workflowNodeRuntimeState(node, caseDetail, stageRuns, nodeRuns, files, caseDetail.artifacts);
+    const runtime = workflowNodeRuntimeState(node, caseDetail.case, stageRuns, nodeRuns, files, caseDetail.artifacts);
     return {
       node,
       ...runtime,
@@ -3837,132 +3878,6 @@ function buildDagNodeViews(
       height: nodeLayout?.height || 62
     };
   });
-}
-
-function workflowNodeRuntimeState(
-  node: WorkflowTemplate["nodes"][number],
-  caseDetail: CaseDetail,
-  stageRuns: StageRunRecord[],
-  nodeRuns: WorkflowNodeRunRecord[],
-  files: CaseProgress["files"],
-  artifacts: ArtifactRecord[]
-): Pick<DagNodeView, "state" | "stage" | "meta" | "error"> {
-  const stage = workflowStageForNode(node);
-  const current = caseDetail.case;
-  const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
-  if (latestNodeRun) {
-    if (latestNodeRun.status === "ok") {
-      return { state: "done", stage, meta: durationText(latestNodeRun.started_at, latestNodeRun.ended_at), error: "" };
-    }
-    if (latestNodeRun.status === "running") {
-      return { state: "running", stage, meta: durationText(latestNodeRun.started_at, ""), error: "" };
-    }
-    if (latestNodeRun.status === "failed") {
-      return { state: "failed", stage, meta: "失败", error: latestNodeRun.error_message };
-    }
-    if (latestNodeRun.status === "blocked") {
-      return { state: "failed", stage, meta: "阻塞", error: latestNodeRun.error_message };
-    }
-  }
-  if (node.node_type === "human_review") {
-    if (current.status === "assets_review") {
-      return { stage, state: "review", meta: "等待人工确认", error: "" };
-    }
-    if (
-      current.status === "completed" ||
-      stageIsAfterOrEqual(current.stage, "compose_svg") ||
-      artifactOrFileReady(["approved_asset_plan", "semantic_svg", "pptx"], files, artifacts)
-    ) {
-      return { stage, state: "done", meta: "人工确认已完成或下游已解锁", error: "" };
-    }
-    if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "plan_assets")) {
-      return { stage, state: "failed", meta: "失败", error: current.error_message };
-    }
-    return { stage, state: "waiting", meta: "等待上游资产处理", error: "" };
-  }
-
-  if (node.node_type === "output") {
-    if (current.status === "completed" || artifactOrFileReady(["semantic_svg", "pptx", "pptx_export_report"], files, artifacts)) {
-      return { stage, state: "done", meta: "输出文件已准备", error: "" };
-    }
-    if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "export")) {
-      return { stage, state: "failed", meta: "失败", error: current.error_message };
-    }
-    return { stage, state: "waiting", meta: "等待 SVG / PPT 输出", error: "" };
-  }
-
-  if (!stage) {
-    return {
-      stage: "",
-      state: current.status === "completed" ? "done" : "waiting",
-      meta: node.description || "Workflow node",
-      error: ""
-    };
-  }
-
-  const view = pipelineNodeState(
-    {
-      stage,
-      title: node.title,
-      detail: node.node_type,
-      description: node.description
-    } as PipelineNodeSpec,
-    caseDetail,
-    stageRuns,
-    files,
-    artifacts
-  );
-  return {
-    stage,
-    state: view.state,
-    meta: view.meta,
-    error: view.error
-  };
-}
-
-function workflowStageForNode(node: WorkflowTemplate["nodes"][number]): string {
-  const configuredStage = typeof node.config.stage === "string" ? node.config.stage : "";
-  if (configuredStage) return configuredStage;
-  if (node.node_type === "input") return "prepare";
-  if (node.node_type === "parser") return "parse_elements";
-  if (node.node_type === "fusion") return "fuse_elements";
-  if (node.node_type === "human_review") return "asset_confirm";
-  if (node.node_type === "export") return "export";
-  if (node.node_type === "output") return "output";
-  if (node.node_type === "processor") {
-    const processorId = String(node.config.processor_id || "");
-    if (processorId === "sam_parse") return "sam_parse";
-    if (processorId === "ocr_parse") return "ocr_parse";
-    if (processorId === "page_spec_fuse") return "fuse_elements";
-    if (processorId === "page_spec_refine") return "refine_elements";
-    if (processorId === "asset_prepare") return "process_assets";
-    if (processorId === "svg_compose") return "compose_svg";
-    if (processorId === "asset_planner") return "plan_assets";
-    return "process_assets";
-  }
-  if (node.node_type === "agent" || node.node_type === "llm") {
-    const presetId = String(node.config.preset_id || "");
-    if (presetId === "svg_generation") return "compose_svg";
-    return "refine_elements";
-  }
-  return "";
-}
-
-function latestWorkflowNodeRun(nodeRuns: WorkflowNodeRunRecord[], nodeId: string): WorkflowNodeRunRecord | null {
-  const runs = nodeRuns.filter((run) => run.node_id === nodeId);
-  if (!runs.length) return null;
-  return [...runs].sort((a, b) => {
-    const attemptOrder = a.attempt_id.localeCompare(b.attempt_id, undefined, { numeric: true });
-    if (attemptOrder !== 0) return attemptOrder;
-    return Date.parse(a.started_at || "") - Date.parse(b.started_at || "");
-  })[runs.length - 1] || null;
-}
-
-function stageIsAfterOrEqual(currentStage: string, targetStage: string): boolean {
-  const current = canonicalPipelineStage(currentStage);
-  const target = canonicalPipelineStage(targetStage);
-  if (!current || !target) return false;
-  return PIPELINE_STAGE_ORDER.indexOf(current) >= PIPELINE_STAGE_ORDER.indexOf(target);
 }
 
 function TaskSelectionWorkspace({
@@ -5882,7 +5797,9 @@ function ButtonSpinner() {
 
 function ProgressView({ progress, caseDetail }: { progress: CaseProgress | null; caseDetail: CaseDetail | null }) {
   if (!caseDetail) return <EmptyState label="请选择一张图" />;
-  const stageRuns = stageRunList(progress?.stage_runs || caseDetail.stage_runs);
+  const currentCase = currentCaseRecord(caseDetail.case, progress?.case);
+  const currentDetail = { ...caseDetail, case: currentCase };
+  const stageRuns = mergedStageRuns(progress?.stage_runs, caseDetail.stage_runs);
   const running = latestStageRun(stageRuns, (stage) => stage.status === "running");
   const semanticFile = latestProgressFile(progress, "semantic_svg");
   const hasSvgOk = stageRuns.some((stage) => stageMatchesNode(stage.stage_name, "compose_svg") && stage.status === "ok");
@@ -5891,12 +5808,12 @@ function ProgressView({ progress, caseDetail }: { progress: CaseProgress | null;
       <section className="progress-hero">
         <div>
           <span>当前图片</span>
-          <strong>{caseDetail.case.name}</strong>
-          <em>{humanize(caseDetail.case.status)} · {humanize(caseDetail.case.phase)} / {humanize(caseDetail.case.stage)}</em>
+          <strong>{currentCase.name}</strong>
+          <em>{humanize(currentCase.status)} · {humanize(currentCase.phase)} / {humanize(currentCase.stage)}</em>
         </div>
         <div>
           <span>运行目录</span>
-          <code>{caseDetail.case.run_root}</code>
+          <code>{currentCase.run_root}</code>
         </div>
       </section>
 
@@ -5907,7 +5824,7 @@ function ProgressView({ progress, caseDetail }: { progress: CaseProgress | null;
         </section>
       )}
 
-      <SvgStatusPanel caseDetail={caseDetail} stageRuns={stageRuns} />
+      <SvgStatusPanel caseDetail={currentDetail} stageRuns={stageRuns} />
       <PptxExportStatusPanel exportProgress={progress?.pptx_export} />
 
       <section className="progress-grid">
@@ -5955,7 +5872,7 @@ function SvgStatusPanel({
       {failure && (
         <div className="svg-status-detail">
           <span>失败原因</span>
-          <p className="stage-failure">{failure}</p>
+          <ErrorDetail message={failure} className="stage-failure" />
         </div>
       )}
     </section>
@@ -6004,12 +5921,10 @@ function StageRunRow({ stage, highlighted }: { stage: StageRunRecord; highlighte
         <span>{humanize(stage.status)}</span>
       </div>
       <em>{durationText(stage.started_at, stage.ended_at)}</em>
-      {stage.error_message && <p>{stage.error_message}</p>}
+      {stage.error_message && <ErrorDetail message={stage.error_message} />}
     </div>
   );
 }
-
-type PipelineNodeSpec = (typeof PIPELINE_GROUPS)[number]["nodes"][number];
 
 type PipelineNodeView = {
   stage: string;
@@ -6020,157 +5935,6 @@ type PipelineNodeView = {
   meta: string;
   error: string;
 };
-
-function pipelineNodeState(
-  node: PipelineNodeSpec,
-  caseDetail: CaseDetail,
-  stageRuns: StageRunRecord[],
-  files: CaseProgress["files"],
-  artifacts: ArtifactRecord[]
-): PipelineNodeView {
-  const latest = latestStageRun(stageRuns, (stage) => stageMatchesNode(stage.stage_name, node.stage));
-  const current = caseDetail.case;
-  let state: PipelineNodeState = "waiting";
-  let meta: string = node.detail;
-  let error = "";
-
-  if (node.stage === "plan_assets") {
-    const planned = artifactOrFileReady(["asset_manifest", "approved_asset_plan", "asset_draft"], files, artifacts);
-    if (planned || current.stage === "process_assets" || current.stage === "compose_svg" || current.stage === "export" || current.stage === "completed" || current.status === "completed") {
-      state = "done";
-      meta = planned ? "资产计划已写入" : "已计划";
-    } else if (current.status === "assets_review") {
-      state = "review";
-      meta = "等待资产确认";
-    }
-  } else if (node.stage === "process_assets") {
-    const planned = artifactOrFileReady(["asset_manifest", "approved_asset_plan"], files, artifacts);
-    if (!planned) {
-      meta = "等待资产计划";
-    } else if (latest) {
-      if (latest.status === "ok") {
-        state = "done";
-        meta = durationText(latest.started_at, latest.ended_at);
-      } else if (latest.status === "running") {
-        state = "running";
-        meta = durationText(latest.started_at, "");
-      } else if (latest.status === "failed") {
-        state = "failed";
-        meta = "失败";
-        error = latest.error_message;
-      }
-    } else if (current.stage === "compose_svg" || current.stage === "export" || current.status === "completed") {
-      state = "done";
-      meta = "素材已处理";
-    } else if (stageMatchesNode(current.stage, node.stage)) {
-      if (current.status === "failed") {
-        state = "failed";
-        meta = "失败";
-        error = current.error_message;
-      } else if (current.status === "analysis_running" || current.status === "svg_running") {
-        state = "running";
-        meta = "正在运行";
-      }
-    }
-  } else if (latest) {
-    if (latest.status === "ok") {
-      state = "done";
-      meta = durationText(latest.started_at, latest.ended_at);
-    } else if (latest.status === "running") {
-      state = "running";
-      meta = durationText(latest.started_at, "");
-    } else if (latest.status === "failed") {
-      state = "failed";
-      meta = "失败";
-      error = latest.error_message;
-    }
-  } else if (artifactOrFileReady(stageReadyLabels(node.stage), files, artifacts)) {
-    state = "done";
-    meta = "输出文件已准备";
-  } else if (current.status === "completed") {
-    state = "done";
-    meta = "已完成";
-  } else if (stageMatchesNode(current.stage, node.stage)) {
-    if (current.status === "failed") {
-      state = "failed";
-      meta = "失败";
-      error = current.error_message;
-    } else if (current.status === "analysis_running" || current.status === "svg_running") {
-      state = "running";
-      meta = "正在运行";
-    }
-  }
-
-  if (state === "done" && isStaleStage(current.stale_from_stage, node.stage)) {
-    state = "stale";
-    meta = "需重新运行";
-  }
-
-  return {
-    stage: node.stage,
-    title: node.title,
-    detail: node.detail,
-    description: node.description,
-    state,
-    meta,
-    error
-  };
-}
-
-function stageReadyLabels(stage: string): string[] {
-  if (stage === "prepare") return ["figure"];
-  if (stage === "sam_parse") return ["sam_page_spec", "raw_regions", "sam_boxes_by_prompt"];
-  if (stage === "ocr_parse") return ["ocr_page_spec", "ocr_boxes"];
-  if (stage === "parse_elements") return ["raw_regions", "ocr_boxes", "parser_outputs"];
-  if (stage === "fuse_elements") return ["box_ir", "fusion_trace"];
-  if (stage === "refine_elements") return ["element_analysis", "refine_trace", "asset_draft"];
-  if (stage === "plan_assets") return ["asset_manifest", "approved_asset_plan"];
-  if (stage === "process_assets") return ["processor_trace"];
-  if (stage === "compose_svg") return ["semantic_svg", "rendered_png", "svg_validation_report"];
-  if (stage === "export") return ["pptx", "pptx_export_report"];
-  return [];
-}
-
-function artifactOrFileReady(labels: string[], files: CaseProgress["files"], artifacts: ArtifactRecord[]): boolean {
-  return labels.some(
-    (label) => files.some((file) => file.label === label && file.exists) || artifacts.some((artifact) => artifact.label === label)
-  );
-}
-
-function isStaleStage(staleFromStage: string, stage: string): boolean {
-  if (!staleFromStage) return false;
-  const stageOrder = PIPELINE_STAGE_ORDER as readonly string[];
-  const staleIndex = stageOrder.indexOf(canonicalPipelineStage(staleFromStage));
-  const stageIndex = stageOrder.indexOf(canonicalPipelineStage(stage));
-  return staleIndex >= 0 && stageIndex >= staleIndex;
-}
-
-function canonicalPipelineStage(stage: string): (typeof PIPELINE_STAGE_ORDER)[number] | "" {
-  const aliases: Record<string, (typeof PIPELINE_STAGE_ORDER)[number]> = {
-    analysis: "prepare",
-    detect_structure: "parse_elements",
-    detect_text: "parse_elements",
-    assemble_boxir: "fuse_elements",
-    asset_analyze: "refine_elements",
-    asset_plan: "plan_assets",
-    approved_asset_plan: "plan_assets",
-    materialize: "process_assets",
-    asset_materialize: "process_assets",
-    asset_processing: "process_assets",
-    svg: "compose_svg",
-    compose: "compose_svg",
-    svg_edit: "compose_svg",
-    package: "package_run"
-  };
-  if ((PIPELINE_STAGE_ORDER as readonly string[]).includes(stage)) {
-    return stage as (typeof PIPELINE_STAGE_ORDER)[number];
-  }
-  return aliases[stage] || "";
-}
-
-function stageMatchesNode(stageName: string, nodeStage: string): boolean {
-  return canonicalPipelineStage(stageName) === canonicalPipelineStage(nodeStage);
-}
 
 function stateLabel(state: PipelineNodeState): string {
   const labels: Record<PipelineNodeState, string> = {
@@ -6193,6 +5957,10 @@ function initialBoardMode(): BoardMode {
 
 function EmptyState({ label }: { label: string }) {
   return <div className="empty-state">{label}</div>;
+}
+
+function ErrorDetail({ message, className = "" }: { message: string; className?: string }) {
+  return <p className={`detail-error error-detail ${className}`.trim()}>{errorDetailText(message)}</p>;
 }
 
 function assetPackageFromRunPackage(runPackage: V2RunPackage | null, elementId: string): V2AssetPackage | null {
@@ -7043,7 +6811,7 @@ function caseCanOpenCanvas(detail: CaseDetail | null, progress: CaseProgress | n
 
 function isCaseActivelyRunning(detail: CaseDetail | null, progress: CaseProgress | null): boolean {
   const status = progress?.case.status || detail?.case.status || "";
-  return status === "queued" || status === "analysis_running" || status === "svg_running" || stageRunList(progress?.stage_runs || detail?.stage_runs || []).some((stage) => stage.status === "running");
+  return status === "queued" || status === "analysis_running" || status === "svg_running" || mergedStageRuns(progress?.stage_runs, detail?.stage_runs).some((stage) => stage.status === "running");
 }
 
 function retryStageForCase(item: Pick<CaseRecord, "phase" | "stage" | "stale_from_stage">): WorkbenchRerunStage {
@@ -7055,14 +6823,6 @@ function retryStageForCase(item: Pick<CaseRecord, "phase" | "stage" | "stale_fro
 
 function latestProgressFile(progress: CaseProgress | null, label: string) {
   return progress?.files.find((file) => file.label === label && file.exists);
-}
-
-function latestStageRun(stageRuns: StageRunRecord[], predicate: (stage: StageRunRecord) => boolean = () => true): StageRunRecord | null {
-  return stageRunList(stageRuns).slice().reverse().find(predicate) || null;
-}
-
-function stageRunList(stageRuns: unknown): StageRunRecord[] {
-  return Array.isArray(stageRuns) ? stageRuns : [];
 }
 
 function isEditorSourceStrategy(strategy: SourceStrategy): strategy is EditorSourceStrategy {

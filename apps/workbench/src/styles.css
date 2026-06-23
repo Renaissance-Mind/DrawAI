@@ -1204,6 +1204,30 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.detail-error {
+  margin: 8px 0 0;
+}
+
+.error-detail {
+  max-height: min(36vh, 320px);
+  overflow: auto;
+  border: 1px solid rgba(180, 35, 24, 0.18);
+  border-radius: 8px;
+  background: #fff7f7;
+  padding: 9px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.48;
+  white-space: pre-wrap;
+}
+
+.dag-node-detail .error-detail,
+.pipeline-node .error-detail,
+.stage-run-row .error-detail,
+.svg-status-detail .error-detail {
+  max-height: 220px;
+}
+
 .task-main em {
   display: -webkit-box;
   overflow: hidden;
