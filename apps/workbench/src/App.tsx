@@ -7,6 +7,7 @@ import {
   deleteBatch,
   downloadBatchPptx,
   forkV2FromSource,
+  getApiPresets,
   getAssetPackage,
   getAssets,
   getBatch,
@@ -19,6 +20,7 @@ import {
   getSvgSource,
   getWorkbenchAgentSettings,
   getWorkflowNodeViewer,
+  getProcessorSettings,
   isDrawAiApiStatus,
   listBatches,
   processAssetElements,
@@ -27,6 +29,8 @@ import {
   runCaseStage,
   runBatch,
   saveAssetDraft,
+  saveApiPresets,
+  saveProcessorSettings,
   saveWorkbenchAgentSettings,
   setActiveAssetResult,
   type WorkbenchRerunStage,
@@ -50,6 +54,8 @@ import {
 import { listWorkflowTemplates } from "./workflowApi";
 import type {
   ArtifactRecord,
+  ApiPreset,
+  ApiPresetsResponse,
   AssetElement,
   AssetGeometry,
   AssetPlan,
@@ -60,6 +66,7 @@ import type {
   CaseRecord,
   CaseProgress,
   HealthResponse,
+  ProcessorSettingsResponse,
   RuntimeActivityStatus,
   RuntimeServiceStatus,
   SourceStrategy,
@@ -268,8 +275,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>("board");
   const [boardMode, setBoardMode] = useState<BoardMode>(() => initialBoardMode());
   const [submitOpen, setSubmitOpen] = useState(false);
-  const [imageGenSettingsOpen, setImageGenSettingsOpen] = useState(false);
-  const [workbenchAgentSettingsOpen, setWorkbenchAgentSettingsOpen] = useState(false);
+  const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
   const [error, setError] = useState("");
   const [assetsRunPendingCaseId, setAssetsRunPendingCaseId] = useState("");
@@ -1006,28 +1012,15 @@ export default function App() {
         </div>
         <div id="drawai-view-controls" className="topbar-view-controls" />
         <div className="topbar-links">
-          {activeView === "board" && boardMode === "generate" && (
-            <button
-              type="button"
-              className="topbar-icon-button"
-              title="生成 API 设置"
-              aria-label="生成 API 设置"
-              onClick={() => setImageGenSettingsOpen(true)}
-            >
-              <SettingsIcon />
-            </button>
-          )}
-          {activeView === "board" && boardMode !== "generate" && (
-            <button
-              type="button"
-              className="topbar-icon-button"
-              title="Agent / LLM API 设置"
-              aria-label="Agent / LLM API 设置"
-              onClick={() => setWorkbenchAgentSettingsOpen(true)}
-            >
-              <SettingsIcon />
-            </button>
-          )}
+          <button
+            type="button"
+            className="topbar-icon-button"
+            title="Workbench 设置"
+            aria-label="Workbench 设置"
+            onClick={() => setWorkbenchSettingsOpen(true)}
+          >
+            <SettingsIcon />
+          </button>
           <BackendStatusIndicator health={health} healthError={healthError} />
           <a
             className="github-link"
@@ -1183,21 +1176,17 @@ export default function App() {
           onError={setError}
         />
       )}
-      {imageGenSettingsOpen && (
-        <ImageGenSettingsDialog
-          connection={imageGenConnection}
-          onClose={() => setImageGenSettingsOpen(false)}
-          onSave={(nextConnection) => {
-            setImageGenConnection(nextConnection);
-            saveImageGenConnectionSettings(nextConnection);
-            setImageGenSettingsOpen(false);
+      {workbenchSettingsOpen && (
+        <WorkbenchSettingsCenter
+          imageGenConnection={imageGenConnection}
+          onClose={() => setWorkbenchSettingsOpen(false)}
+          onSaved={(nextConnection) => {
+            if (nextConnection) {
+              setImageGenConnection(nextConnection);
+              saveImageGenConnectionSettings(nextConnection);
+            }
+            setWorkbenchSettingsOpen(false);
           }}
-        />
-      )}
-      {workbenchAgentSettingsOpen && (
-        <WorkbenchAgentSettingsDialog
-          onClose={() => setWorkbenchAgentSettingsOpen(false)}
-          onSaved={() => setWorkbenchAgentSettingsOpen(false)}
           onError={setError}
         />
       )}
@@ -1462,32 +1451,53 @@ function ImageGenSettingsDialog({
   );
 }
 
-function WorkbenchAgentSettingsDialog({
+function WorkbenchSettingsCenter({
+  imageGenConnection,
   onClose,
   onSaved,
   onError
 }: {
+  imageGenConnection: ImageGenConnectionSettings;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (connection?: ImageGenConnectionSettings) => void;
   onError: (message: string) => void;
 }) {
   const [response, setResponse] = useState<WorkbenchAgentSettingsResponse | null>(null);
+  const [apiResponse, setApiResponse] = useState<ApiPresetsResponse | null>(null);
+  const [processorResponse, setProcessorResponse] = useState<ProcessorSettingsResponse | null>(null);
   const [draft, setDraft] = useState<WorkbenchAgentSettings>(DEFAULT_WORKBENCH_AGENT_SETTINGS);
+  const [apiDrafts, setApiDrafts] = useState<ApiPreset[]>([]);
+  const [processorDrafts, setProcessorDrafts] = useState<ProcessorSettingsResponse["settings"]["processors"]>({});
   const [llmExtraBodyText, setLlmExtraBodyText] = useState(formatWorkbenchAgentJsonObject({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
-  const [settingsCategory, setSettingsCategory] = useState<"agent" | "llm">("agent");
+  const [settingsCategory, setSettingsCategory] = useState<"api" | "agent" | "llm" | "processor">("api");
+  const [selectedApiPresetId, setSelectedApiPresetId] = useState("");
+  const [selectedLlmPresetId, setSelectedLlmPresetId] = useState("");
+  const [selectedProcessorId, setSelectedProcessorId] = useState("");
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setLocalError("");
     try {
-      const nextResponse = await getWorkbenchAgentSettings();
+      const [nextResponse, nextApiResponse, nextProcessorResponse] = await Promise.all([
+        getWorkbenchAgentSettings(),
+        getApiPresets(),
+        getProcessorSettings()
+      ]);
       const normalizedSettings = normalizeWorkbenchAgentDraft(nextResponse.settings);
+      const nextApiDrafts = apiPresetsWithImageGenMigration(nextApiResponse.presets || [], imageGenConnection);
       setResponse(nextResponse);
+      setApiResponse(nextApiResponse);
+      setProcessorResponse(nextProcessorResponse);
       setDraft(normalizedSettings);
+      setApiDrafts(nextApiDrafts);
+      setProcessorDrafts({ ...(nextProcessorResponse.settings?.processors || {}) });
       setLlmExtraBodyText(formatWorkbenchAgentJsonObject(normalizedSettings.llm_extra_body));
+      setSelectedApiPresetId(nextApiDrafts[0]?.id || "");
+      setSelectedLlmPresetId(matchingLlmPresetId(nextApiDrafts, normalizedSettings));
+      setSelectedProcessorId(Object.keys(nextProcessorResponse.definitions.processors || {})[0] || "");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setLocalError(message);
@@ -1495,13 +1505,23 @@ function WorkbenchAgentSettingsDialog({
     } finally {
       setLoading(false);
     }
-  }, [onError]);
+  }, [imageGenConnection, onError]);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
 
   const agents = response?.agents || [];
+  const presetTypes = apiResponse?.preset_types || ["images_api", "llm_chat_completions", "llm_responses"];
+  const selectedApiPreset = apiDrafts.find((preset) => preset.id === selectedApiPresetId) || apiDrafts[0] || null;
+  const llmPresets = apiDrafts.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
+  const selectedLlmPreset = llmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
+  const processorDefinitions = processorResponse?.definitions.processors || {};
+  const processorDrivers = processorResponse?.definitions.drivers || {};
+  const processorIds = Object.keys(processorDefinitions);
+  const selectedProcessor = selectedProcessorId && processorDefinitions[selectedProcessorId] ? processorDefinitions[selectedProcessorId] : null;
+  const selectedProcessorSetting = selectedProcessor ? processorDrafts[selectedProcessor.processing_type] : null;
+  const selectedProcessorValidation = selectedProcessor ? processorResponse?.validation.processors[selectedProcessor.processing_type] : null;
   const selectedAgent = agents.find((agent) => agent.provider_id === draft.selected_provider_id) || agents[0] || null;
   const selectAgentProvider = (providerId: string) => {
     setDraft((current) => ({ ...current, selected_provider_id: providerId }));
@@ -1511,16 +1531,33 @@ function WorkbenchAgentSettingsDialog({
     setSaving(true);
     setLocalError("");
     try {
-      const normalizedDraft = normalizeWorkbenchAgentDraft({
+      const agentPayload = normalizeWorkbenchAgentDraft({
         ...draft,
         llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
       });
-      const nextResponse = await saveWorkbenchAgentSettings(normalizedDraft);
+      if (selectedLlmPreset) {
+        agentPayload.llm_model = selectedLlmPreset.model;
+        agentPayload.llm_base_url = selectedLlmPreset.base_url;
+        agentPayload.llm_api_key = selectedLlmPreset.api_key;
+        agentPayload.llm_api_key_env = selectedLlmPreset.api_key_env || "OPENAI_API_KEY";
+        agentPayload.llm_wire_api = selectedLlmPreset.type === "llm_responses" ? "responses" : "chat_completions";
+      }
+      const normalizedApiDrafts = normalizeApiPresetDrafts(apiDrafts);
+      const nextApiResponse = await saveApiPresets(normalizedApiDrafts);
+      const [nextProcessorResponse, nextResponse] = await Promise.all([
+        saveProcessorSettings(processorDrafts),
+        saveWorkbenchAgentSettings(agentPayload)
+      ]);
       const normalizedSettings = normalizeWorkbenchAgentDraft(nextResponse.settings);
+      const nextApiDrafts = nextApiResponse.presets || [];
       setResponse(nextResponse);
+      setApiResponse(nextApiResponse);
+      setProcessorResponse(nextProcessorResponse);
       setDraft(normalizedSettings);
+      setApiDrafts(nextApiDrafts);
+      setProcessorDrafts({ ...(nextProcessorResponse.settings?.processors || {}) });
       setLlmExtraBodyText(formatWorkbenchAgentJsonObject(normalizedSettings.llm_extra_body));
-      onSaved();
+      onSaved(imageGenConnectionFromApiPresets(nextApiDrafts, imageGenConnection));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setLocalError(message);
@@ -1536,13 +1573,13 @@ function WorkbenchAgentSettingsDialog({
         className="settings-dialog workbench-agent-settings-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Agent 与 LLM API 设置"
+        aria-label="Workbench 设置"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="settings-dialog-head">
           <div>
-            <span>Workflow</span>
-            <strong>Agent / LLM API</strong>
+            <span>Workbench</span>
+            <strong>设置中心</strong>
           </div>
           <button type="button" className="settings-close" aria-label="关闭" onClick={onClose}>
             ×
@@ -1552,6 +1589,15 @@ function WorkbenchAgentSettingsDialog({
           {localError && <div className="agent-settings-error">{localError}</div>}
           <div className={`agent-settings-shell category-${settingsCategory}`}>
             <nav className="settings-nav" aria-label="设置导航">
+              <button
+                type="button"
+                className={`settings-nav-item${settingsCategory === "api" ? " active" : ""}`}
+                aria-current={settingsCategory === "api" ? "page" : undefined}
+                onClick={() => setSettingsCategory("api")}
+              >
+                <span className="settings-nav-marker" aria-hidden="true" />
+                <span>API Presets</span>
+              </button>
               <button
                 type="button"
                 className={`settings-nav-item${settingsCategory === "agent" ? " active" : ""}`}
@@ -1568,9 +1614,55 @@ function WorkbenchAgentSettingsDialog({
                 onClick={() => setSettingsCategory("llm")}
               >
                 <span className="settings-nav-marker" aria-hidden="true" />
-                <span>LLM API</span>
+                <span>LLM</span>
+              </button>
+              <button
+                type="button"
+                className={`settings-nav-item${settingsCategory === "processor" ? " active" : ""}`}
+                aria-current={settingsCategory === "processor" ? "page" : undefined}
+                onClick={() => setSettingsCategory("processor")}
+              >
+                <span className="settings-nav-marker" aria-hidden="true" />
+                <span>Processor</span>
               </button>
             </nav>
+            {settingsCategory === "api" && (
+              <div className="agent-settings-list-panel">
+                <div className="agent-settings-list-head">
+                  <span>API Presets</span>
+                  <strong>{apiDrafts.length}</strong>
+                </div>
+                <div className="agent-settings-list" aria-label="API Presets">
+                  {apiDrafts.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      className={`agent-option${selectedApiPreset?.id === preset.id ? " active" : ""}`}
+                      onClick={() => setSelectedApiPresetId(preset.id)}
+                    >
+                      <span className="agent-option-main">
+                        <strong>{preset.label || preset.id}</strong>
+                        <span className="agent-status ok">{preset.type}</span>
+                      </span>
+                      <span className="agent-command">{preset.base_url || "未设置 Base URL"}</span>
+                      <span className="agent-option-meta">{preset.model || "未设置模型"}</span>
+                    </button>
+                  ))}
+                  {apiDrafts.length === 0 && <div className="agent-settings-empty">还没有 API Preset</div>}
+                </div>
+                <button
+                  type="button"
+                  className="settings-secondary-action"
+                  onClick={() => {
+                    const nextPreset = newApiPresetDraft(apiDrafts);
+                    setApiDrafts((current) => [...current, nextPreset]);
+                    setSelectedApiPresetId(nextPreset.id);
+                  }}
+                >
+                  新建 Preset
+                </button>
+              </div>
+            )}
             {settingsCategory === "agent" && (
               <div className="agent-settings-list-panel">
                 <div className="agent-settings-list-head">
@@ -1599,7 +1691,134 @@ function WorkbenchAgentSettingsDialog({
                 </div>
               </div>
             )}
+            {settingsCategory === "processor" && (
+              <div className="agent-settings-list-panel">
+                <div className="agent-settings-list-head">
+                  <span>Processor</span>
+                  <strong>{processorIds.length}</strong>
+                </div>
+                <div className="agent-settings-list" aria-label="Processors">
+                  {processorIds.map((processorId) => {
+                    const definition = processorDefinitions[processorId];
+                    const setting = processorDrafts[processorId];
+                    const status = processorResponse?.validation.processors[processorId];
+                    return (
+                      <button
+                        type="button"
+                        key={processorId}
+                        className={`agent-option${selectedProcessorId === processorId ? " active" : ""}${status?.configured ? "" : " missing"}`}
+                        onClick={() => setSelectedProcessorId(processorId)}
+                      >
+                        <span className="agent-option-main">
+                          <strong>{definition.label}</strong>
+                          <span className={`agent-status ${status?.configured ? "ok" : "missing"}`}>
+                            {setting?.enabled ? (status?.configured ? "可用" : "未配置") : "关闭"}
+                          </span>
+                        </span>
+                        <span className="agent-command">{processorId}</span>
+                        <span className="agent-option-meta">{setting?.driver_id || definition.default_driver_id}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="agent-settings-panel">
+              {settingsCategory === "api" && (
+                <div className="agent-settings-section">
+                  <div className="agent-settings-section-title">
+                    <span>API Preset</span>
+                    {selectedApiPreset && (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          const removeId = selectedApiPreset.id;
+                          const next = apiDrafts.filter((preset) => preset.id !== removeId);
+                          setApiDrafts(next);
+                          setSelectedApiPresetId(next[0]?.id || "");
+                        }}
+                      >
+                        删除
+                      </button>
+                    )}
+                  </div>
+                  {selectedApiPreset ? (
+                    <>
+                      <div className="settings-form-row">
+                        <label className="settings-field">
+                          <span>ID</span>
+                          <input
+                            value={selectedApiPreset.id}
+                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { id: event.target.value })}
+                            autoComplete="off"
+                          />
+                        </label>
+                        <label className="settings-field">
+                          <span>名称</span>
+                          <input
+                            value={selectedApiPreset.label}
+                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { label: event.target.value })}
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+                      <label className="settings-field">
+                        <span>类型</span>
+                        <select
+                          value={selectedApiPreset.type}
+                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { type: event.target.value })}
+                        >
+                          {presetTypes.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Base URL</span>
+                        <input
+                          value={selectedApiPreset.base_url}
+                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { base_url: event.target.value })}
+                          placeholder="https://api.openai.com"
+                          autoComplete="off"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>模型</span>
+                        <input
+                          value={selectedApiPreset.model}
+                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { model: event.target.value })}
+                          placeholder={selectedApiPreset.type === "images_api" ? "gpt-image-2" : "model name"}
+                          autoComplete="off"
+                        />
+                      </label>
+                      <div className="settings-form-row">
+                        <label className="settings-field">
+                          <span>API Key Env</span>
+                          <input
+                            value={selectedApiPreset.api_key_env}
+                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { api_key_env: event.target.value })}
+                            placeholder="OPENAI_API_KEY"
+                            autoComplete="off"
+                          />
+                        </label>
+                        <label className="settings-field">
+                          <span>API Key</span>
+                          <input
+                            type="password"
+                            value={selectedApiPreset.api_key}
+                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPreset.id, { api_key: event.target.value })}
+                            placeholder="保存到本机 workspace"
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState label="选择或新建一个 API Preset" />
+                  )}
+                </div>
+              )}
               {settingsCategory === "agent" && (
                 <div className="agent-settings-section">
                   <div className="agent-settings-section-title">
@@ -1665,47 +1884,29 @@ function WorkbenchAgentSettingsDialog({
               {settingsCategory === "llm" && (
                 <div className="agent-settings-section">
                   <div className="agent-settings-section-title">
-                    <span>LLM API</span>
+                    <span>LLM</span>
                   </div>
                   <label className="settings-field">
-                    <span>模型</span>
-                    <input
-                      value={draft.llm_model}
-                      onChange={(event) => setDraft((current) => ({ ...current, llm_model: event.target.value }))}
-                      placeholder="例如 minimax/minimax-m3"
-                      autoComplete="off"
-                    />
+                    <span>默认 LLM API Preset</span>
+                    <select
+                      value={selectedLlmPresetId}
+                      onChange={(event) => setSelectedLlmPresetId(event.target.value)}
+                    >
+                      <option value="">未选择</option>
+                      {llmPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label || preset.id} · {preset.model}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                  <label className="settings-field">
-                    <span>Base URL</span>
-                    <input
-                      value={draft.llm_base_url}
-                      onChange={(event) => setDraft((current) => ({ ...current, llm_base_url: event.target.value }))}
-                      placeholder="https://openrouter.ai/api/v1"
-                      autoComplete="off"
-                    />
-                  </label>
-                  <div className="settings-form-row">
-                    <label className="settings-field">
-                      <span>API Key</span>
-                      <input
-                        type="password"
-                        value={draft.llm_api_key}
-                        onChange={(event) => setDraft((current) => ({ ...current, llm_api_key: event.target.value }))}
-                        placeholder="直接保存 key"
-                        autoComplete="off"
-                      />
-                    </label>
-                    <label className="settings-field">
-                      <span>API Key Env</span>
-                      <input
-                        value={draft.llm_api_key_env}
-                        onChange={(event) => setDraft((current) => ({ ...current, llm_api_key_env: event.target.value }))}
-                        placeholder="OPENAI_API_KEY"
-                        autoComplete="off"
-                      />
-                    </label>
-                  </div>
+                  {selectedLlmPreset && (
+                    <div className="settings-summary-row">
+                      <span>{selectedLlmPreset.type}</span>
+                      <strong>{selectedLlmPreset.base_url}</strong>
+                      <em>{selectedLlmPreset.model}</em>
+                    </div>
+                  )}
                   <label className="settings-field">
                     <span>API 格式</span>
                     <select
@@ -1734,6 +1935,118 @@ function WorkbenchAgentSettingsDialog({
                   </label>
                 </div>
               )}
+              {settingsCategory === "processor" && (
+                <div className="agent-settings-section">
+                  <div className="agent-settings-section-title">
+                    <span>{selectedProcessor?.label || "Processor"}</span>
+                  </div>
+                  {selectedProcessor && selectedProcessorSetting ? (
+                    <>
+                      {selectedProcessorValidation?.message && (
+                        <div className="agent-settings-error">{selectedProcessorValidation.message}</div>
+                      )}
+                      <label className="settings-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={selectedProcessorSetting.enabled}
+                          onChange={(event) =>
+                            updateProcessorDraft(setProcessorDrafts, selectedProcessor.processing_type, {
+                              ...selectedProcessorSetting,
+                              enabled: event.target.checked
+                            })
+                          }
+                        />
+                        <span>启用 {selectedProcessor.processing_type}</span>
+                      </label>
+                      <label className="settings-field">
+                        <span>Driver</span>
+                        <select
+                          value={selectedProcessorSetting.driver_id}
+                          onChange={(event) =>
+                            updateProcessorDraft(setProcessorDrafts, selectedProcessor.processing_type, {
+                              ...selectedProcessorSetting,
+                              driver_id: event.target.value,
+                              api_preset_id: ""
+                            })
+                          }
+                        >
+                          {selectedProcessor.supported_driver_ids.map((driverId) => {
+                            const driver = processorDrivers[driverId];
+                            return <option key={driverId} value={driverId}>{driver?.label || driverId}</option>;
+                          })}
+                        </select>
+                      </label>
+                      {processorDrivers[selectedProcessorSetting.driver_id]?.required_api_preset_type && (
+                        <label className="settings-field">
+                          <span>API Preset</span>
+                          <select
+                            value={selectedProcessorSetting.api_preset_id}
+                            onChange={(event) =>
+                              updateProcessorDraft(setProcessorDrafts, selectedProcessor.processing_type, {
+                                ...selectedProcessorSetting,
+                                api_preset_id: event.target.value
+                              })
+                            }
+                          >
+                            <option value="">未选择</option>
+                            {apiDrafts
+                              .filter((preset) => preset.type === processorDrivers[selectedProcessorSetting.driver_id]?.required_api_preset_type)
+                              .map((preset) => (
+                                <option key={preset.id} value={preset.id}>{preset.label || preset.id}</option>
+                              ))}
+                          </select>
+                        </label>
+                      )}
+                      <label className="settings-field">
+                        <span>Meaning</span>
+                        <textarea
+                          className="settings-json-textarea"
+                          rows={3}
+                          value={selectedProcessorSetting.operation.meaning}
+                          onChange={(event) =>
+                            updateProcessorOperationDraft(setProcessorDrafts, selectedProcessor.processing_type, "meaning", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Choose when</span>
+                        <textarea
+                          className="settings-json-textarea"
+                          rows={3}
+                          value={selectedProcessorSetting.operation.choose_when}
+                          onChange={(event) =>
+                            updateProcessorOperationDraft(setProcessorDrafts, selectedProcessor.processing_type, "choose_when", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Avoid when</span>
+                        <textarea
+                          className="settings-json-textarea"
+                          rows={3}
+                          value={selectedProcessorSetting.operation.avoid_when}
+                          onChange={(event) =>
+                            updateProcessorOperationDraft(setProcessorDrafts, selectedProcessor.processing_type, "avoid_when", event.target.value)
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateProcessorDraft(setProcessorDrafts, selectedProcessor.processing_type, {
+                            ...selectedProcessorSetting,
+                            operation: { ...selectedProcessor.default_operation }
+                          })
+                        }
+                      >
+                        恢复默认描述
+                      </button>
+                    </>
+                  ) : (
+                    <EmptyState label="选择一个 processor" />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1751,6 +2064,122 @@ function WorkbenchAgentSettingsDialog({
       </section>
     </div>
   );
+}
+
+function apiPresetsWithImageGenMigration(presets: ApiPreset[], connection: ImageGenConnectionSettings): ApiPreset[] {
+  if (connection.provider !== "api") return presets;
+  if (!connection.baseUrl.trim() || !connection.model.trim()) return presets;
+  if (presets.some((preset) => preset.type === "images_api")) return presets;
+  return [
+    ...presets,
+    {
+      id: uniqueApiPresetId(presets, "imagegen_api"),
+      label: "ImageGen API",
+      type: "images_api",
+      base_url: connection.baseUrl.trim().replace(/\/+$/, ""),
+      model: connection.model.trim(),
+      api_key_env: connection.apiKey.trim() ? "" : "OPENAI_API_KEY",
+      api_key: connection.apiKey.trim()
+    }
+  ];
+}
+
+function matchingLlmPresetId(presets: ApiPreset[], settings: WorkbenchAgentSettings): string {
+  const llmBaseUrl = settings.llm_base_url.trim().replace(/\/+$/, "");
+  const llmModel = settings.llm_model.trim();
+  const match = presets.find(
+    (preset) =>
+      (preset.type === "llm_chat_completions" || preset.type === "llm_responses") &&
+      preset.base_url.trim().replace(/\/+$/, "") === llmBaseUrl &&
+      preset.model.trim() === llmModel
+  );
+  return match?.id || "";
+}
+
+function imageGenConnectionFromApiPresets(
+  presets: ApiPreset[],
+  fallback: ImageGenConnectionSettings
+): ImageGenConnectionSettings | undefined {
+  const preset = presets.find((item) => item.type === "images_api");
+  if (!preset) return undefined;
+  return {
+    provider: "api",
+    baseUrl: preset.base_url,
+    apiKey: preset.api_key || fallback.apiKey,
+    model: preset.model || fallback.model
+  };
+}
+
+function normalizeApiPresetDrafts(presets: ApiPreset[]): ApiPreset[] {
+  return presets.map((preset) => ({
+    id: preset.id.trim(),
+    label: preset.label.trim() || preset.id.trim(),
+    type: preset.type.trim(),
+    base_url: preset.base_url.trim().replace(/\/+$/, ""),
+    model: preset.model.trim(),
+    api_key_env: preset.api_key_env.trim(),
+    api_key: preset.api_key.trim()
+  }));
+}
+
+function newApiPresetDraft(existing: ApiPreset[]): ApiPreset {
+  return {
+    id: uniqueApiPresetId(existing, "api_preset"),
+    label: "New API Preset",
+    type: "images_api",
+    base_url: "https://api.openai.com",
+    model: "gpt-image-2",
+    api_key_env: "OPENAI_API_KEY",
+    api_key: ""
+  };
+}
+
+function uniqueApiPresetId(existing: ApiPreset[], base: string): string {
+  const taken = new Set(existing.map((preset) => preset.id));
+  if (!taken.has(base)) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}_${index}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+function updateApiPresetDraft(
+  setter: (updater: (current: ApiPreset[]) => ApiPreset[]) => void,
+  presetId: string,
+  patch: Partial<ApiPreset>
+): void {
+  setter((current) => current.map((preset) => (preset.id === presetId ? { ...preset, ...patch } : preset)));
+}
+
+function updateProcessorDraft(
+  setter: (updater: (current: ProcessorSettingsResponse["settings"]["processors"]) => ProcessorSettingsResponse["settings"]["processors"]) => void,
+  processingType: string,
+  nextSetting: ProcessorSettingsResponse["settings"]["processors"][string]
+): void {
+  setter((current) => ({ ...current, [processingType]: nextSetting }));
+}
+
+function updateProcessorOperationDraft(
+  setter: (updater: (current: ProcessorSettingsResponse["settings"]["processors"]) => ProcessorSettingsResponse["settings"]["processors"]) => void,
+  processingType: string,
+  field: "meaning" | "choose_when" | "avoid_when",
+  value: string
+): void {
+  setter((current) => {
+    const existing = current[processingType];
+    if (!existing) return current;
+    return {
+      ...current,
+      [processingType]: {
+        ...existing,
+        operation: {
+          ...existing.operation,
+          [field]: value
+        }
+      }
+    };
+  });
 }
 
 function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {

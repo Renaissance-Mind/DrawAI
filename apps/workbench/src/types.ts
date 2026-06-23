@@ -78,6 +78,74 @@ export interface WorkbenchAgentSettingsResponse {
   agents: WorkbenchAgentDiscovery[];
 }
 
+export interface ApiPreset {
+  id: string;
+  label: string;
+  type: string;
+  base_url: string;
+  model: string;
+  api_key_env: string;
+  api_key: string;
+}
+
+export interface ApiPresetsResponse {
+  schema: string;
+  preset_types: string[];
+  presets: ApiPreset[];
+}
+
+export interface ProcessorOperation {
+  meaning: string;
+  choose_when: string;
+  avoid_when: string;
+}
+
+export interface ProcessorDefinition {
+  processing_type: string;
+  label: string;
+  default_enabled: boolean;
+  default_driver_id: string;
+  supported_driver_ids: string[];
+  default_operation: ProcessorOperation;
+}
+
+export interface ProcessorDriverDefinition {
+  driver_id: string;
+  label: string;
+  kind: string;
+  description: string;
+  required_api_preset_type: string;
+}
+
+export interface ProcessorSetting {
+  enabled: boolean;
+  driver_id: string;
+  api_preset_id: string;
+  operation: ProcessorOperation;
+}
+
+export interface ProcessorValidationStatus {
+  enabled: boolean;
+  configured: boolean;
+  valid: boolean;
+  message: string;
+}
+
+export interface ProcessorSettingsResponse {
+  schema: string;
+  definitions: {
+    processors: Record<string, ProcessorDefinition>;
+    drivers: Record<string, ProcessorDriverDefinition>;
+  };
+  settings: {
+    schema: string;
+    processors: Record<string, ProcessorSetting>;
+  };
+  validation: {
+    processors: Record<string, ProcessorValidationStatus>;
+  };
+}
+
 export interface BatchRecord {
   batch_id: string;
   name: string;

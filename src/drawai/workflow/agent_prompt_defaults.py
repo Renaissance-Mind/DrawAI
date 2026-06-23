@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 RUN0_ELEMENT_REFINE_TASK = """DrawAI asset post-processing and element-plans task.
 
@@ -194,6 +195,7 @@ DEFAULT_PAGE_SPEC_REFINE_PROCESSING_TYPES = (
 
 def normalize_page_spec_processing_types(
     processing_types: Sequence[str] | None = None,
+    operation_catalog: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     raw_types = (
         DEFAULT_PAGE_SPEC_REFINE_PROCESSING_TYPES
@@ -210,7 +212,9 @@ def normalize_page_spec_processing_types(
         processing_type = raw_type.strip()
         if not processing_type:
             continue
-        if processing_type not in PAGE_SPEC_PROCESSING_OPERATIONS:
+        if processing_type not in PAGE_SPEC_PROCESSING_OPERATIONS and (
+            operation_catalog is None or processing_type not in operation_catalog
+        ):
             raise ValueError(f"unsupported PageSpec processing type: {processing_type}")
         if processing_type in seen:
             continue
@@ -221,10 +225,16 @@ def normalize_page_spec_processing_types(
     return tuple(normalized)
 
 
-def render_page_spec_processing_operations(processing_types: Sequence[str] | None = None) -> str:
+def render_page_spec_processing_operations(
+    processing_types: Sequence[str] | None = None,
+    operation_catalog: Mapping[str, Any] | None = None,
+) -> str:
     sections: list[str] = ["## Available Processing Operations"]
-    for processing_type in normalize_page_spec_processing_types(processing_types):
-        operation = PAGE_SPEC_PROCESSING_OPERATIONS[processing_type]
+    for processing_type in normalize_page_spec_processing_types(
+        processing_types,
+        operation_catalog=operation_catalog,
+    ):
+        operation = _page_spec_processing_operation(processing_type, operation_catalog)
         sections.append(
             "\n".join(
                 (
@@ -239,6 +249,34 @@ def render_page_spec_processing_operations(processing_types: Sequence[str] | Non
             )
         )
     return "\n\n".join(sections)
+
+
+def _page_spec_processing_operation(
+    processing_type: str,
+    operation_catalog: Mapping[str, Any] | None,
+) -> PageSpecProcessingOperation:
+    if operation_catalog is not None and processing_type in operation_catalog:
+        raw = operation_catalog[processing_type]
+        if isinstance(raw, PageSpecProcessingOperation):
+            return raw
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"page_spec_processing_operations.{processing_type} must be an object")
+        return PageSpecProcessingOperation(
+            processing_type=processing_type,
+            meaning=_operation_text(raw, "meaning", processing_type),
+            choose_when=_operation_text(raw, "choose_when", processing_type),
+            avoid_when=_operation_text(raw, "avoid_when", processing_type),
+        )
+    if processing_type not in PAGE_SPEC_PROCESSING_OPERATIONS:
+        raise ValueError(f"unsupported PageSpec processing type: {processing_type}")
+    return PAGE_SPEC_PROCESSING_OPERATIONS[processing_type]
+
+
+def _operation_text(raw: Mapping[str, Any], field_name: str, processing_type: str) -> str:
+    value = raw.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"page_spec_processing_operations.{processing_type}.{field_name} must be a non-empty string")
+    return value.strip()
 
 
 PAGE_SPEC_REFINE_TASK_PREFIX = """DrawAI PageSpec refinement task.
@@ -359,8 +397,12 @@ PAGE_SPEC_REFINE_TASK_SUFFIX = """Output requirements:
 
 def render_page_spec_refine_task(
     processing_types: Sequence[str] | None = None,
+    operation_catalog: Mapping[str, Any] | None = None,
 ) -> str:
-    processing_operations = render_page_spec_processing_operations(processing_types)
+    processing_operations = render_page_spec_processing_operations(
+        processing_types,
+        operation_catalog=operation_catalog,
+    )
     return "\n\n".join(
         (
             PAGE_SPEC_REFINE_TASK_PREFIX.strip(),

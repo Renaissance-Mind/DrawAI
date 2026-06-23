@@ -903,6 +903,8 @@ def _validate_agent_config(config: Mapping[str, Any]) -> None:
         raise ValueError("page_spec_task_customized must be a boolean")
     if "page_spec_processing_types" in config:
         _page_spec_processing_types(config)
+    if "page_spec_processing_operations" in config:
+        _page_spec_processing_operations(config)
 
 
 def _agent_options(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -981,7 +983,10 @@ def _agent_task(preset: AgentPreset, config: Mapping[str, Any]) -> str:
         and config.get("page_spec_task_customized") is not True
         and _is_default_page_spec_refine_task(task)
     ):
-        return render_page_spec_refine_task(_page_spec_processing_types(config))
+        return render_page_spec_refine_task(
+            _page_spec_processing_types(config),
+            operation_catalog=_page_spec_processing_operations(config),
+        )
     return task
 
 
@@ -996,11 +1001,32 @@ def _is_default_page_spec_refine_task(task: str) -> bool:
 
 def _page_spec_processing_types(config: Mapping[str, Any]) -> tuple[str, ...]:
     raw = config.get("page_spec_processing_types")
+    operation_catalog = _page_spec_processing_operations(config)
     if raw is None:
         return DEFAULT_PAGE_SPEC_REFINE_PROCESSING_TYPES
     if not isinstance(raw, list | tuple):
         raise ValueError("page_spec_processing_types must be an array of strings")
-    return normalize_page_spec_processing_types(raw)
+    return normalize_page_spec_processing_types(raw, operation_catalog=operation_catalog)
+
+
+def _page_spec_processing_operations(config: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    raw = config.get("page_spec_processing_operations")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError("page_spec_processing_operations must be an object")
+    for processing_type, operation in raw.items():
+        if not isinstance(processing_type, str) or not processing_type.strip():
+            raise ValueError("page_spec_processing_operations keys must be non-empty strings")
+        if not isinstance(operation, Mapping):
+            raise ValueError(f"page_spec_processing_operations.{processing_type} must be an object")
+        for field_name in ("meaning", "choose_when", "avoid_when"):
+            value = operation.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"page_spec_processing_operations.{processing_type}.{field_name} must be a non-empty string"
+                )
+    return raw
 
 
 def _agent_constraints(

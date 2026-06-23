@@ -3357,6 +3357,58 @@ button.asset-status-unsupported {
   padding: 14px 18px;
 }
 
+.settings-secondary-action {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.settings-toggle-row input {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-summary-row {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(220, 228, 222, 0.86);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+}
+
+.settings-summary-row span,
+.settings-summary-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.settings-summary-row strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 560;
+  overflow-wrap: anywhere;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+  color: var(--teal);
+  font-size: 12px;
+}
+
 .workbench-agent-settings-dialog {
   width: min(980px, calc(100vw - 48px));
   height: min(700px, calc(100vh - 48px));

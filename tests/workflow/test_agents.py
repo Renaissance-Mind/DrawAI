@@ -254,6 +254,30 @@ def test_page_spec_refine_prompt_uses_configured_processing_types() -> None:
     assert "### svg_self_draw" not in prompt.text
 
 
+def test_page_spec_refine_prompt_uses_configured_operation_catalog() -> None:
+    prompt = render_agent_prompt(
+        agent_preset_by_id("page_spec_refine"),
+        inputs=(),
+        node_config={
+            "node_id": "page_spec_refine",
+            "page_spec_processing_types": ["no_process", "image_edit"],
+            "page_spec_processing_operations": {
+                "image_edit": {
+                    "meaning": "Workspace edited image edit meaning.",
+                    "choose_when": "Workspace edited image edit choose rule.",
+                    "avoid_when": "Workspace edited image edit avoid rule.",
+                }
+            },
+        },
+    )
+
+    assert "### image_edit" in prompt.text
+    assert "Meaning: Workspace edited image edit meaning." in prompt.text
+    assert "Choose when: Workspace edited image edit choose rule." in prompt.text
+    assert "Do not choose when: Workspace edited image edit avoid rule." in prompt.text
+    assert "Edit a source crop or existing image asset" not in prompt.text
+
+
 def test_page_spec_refine_prompt_keeps_chart_rebuild_available_when_configured() -> None:
     prompt = render_agent_prompt(
         agent_preset_by_id("page_spec_refine"),

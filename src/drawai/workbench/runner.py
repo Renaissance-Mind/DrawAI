@@ -70,6 +70,7 @@ from .agent_settings import (
     read_workbench_agent_settings,
     workbench_agent_runtime_options,
 )
+from .processor_settings import resolved_processor_operation_config
 from .models import CaseRecord, WorkbenchSettings
 from .store import WorkbenchStore
 
@@ -357,6 +358,7 @@ class WorkbenchRunner:
                 template,
                 agent_settings,
                 execution_mode=batch.execution_mode,
+                processor_operation_config=resolved_processor_operation_config(self.store.workspace),
             )
             review_template = _workflow_until_first_human_review(template)
             run_template = template if batch.auto_run_svg_after_analysis or review_template is None else review_template
@@ -1409,6 +1411,7 @@ def _workflow_template_with_agent_settings(
     settings: WorkbenchAgentSettings,
     *,
     execution_mode: str = "default",
+    processor_operation_config: Mapping[str, Any] | None = None,
 ) -> WorkflowTemplate:
     mode = execution_mode.strip().lower()
     if mode not in {"default", "agent", "llm"}:
@@ -1419,6 +1422,8 @@ def _workflow_template_with_agent_settings(
             nodes.append(node)
             continue
         base_config = {**dict(node.config), "node_id": node.node_id}
+        if node.node_id == "page_spec_refine" and processor_operation_config:
+            base_config.update(processor_operation_config)
         effective_type = node.node_type if mode == "default" else mode
         if effective_type == "llm":
             nodes.append(

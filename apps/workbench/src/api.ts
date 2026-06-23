@@ -1,5 +1,7 @@
 import type {
   ArtifactRecord,
+  ApiPresetsResponse,
+  ApiPreset,
   AssetPlan,
   AssetProcessingResponse,
   BatchDetail,
@@ -10,6 +12,7 @@ import type {
   ImageEditRequest,
   ImageGenerationRequest,
   ImageGenerationResponse,
+  ProcessorSettingsResponse,
   SlideTemplateCardsResponse,
   SlideTemplateGalleryResponse,
   SvgSourceResponse,
@@ -155,6 +158,28 @@ export function saveWorkbenchAgentSettings(settings: WorkbenchAgentSettings): Pr
   return requestJson<WorkbenchAgentSettingsResponse>("/api/workbench/agent-settings", {
     method: "PUT",
     body: JSON.stringify(settings)
+  });
+}
+
+export function getApiPresets(): Promise<ApiPresetsResponse> {
+  return requestJson<ApiPresetsResponse>("/api/workbench/api-presets");
+}
+
+export function saveApiPresets(presets: ApiPreset[]): Promise<ApiPresetsResponse> {
+  return requestJson<ApiPresetsResponse>("/api/workbench/api-presets", {
+    method: "PUT",
+    body: JSON.stringify({ presets })
+  });
+}
+
+export function getProcessorSettings(): Promise<ProcessorSettingsResponse> {
+  return requestJson<ProcessorSettingsResponse>("/api/workbench/processor-settings");
+}
+
+export function saveProcessorSettings(processors: ProcessorSettingsResponse["settings"]["processors"]): Promise<ProcessorSettingsResponse> {
+  return requestJson<ProcessorSettingsResponse>("/api/workbench/processor-settings", {
+    method: "PUT",
+    body: JSON.stringify({ processors })
   });
 }
 
