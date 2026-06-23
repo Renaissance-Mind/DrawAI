@@ -929,8 +929,7 @@ select:focus {
   padding-bottom: 96px;
 }
 
-.batch-download-floating,
-.settings-preset-floating {
+.batch-download-floating {
   position: absolute;
   right: 20px;
   z-index: 24;
@@ -952,21 +951,6 @@ select:focus {
 
 .batch-download-floating {
   bottom: 20px;
-}
-
-.settings-preset-floating {
-  right: 18px;
-  bottom: 18px;
-  border-color: rgba(15, 150, 103, 0.38);
-  background: #16a875;
-  color: #ffffff;
-  box-shadow: 0 14px 32px rgba(15, 150, 103, 0.28);
-}
-
-.settings-preset-floating:hover {
-  background: #0f9667;
-  transform: translateY(-1px);
-  box-shadow: 0 18px 38px rgba(15, 150, 103, 0.32);
 }
 
 .batch-download-floating.ready {
@@ -995,11 +979,6 @@ select:focus {
 .batch-download-floating .button-spinner {
   width: 18px;
   height: 18px;
-}
-
-.settings-preset-floating .plus-icon {
-  width: 24px;
-  height: 24px;
 }
 
 .batch-list-modern {
@@ -3483,10 +3462,6 @@ button.asset-status-unsupported {
   grid-column: 2;
 }
 
-.agent-settings-shell.category-api .agent-settings-panel {
-  padding-bottom: 72px;
-}
-
 .settings-nav,
 .agent-settings-list-panel,
 .agent-settings-list,
@@ -3699,6 +3674,63 @@ button.asset-status-unsupported {
 
 .agent-option.missing:not(.active) {
   color: var(--muted);
+}
+
+.agent-option-add {
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed rgba(105, 118, 111, 0.38);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  margin: 12px 0 0;
+  padding: 16px 14px;
+  text-align: center;
+}
+
+.agent-option-add:hover {
+  border-color: rgba(40, 52, 45, 0.34);
+  background: rgba(40, 52, 45, 0.03);
+  color: var(--ink-soft);
+}
+
+.agent-option-add:focus-visible {
+  outline: 2px solid rgba(40, 52, 45, 0.32);
+  outline-offset: 3px;
+}
+
+.agent-option-add-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: inherit;
+}
+
+.agent-option-add-icon .plus-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.agent-option-add-text {
+  display: grid;
+  gap: 3px;
+}
+
+.agent-option-add-text strong {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 660;
+}
+
+.agent-option-add-text em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 560;
 }
 
 .agent-option-main {

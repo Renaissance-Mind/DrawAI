@@ -1634,7 +1634,19 @@ function WorkbenchSettingsCenter({
                       <span className="agent-option-meta">{preset.model || "未设置模型"}</span>
                     </button>
                   ))}
-                  {apiDrafts.length === 0 && <div className="agent-settings-empty">还没有 API 预设</div>}
+                  <button
+                    type="button"
+                    className="agent-option agent-option-add"
+                    onClick={createApiPresetDraft}
+                  >
+                    <span className="agent-option-add-icon" aria-hidden="true">
+                      <PlusIcon />
+                    </span>
+                    <span className="agent-option-add-text">
+                      <strong>{apiDrafts.length === 0 ? "还没有 API 预设" : "新建 API 预设"}</strong>
+                      <em>{apiDrafts.length === 0 ? "点击添加第一个预设" : "添加新的 API 预设"}</em>
+                    </span>
+                  </button>
                 </div>
               </div>
             )}
@@ -2015,17 +2027,6 @@ function WorkbenchSettingsCenter({
                 </div>
               )}
             </div>
-            {settingsCategory === "api" && (
-              <button
-                type="button"
-                className="settings-preset-floating"
-                title="新建预设"
-                aria-label="新建预设"
-                onClick={createApiPresetDraft}
-              >
-                <PlusIcon />
-              </button>
-            )}
           </div>
         </div>
         <footer className="settings-actions">
