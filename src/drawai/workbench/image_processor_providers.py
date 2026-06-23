@@ -21,6 +21,9 @@ from .api_presets import ApiPreset, api_preset_by_id, read_workbench_api_presets
 from .processor_settings import require_processor_configured
 
 MAX_GENERATED_IMAGE_BYTES = 50 * 1024 * 1024
+_DEFAULT_RETRY_ATTEMPTS = 3
+_DEFAULT_RETRY_DELAY_SECONDS = 1.0
+_TRANSIENT_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 urlopen_external = urllib.request.urlopen
 
 
@@ -127,13 +130,7 @@ def call_image_generation_upstream(
         method="POST",
     )
     timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
-    try:
-        with urlopen_external(request, timeout=timeout) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        raise HTTPException(status_code=exc.code or 502, detail=_image_generation_error_detail(exc)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HTTPException(status_code=502, detail=f"image generation request failed: {exc}") from exc
+    raw = _read_images_api_request(request, timeout=timeout, operation="image generation")
     try:
         decoded = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
@@ -179,13 +176,7 @@ def call_image_edit_upstream(
         method="POST",
     )
     timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
-    try:
-        with urlopen_external(request, timeout=timeout) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        raise HTTPException(status_code=exc.code or 502, detail=_image_generation_error_detail(exc)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HTTPException(status_code=502, detail=f"image edit request failed: {exc}") from exc
+    raw = _read_images_api_request(request, timeout=timeout, operation="image edit")
     try:
         decoded = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
@@ -441,13 +432,7 @@ def _get_image_generation_task(task_url: str, api_key: str) -> dict[str, Any]:
         method="GET",
     )
     timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
-    try:
-        with urlopen_external(request, timeout=timeout) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        raise HTTPException(status_code=exc.code or 502, detail=_image_generation_error_detail(exc)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HTTPException(status_code=502, detail=f"image generation task polling failed: {exc}") from exc
+    raw = _read_images_api_request(request, timeout=timeout, operation="image generation task polling")
     try:
         decoded = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
@@ -531,6 +516,36 @@ def _image_generation_error_detail(exc: urllib.error.HTTPError) -> str:
     return f"image generation upstream returned HTTP {exc.code}"
 
 
+def _read_images_api_request(
+    request: urllib.request.Request,
+    *,
+    timeout: float,
+    operation: str,
+) -> bytes:
+    attempts = _optional_positive_int_env("DRAWAI_IMAGEGEN_RETRY_ATTEMPTS") or _DEFAULT_RETRY_ATTEMPTS
+    delay = _optional_positive_float_env("DRAWAI_IMAGEGEN_RETRY_DELAY_SECONDS") or _DEFAULT_RETRY_DELAY_SECONDS
+    for attempt in range(1, attempts + 1):
+        try:
+            with urlopen_external(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            detail = _image_generation_error_detail(exc)
+            if attempt < attempts and _retryable_http_status(exc.code):
+                time.sleep(delay * attempt)
+                continue
+            raise HTTPException(status_code=exc.code or 502, detail=detail) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            if attempt < attempts:
+                time.sleep(delay * attempt)
+                continue
+            raise HTTPException(status_code=502, detail=f"{operation} request failed: {exc}") from exc
+    raise RuntimeError(f"{operation} request retry loop exhausted unexpectedly")
+
+
+def _retryable_http_status(status_code: int | None) -> bool:
+    return int(status_code or 0) in _TRANSIENT_HTTP_STATUS_CODES
+
+
 def _image_suffix_from_mime(mime_type: str) -> str:
     return {
         "image/png": ".png",
@@ -569,6 +584,17 @@ def _optional_positive_float_env(name: str) -> float | None:
         return None
     try:
         parsed = float(value)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _optional_positive_int_env(name: str) -> int | None:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
     except ValueError:
         return None
     return parsed if parsed > 0 else None

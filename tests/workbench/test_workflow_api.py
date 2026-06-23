@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import threading
+import urllib.error
 import zipfile
 from pathlib import Path
 from typing import Mapping
@@ -568,6 +569,52 @@ def test_images_api_urls_replace_specific_endpoint_base_urls() -> None:
     assert image_generation_api_url("https://api.apimart.ai/v1/images/edits") == (
         "https://api.apimart.ai/v1/images/generations"
     )
+
+
+def test_images_api_generation_retries_transient_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from drawai.workbench import image_processor_providers as provider_module
+
+    calls = 0
+    buffer = io.BytesIO()
+    Image.new("RGB", (3, 2), "#1f77b4").save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    payload = json.dumps({"data": [{"id": "img_1", "b64_json": encoded}]}).encode("utf-8")
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return payload
+
+    def fake_urlopen(request: object, timeout: float) -> Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise urllib.error.HTTPError(
+                "https://api.example/v1/images/generations",
+                504,
+                "Gateway Timeout",
+                {},
+                io.BytesIO(b'{"detail":"origin timeout"}'),
+            )
+        return Response()
+
+    monkeypatch.setattr(provider_module, "urlopen_external", fake_urlopen)
+    monkeypatch.setenv("DRAWAI_IMAGEGEN_RETRY_DELAY_SECONDS", "0.001")
+    response = provider_module.call_image_generation_upstream(
+        {"model": "gpt-image-2", "prompt": "Draw it", "n": 1},
+        api_url="https://api.example/v1/images/generations",
+        api_key="plain-test-key",
+    )
+
+    assert calls == 2
+    assert response["data"][0]["id"] == "img_1"
 
 
 def test_workbench_processor_settings_api_rejects_invalid_processor_settings(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 
 from PIL import Image
@@ -343,6 +344,54 @@ def test_materialize_page_spec_assets_processes_image_elements_in_parallel(tmp_p
 
     assert len(calls) == 2
     assert [element["materialization"]["status"] for element in materialized["elements"]] == ["ok", "ok"]
+
+
+def test_materialize_page_spec_assets_defaults_to_bounded_parallel_workers(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGBA", (96, 64), (255, 255, 255, 255)).save(source)
+    output_dir = tmp_path / "bundle"
+    active_calls = 0
+    max_active_calls = 0
+    calls_lock = threading.Lock()
+
+    def fake_generate(**kwargs):
+        nonlocal active_calls, max_active_calls
+        with calls_lock:
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+        time.sleep(0.03)
+        with calls_lock:
+            active_calls -= 1
+        result_dir = Path(kwargs["output_dir"])
+        result_dir.mkdir(parents=True, exist_ok=True)
+        result_path = result_dir / "generated.png"
+        Image.new("RGBA", (18, 12), (20, 90, 220, 255)).save(result_path)
+        return _FakeProviderResult("generate", result_dir, result_path)
+
+    page_spec = _page_spec(
+        "refine",
+        [
+            {
+                "id": f"E{index:03d}",
+                "kind": "image",
+                "role": "representation",
+                "box_px": [2 + index, 3, 18, 12],
+                "z_index": index,
+                "build": {"mode": "asset_ref", "processing_type": "image_generate"},
+            }
+            for index in range(1, 10)
+        ],
+    )
+
+    materialized = materialize_page_spec_assets(
+        page_spec,
+        source_image_path=source,
+        output_dir=output_dir,
+        image_generate=fake_generate,
+    )
+
+    assert 1 < max_active_calls <= 4
+    assert [element["materialization"]["status"] for element in materialized["elements"]] == ["ok"] * 9
 
 
 def test_page_spec_svg_draft_tool_promotes_validated_draft_outputs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

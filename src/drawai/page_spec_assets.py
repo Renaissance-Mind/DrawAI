@@ -20,6 +20,7 @@ from drawai.v2.schema import ElementPlan, ProcessingIntent, utc_now
 _RASTER_PROCESSING_TYPES = {"crop", "crop_nobg"}
 _IMAGE_PROCESSING_TYPES = {"image_generate", "image_edit"}
 _NON_MATERIALIZED_PROCESSING_TYPES = {"no_process", "svg_self_draw", "chart_rebuild_reserved"}
+_DEFAULT_PROCESSOR_WORKERS = 4
 
 
 def materialize_page_spec_assets(
@@ -76,7 +77,7 @@ def materialize_page_spec_assets(
             )
         raise RuntimeError(f"unsupported PageSpec build.processing_type for element {element_id}: {processing_type}")
 
-    workers = max(1, int(processor_workers or min(8, max(1, len(elements)))))
+    workers = max(1, int(processor_workers or min(_DEFAULT_PROCESSOR_WORKERS, max(1, len(elements)))))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         materialized_by_id = dict(executor.map(materialize_one, elements))
 
