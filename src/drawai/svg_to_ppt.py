@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -48,11 +48,6 @@ SVG_TO_PPT_POSITIONED_TSPAN_INHERITED_ATTRS = (
 )
 SVG_TO_PPT_TSPAN_TEXT_WIDTH_FALLBACK_EM_RATIO = 0.6
 SVG_TO_PPT_FONT_MEASURE_SCALE = 4
-SVG_TO_PPT_FORMULA_OFFICE_MATH_WIDTH_EXPANSION = 1.12
-SVG_TO_PPT_FORMULA_OFFICE_MATH_HEIGHT_EXPANSION = 1.08
-SVG_TO_PPT_FORMULA_WIDTH_FIT_RATIO = 0.98
-SVG_TO_PPT_FORMULA_HEIGHT_FIT_RATIO = 0.96
-SVG_TO_PPT_FORMULA_MIN_FONT_SIZE = 4.0
 SVG_TO_PPT_GENERIC_FONT_FAMILY_PATHS = {
     "arial": (
         "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -130,8 +125,6 @@ class SvgFormulaStyle:
     fill: str | None = None
     font_weight: str | None = None
     font_style: str | None = None
-    math_font_size: float | None = None
-    math_font_fit_scale: float | None = None
 
 
 @dataclass(frozen=True)
@@ -334,49 +327,6 @@ def _fallback_formula_style(element: ElementTree.Element) -> SvgFormulaStyle:
     )
 
 
-def _fit_formula_style_to_bbox(
-    style: SvgFormulaStyle,
-    bbox: tuple[float, float, float, float],
-    fallback_bbox: tuple[float, float, float, float] | None,
-) -> SvgFormulaStyle:
-    if style.font_size is None or style.font_size <= 0:
-        return style
-
-    scale_candidates: list[float] = []
-    if fallback_bbox is not None:
-        fallback_width = fallback_bbox[2]
-        fallback_height = fallback_bbox[3]
-        if fallback_width > 0:
-            scale_candidates.append(
-                (bbox[2] * SVG_TO_PPT_FORMULA_WIDTH_FIT_RATIO)
-                / (fallback_width * SVG_TO_PPT_FORMULA_OFFICE_MATH_WIDTH_EXPANSION)
-            )
-        if fallback_height > 0:
-            scale_candidates.append(
-                (bbox[3] * SVG_TO_PPT_FORMULA_HEIGHT_FIT_RATIO)
-                / (fallback_height * SVG_TO_PPT_FORMULA_OFFICE_MATH_HEIGHT_EXPANSION)
-            )
-    else:
-        estimated_height = style.font_size * 1.2 * SVG_TO_PPT_FORMULA_OFFICE_MATH_HEIGHT_EXPANSION
-        if estimated_height > 0:
-            scale_candidates.append(
-                (bbox[3] * SVG_TO_PPT_FORMULA_HEIGHT_FIT_RATIO) / estimated_height
-            )
-
-    positive_scales = [scale for scale in scale_candidates if scale > 0]
-    if not positive_scales:
-        return style
-
-    fit_scale = min(1.0, min(positive_scales))
-    fitted_font_size = max(SVG_TO_PPT_FORMULA_MIN_FONT_SIZE, style.font_size * fit_scale)
-    effective_scale = min(1.0, fitted_font_size / style.font_size)
-    return replace(
-        style,
-        math_font_size=fitted_font_size,
-        math_font_fit_scale=effective_scale,
-    )
-
-
 def _should_replace_formula_bbox_with_fallback(
     metadata_bbox: tuple[float, float, float, float],
     fallback_bbox: tuple[float, float, float, float],
@@ -473,7 +423,6 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
                     "reason": "fallback_text_bbox_misaligned",
                 }
             )
-        style = _fit_formula_style_to_bbox(style, bbox, fallback_bbox)
         specs.append(
             SvgFormulaSpec(
                 element_id=element_id,
@@ -508,10 +457,6 @@ def _formula_style_report(style: SvgFormulaStyle) -> dict[str, Any]:
         report["font_family"] = style.font_family
     if style.font_size is not None:
         report["font_size"] = style.font_size
-    if style.math_font_size is not None:
-        report["math_font_size"] = style.math_font_size
-    if style.math_font_fit_scale is not None:
-        report["math_font_fit_scale"] = style.math_font_fit_scale
     if style.fill:
         report["fill"] = style.fill
     if style.font_weight:
@@ -701,17 +646,10 @@ def _office_math_element(omml_xml: str) -> ElementTree.Element:
     raise SvgToPptError("Formula converter returned XML without an a14:m or m:oMathPara root.")
 
 
-def _formula_effective_font_size(style: SvgFormulaStyle) -> float | None:
-    if style.math_font_size is not None and style.math_font_size > 0:
-        return style.math_font_size
-    return style.font_size
-
-
 def _formula_drawing_run_attrs(style: SvgFormulaStyle) -> dict[str, str]:
     attrs: dict[str, str] = {}
-    font_size = _formula_effective_font_size(style)
-    if font_size is not None and font_size > 0:
-        attrs["sz"] = str(max(100, int(round(font_size * 100))))
+    if style.font_size is not None and style.font_size > 0:
+        attrs["sz"] = str(max(100, int(round(style.font_size * 100))))
     if _svg_font_weight_is_bold(style.font_weight or ""):
         attrs["b"] = "1"
     if (style.font_style or "").strip().lower() in {"italic", "oblique"}:
@@ -741,34 +679,20 @@ def _primary_svg_font_family(font_family: str | None) -> str | None:
     return names[0].title() if names else None
 
 
-def _formula_has_drawing_style(style: SvgFormulaStyle) -> bool:
+def _append_formula_drawing_style(parent: ElementTree.Element, style: SvgFormulaStyle) -> None:
     run_attrs = _formula_drawing_run_attrs(style)
     fill = _svg_color_to_srgb_hex(style.fill)
     typeface = _primary_svg_font_family(style.font_family)
-    return bool(run_attrs) or fill is not None or typeface is not None
+    if not run_attrs and fill is None and typeface is None:
+        return
 
-
-def _append_formula_run_visuals(run_element: ElementTree.Element, style: SvgFormulaStyle) -> None:
-    fill = _svg_color_to_srgb_hex(style.fill)
-    typeface = _primary_svg_font_family(style.font_family)
+    default_run = ElementTree.SubElement(parent, f"{{{PPTX_DRAWING_NAMESPACE}}}defRPr", run_attrs)
     if fill is not None:
-        solid_fill = ElementTree.SubElement(run_element, f"{{{PPTX_DRAWING_NAMESPACE}}}solidFill")
+        solid_fill = ElementTree.SubElement(default_run, f"{{{PPTX_DRAWING_NAMESPACE}}}solidFill")
         ElementTree.SubElement(solid_fill, f"{{{PPTX_DRAWING_NAMESPACE}}}srgbClr", {"val": fill})
     if typeface is not None:
         for tag_name in ("latin", "ea", "cs"):
-            ElementTree.SubElement(run_element, f"{{{PPTX_DRAWING_NAMESPACE}}}{tag_name}", {"typeface": typeface})
-
-
-def _append_formula_drawing_style(parent: ElementTree.Element, style: SvgFormulaStyle) -> None:
-    if not _formula_has_drawing_style(style):
-        return
-
-    default_run = ElementTree.SubElement(
-        parent,
-        f"{{{PPTX_DRAWING_NAMESPACE}}}defRPr",
-        _formula_drawing_run_attrs(style),
-    )
-    _append_formula_run_visuals(default_run, style)
+            ElementTree.SubElement(default_run, f"{{{PPTX_DRAWING_NAMESPACE}}}{tag_name}", {"typeface": typeface})
 
 
 def _office_math_style_value(style: SvgFormulaStyle) -> str | None:
@@ -785,32 +709,17 @@ def _office_math_style_value(style: SvgFormulaStyle) -> str | None:
 
 def _apply_office_math_style(math_element: ElementTree.Element, style: SvgFormulaStyle) -> None:
     style_value = _office_math_style_value(style)
-    apply_drawing_style = _formula_has_drawing_style(style)
-    if style_value is None and not apply_drawing_style:
+    if style_value is None:
         return
     for run in math_element.iter(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}r"):
         run_properties = run.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}rPr")
         if run_properties is None:
             run_properties = ElementTree.Element(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}rPr")
             run.insert(0, run_properties)
-        if style_value is not None:
-            sty = run_properties.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
-            if sty is None:
-                sty = ElementTree.SubElement(run_properties, f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
-            sty.set(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}val", style_value)
-        if apply_drawing_style:
-            ctrl_pr = run_properties.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}ctrlPr")
-            if ctrl_pr is None:
-                ctrl_pr = ElementTree.SubElement(run_properties, f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}ctrlPr")
-            for child in list(ctrl_pr):
-                if child.tag == f"{{{PPTX_DRAWING_NAMESPACE}}}rPr":
-                    ctrl_pr.remove(child)
-            drawing_run_properties = ElementTree.SubElement(
-                ctrl_pr,
-                f"{{{PPTX_DRAWING_NAMESPACE}}}rPr",
-                _formula_drawing_run_attrs(style),
-            )
-            _append_formula_run_visuals(drawing_run_properties, style)
+        sty = run_properties.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
+        if sty is None:
+            sty = ElementTree.SubElement(run_properties, f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
+        sty.set(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}val", style_value)
 
 
 def _append_office_math_shape(

@@ -1,5 +1,4 @@
 import base64
-import re
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -288,45 +287,13 @@ def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_
     assert 'wrap="none" anchor="ctr" rtlCol="0" lIns="0" tIns="0" rIns="0" bIns="0"' in formula_xml
     assert "<a:noAutofit" in formula_xml
     assert "<a:spAutoFit" not in formula_xml
-    formula_font_match = re.search(r'<a:defRPr sz="(\d+)" b="1" i="1">', formula_xml)
-    assert formula_font_match is not None
-    assert int(formula_font_match.group(1)) < 2800
-    ctrl_font_match = re.search(r'<m:ctrlPr><a:rPr sz="(\d+)" b="1" i="1">', formula_xml)
-    assert ctrl_font_match is not None
-    assert ctrl_font_match.group(1) == formula_font_match.group(1)
+    assert '<a:defRPr sz="2800" b="1" i="1">' in formula_xml
     assert '<a:srgbClr val="0070C0"' in formula_xml
     assert '<a:latin typeface="Times New Roman"' in formula_xml
     assert '<m:sty m:val="bi"' in formula_xml
     assert "<m:oMathPara" in slide_xml
     assert "converted office math" in slide_xml
     assert "SVG fallback formula only" not in slide_xml
-
-
-def test_formula_collection_fits_math_font_size_to_formula_frame_width(tmp_path):
-    latex = r"E = mc^2"
-    latex_b64 = base64.b64encode(latex.encode("utf-8")).decode("ascii")
-    source = tmp_path / "semantic.svg"
-    source.write_text(
-        f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
-  <g id="formula-energy" data-pb-role="formula" data-pb-editable="true"
-     data-pb-formula-latex-b64="{latex_b64}" data-pb-formula-bbox="100 100 180 48">
-    <text x="100" y="136" textLength="180" font-family="Times New Roman, Times, serif"
-          font-size="32" fill="#111111" data-pb-role="formula"
-          data-pb-editable="true">energy fallback</text>
-  </g>
-</svg>""",
-        encoding="utf-8",
-    )
-
-    specs, report = svg_to_ppt._collect_svg_formula_specs(source)
-
-    assert len(specs) == 1
-    assert specs[0].style.font_size == 32
-    assert specs[0].style.math_font_size is not None
-    assert 20 < specs[0].style.math_font_size < 32
-    assert report["items"][0]["style"]["font_size"] == 32
-    assert report["items"][0]["style"]["math_font_size"] == specs[0].style.math_font_size
-    assert 0 < report["items"][0]["style"]["math_font_fit_scale"] < 1
 
 
 def test_formula_collection_corrects_misaligned_formula_bbox_from_fallback_text(tmp_path):
