@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -287,6 +286,58 @@ def test_materialize_page_spec_assets_runs_image_generate_and_edit(tmp_path: Pat
     assert second["materialization"]["processing_type"] == "image_edit"
     assert (output_dir / first["materialization"]["outputs"]["active"]["path"]).is_file()
     assert (output_dir / second["materialization"]["outputs"]["active"]["path"]).is_file()
+
+
+def test_materialize_page_spec_assets_processes_image_elements_in_parallel(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGBA", (96, 64), (255, 255, 255, 255)).save(source)
+    output_dir = tmp_path / "bundle"
+    barrier = threading.Barrier(2)
+    calls: list[str] = []
+    calls_lock = threading.Lock()
+
+    def fake_generate(**kwargs):
+        with calls_lock:
+            calls.append(str(kwargs["prompt"]))
+        barrier.wait(timeout=2.0)
+        result_dir = Path(kwargs["output_dir"])
+        result_dir.mkdir(parents=True, exist_ok=True)
+        result_path = result_dir / "generated.png"
+        Image.new("RGBA", (18, 12), (20, 90, 220, 255)).save(result_path)
+        return _FakeProviderResult("generate", result_dir, result_path)
+
+    page_spec = _page_spec(
+        "refine",
+        [
+            {
+                "id": "E001",
+                "kind": "image",
+                "role": "representation",
+                "box_px": [2, 3, 18, 12],
+                "z_index": 1,
+                "build": {"mode": "asset_ref", "processing_type": "image_generate"},
+            },
+            {
+                "id": "E002",
+                "kind": "image",
+                "role": "representation",
+                "box_px": [24, 3, 18, 12],
+                "z_index": 2,
+                "build": {"mode": "asset_ref", "processing_type": "image_generate"},
+            },
+        ],
+    )
+
+    materialized = materialize_page_spec_assets(
+        page_spec,
+        source_image_path=source,
+        output_dir=output_dir,
+        image_generate=fake_generate,
+        processor_workers=2,
+    )
+
+    assert len(calls) == 2
+    assert [element["materialization"]["status"] for element in materialized["elements"]] == ["ok", "ok"]
 
 
 def test_page_spec_svg_draft_tool_promotes_validated_draft_outputs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

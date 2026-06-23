@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import threading
 import zipfile
 from pathlib import Path
 from typing import Mapping
@@ -500,7 +501,14 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
         ],
         "metadata": {},
     }
-    upstream_calls: list[str] = []
+    upstream_calls: list[tuple[str, str]] = []
+    upstream_lock = threading.Lock()
+
+    def image_response(image_id: str) -> dict[str, object]:
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 3), "#1f77b4").save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return {"data": [{"id": image_id, "b64_json": encoded}]}
 
     def fake_upstream(
         payload: Mapping[str, object],
@@ -508,17 +516,31 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
         api_url: str,
         api_key: str | None = None,
     ) -> dict[str, object]:
-        upstream_calls.append(api_url)
+        with upstream_lock:
+            upstream_calls.append(("generate", api_url))
         assert api_key == "plain-test-key"
-        buffer = io.BytesIO()
-        Image.new("RGB", (4, 3), "#1f77b4").save(buffer, format="PNG")
-        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-        return {"data": [{"id": f"img_{len(upstream_calls)}", "b64_json": encoded}]}
+        assert payload["model"] == "gpt-image-2"
+        return image_response("img_generate")
+
+    def fake_edit_upstream(
+        payload: Mapping[str, object],
+        *,
+        source_image_path: str | Path,
+        api_url: str,
+        api_key: str | None = None,
+    ) -> dict[str, object]:
+        with upstream_lock:
+            upstream_calls.append(("edit", api_url))
+        assert api_key == "plain-test-key"
+        assert payload["model"] == "gpt-image-2"
+        assert Path(source_image_path).is_file()
+        return image_response("img_edit")
 
     from drawai.page_spec_assets import materialize_page_spec_assets
     from drawai.workbench import image_processor_providers as provider_module
 
     monkeypatch.setattr(provider_module, "call_image_generation_upstream", fake_upstream)
+    monkeypatch.setattr(provider_module, "call_image_edit_upstream", fake_edit_upstream)
     materialized = materialize_page_spec_assets(
         page_spec,
         source_image_path=source,
@@ -526,9 +548,9 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
         **provider_module.asset_prepare_image_providers(tmp_path / "workspace"),
     )
 
-    assert upstream_calls == [
-        "https://api.apimart.example/v1/images/generations",
-        "https://api.apimart.example/v1/images/edits",
+    assert sorted(upstream_calls) == [
+        ("edit", "https://api.apimart.example/v1/images/edits"),
+        ("generate", "https://api.apimart.example/v1/images/generations"),
     ]
     assert materialized["elements"][0]["materialization"]["processing_type"] == "image_generate"
     assert materialized["elements"][1]["materialization"]["processing_type"] == "image_edit"

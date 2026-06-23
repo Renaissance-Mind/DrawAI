@@ -81,8 +81,9 @@ def images_api_edit_provider(preset: ApiPreset) -> Callable[..., Mapping[str, An
         output_path = Path(output_dir).expanduser().resolve(strict=False)
         output_path.mkdir(parents=True, exist_ok=True)
         request_payload = _images_api_payload(preset, prompt, runtime_config=runtime_config)
-        response_payload = call_image_generation_upstream(
+        response_payload = call_image_edit_upstream(
             request_payload,
+            source_image_path=source_image_path,
             api_url=image_edit_api_url(preset.base_url),
             api_key=_api_preset_key(preset),
         )
@@ -145,6 +146,58 @@ def call_image_generation_upstream(
     return decoded
 
 
+def call_image_edit_upstream(
+    payload: Mapping[str, Any],
+    *,
+    source_image_path: str | Path,
+    api_url: str,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    api_key = api_key or os.environ.get("DRAWAI_IMAGEGEN_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="DRAWAI_IMAGEGEN_API_KEY or OPENAI_API_KEY is required for image editing")
+    source_path = Path(source_image_path).expanduser().resolve(strict=False)
+    if not source_path.is_file():
+        raise HTTPException(status_code=400, detail=f"image edit source image does not exist: {source_path}")
+    source_bytes = source_path.read_bytes()
+    if len(source_bytes) > MAX_GENERATED_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="image edit source image is too large")
+    body, content_type = _multipart_image_edit_body(
+        payload,
+        source_name=source_path.name,
+        source_bytes=source_bytes,
+        source_media_type=_media_type(source_path),
+    )
+    request = urllib.request.Request(
+        api_url,
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": content_type,
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    timeout = _optional_positive_float_env("DRAWAI_IMAGEGEN_TIMEOUT_SECONDS") or 600.0
+    try:
+        with urlopen_external(request, timeout=timeout) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code or 502, detail=_image_generation_error_detail(exc)) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"image edit request failed: {exc}") from exc
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="image edit upstream returned non-JSON response") from exc
+    if not isinstance(decoded, dict):
+        raise HTTPException(status_code=502, detail="image edit upstream JSON response must be an object")
+    task_id = _image_generation_task_id(decoded)
+    if task_id:
+        return _poll_image_generation_task(api_url, api_key, task_id)
+    return decoded
+
+
 def _processor_api_preset(workspace: str | Path, processor: str, api_preset_id: str) -> ApiPreset:
     preset = api_preset_by_id(read_workbench_api_presets(workspace), api_preset_id)
     if preset is None:
@@ -193,6 +246,54 @@ def _provider_result(
         "output_dir": str(output_path),
         "images": [dict(image_payload)],
     }
+
+
+def _multipart_image_edit_body(
+    payload: Mapping[str, Any],
+    *,
+    source_name: str,
+    source_bytes: bytes,
+    source_media_type: str,
+) -> tuple[bytes, str]:
+    boundary = f"drawai-{binascii.hexlify(os.urandom(12)).decode('ascii')}"
+    chunks: list[bytes] = []
+    for key, value in payload.items():
+        if value is None or value == "":
+            continue
+        chunks.extend(
+            (
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{_quote_multipart_name(str(key))}"\r\n\r\n'.encode("utf-8"),
+                _multipart_scalar_value(value).encode("utf-8"),
+                b"\r\n",
+            )
+        )
+    chunks.extend(
+        (
+            f"--{boundary}\r\n".encode("utf-8"),
+            (
+                'Content-Disposition: form-data; name="image"; '
+                f'filename="{_quote_multipart_name(source_name)}"\r\n'
+            ).encode("utf-8"),
+            f"Content-Type: {source_media_type}\r\n\r\n".encode("utf-8"),
+            source_bytes,
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("utf-8"),
+        )
+    )
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def _multipart_scalar_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float | str):
+        return str(value)
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _quote_multipart_name(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "")
 
 
 def _image_api_url(base_url: Any, *, endpoint: str) -> str:
@@ -471,6 +572,7 @@ def _optional_positive_float_env(name: str) -> float | None:
 
 __all__ = [
     "asset_prepare_image_providers",
+    "call_image_edit_upstream",
     "call_image_generation_upstream",
     "image_edit_api_url",
     "image_generation_api_url",
