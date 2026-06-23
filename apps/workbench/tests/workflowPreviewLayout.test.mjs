@@ -84,6 +84,71 @@ test("running edge animation only applies to edges entering the running node", a
   assert.equal(dagRunEdgeState("done", "done"), "done");
 });
 
+test("error detail text stays complete for processing failures", async () => {
+  const { errorDetailText } = await loadTsModule("../src/workflowRunState.ts");
+  const message = [
+    "Traceback (most recent call last):",
+    "  File \"/tmp/drawai/run.py\", line 42, in compose_svg",
+    "    raise RuntimeError('render failed because the generated SVG references a missing asset with a very long path')",
+    "RuntimeError: render failed because the generated SVG references a missing asset with a very long path and includes detailed recovery instructions"
+  ].join("\n");
+
+  assert.equal(errorDetailText(message), message);
+  assert.ok(errorDetailText(message).length > 180);
+});
+
+test("rerun stage status uses the newest run across progress and detail", async () => {
+  const { mergedStageRuns, workflowStageState } = await loadTsModule("../src/workflowRunState.ts");
+  const oldFailure = stageRun({
+    stageRunId: "compose-old",
+    stageName: "compose_svg",
+    status: "failed",
+    attempt: 1,
+    startedAt: "2026-06-23T04:00:00Z",
+    endedAt: "2026-06-23T04:01:00Z",
+    errorMessage: "old compose failure"
+  });
+  const freshRunning = stageRun({
+    stageRunId: "compose-new",
+    stageName: "compose_svg",
+    status: "running",
+    attempt: 2,
+    startedAt: "2026-06-23T04:02:00Z",
+    endedAt: "",
+    errorMessage: ""
+  });
+
+  const runs = mergedStageRuns([freshRunning], [oldFailure]);
+  const state = workflowStageState("compose_svg", caseRecord({ status: "svg_running", stage: "compose_svg" }), runs, [], []);
+
+  assert.equal(state.state, "running");
+  assert.equal(state.error, "");
+});
+
+test("optimistic rerun status overrides an older failed run before the new run is recorded", async () => {
+  const { workflowStageState } = await loadTsModule("../src/workflowRunState.ts");
+  const oldFailure = stageRun({
+    stageRunId: "compose-old",
+    stageName: "compose_svg",
+    status: "failed",
+    attempt: 1,
+    startedAt: "2026-06-23T04:00:00Z",
+    endedAt: "2026-06-23T04:01:00Z",
+    errorMessage: "old compose failure"
+  });
+
+  const state = workflowStageState(
+    "compose_svg",
+    caseRecord({ status: "svg_running", stage: "compose_svg" }),
+    [oldFailure],
+    [],
+    []
+  );
+
+  assert.equal(state.state, "running");
+  assert.equal(state.error, "");
+});
+
 async function loadLayoutModule() {
   layoutModulePromise ||= loadTsModule("../src/workflowPreviewLayout.ts");
   return layoutModulePromise;
@@ -177,6 +242,48 @@ function edge(sourceNodeId, targetNodeId) {
     target_node_id: targetNodeId,
     target_port_id: "in",
     enabled_types: ["image"]
+  };
+}
+
+function caseRecord({ status = "queued", stage = "prepare", phase = "analysis", errorMessage = "", staleFromStage = "" } = {}) {
+  return {
+    case_id: "case-1",
+    batch_id: "batch-1",
+    name: "case 1",
+    status,
+    phase,
+    stage,
+    source_image_path: "input.png",
+    preview_url: "",
+    editor_ready: false,
+    run_root: "/tmp/drawai/case-1",
+    config_path: "/tmp/drawai/config.yaml",
+    error_message: errorMessage,
+    stale_from_stage: staleFromStage,
+    compatibility_mode: "v2",
+    can_fork_from_source: false
+  };
+}
+
+function stageRun({
+  stageRunId,
+  stageName,
+  status,
+  attempt,
+  startedAt,
+  endedAt,
+  errorMessage
+}) {
+  return {
+    stage_run_id: stageRunId,
+    case_id: "case-1",
+    stage_name: stageName,
+    status,
+    attempt,
+    started_at: startedAt,
+    ended_at: endedAt,
+    log_path: "",
+    error_message: errorMessage
   };
 }
 
