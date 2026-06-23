@@ -398,6 +398,14 @@ def processor_test_page_spec_assets_workflow_template() -> WorkflowTemplate:
                         "crop/crop_nobg/image_generate/image_edit elements contain active materialization paths."
                     ),
                 ),
+                _output(
+                    "processor_preview",
+                    "Processor Preview",
+                    ("semantic_svg",),
+                    formats=("drawai.semantic_svg.v1",),
+                    deliverable=True,
+                    description="Deterministic SVG preview that places processed active assets back into PageSpec boxes.",
+                ),
             )
             nodes.append(replace(node, outputs=outputs, position={"x": 1120, "y": 160}))
             continue
@@ -409,7 +417,7 @@ def processor_test_page_spec_assets_workflow_template() -> WorkflowTemplate:
                         _input(
                             "deliverables",
                             "Deliverables",
-                            ("page_spec",),
+                            ("page_spec", "semantic_svg"),
                             cardinality="many",
                             description="Collect processor-test PageSpec outputs from asset_prepare.",
                         ),
@@ -431,6 +439,7 @@ def processor_test_page_spec_assets_workflow_template() -> WorkflowTemplate:
     edges = (
         *edges,
         _edge("asset_prepare", "page_spec", "output", "deliverables"),
+        _edge("asset_prepare", "processor_preview", "output", "deliverables"),
     )
     defaults = dict(base.defaults)
     defaults["builtin"] = True

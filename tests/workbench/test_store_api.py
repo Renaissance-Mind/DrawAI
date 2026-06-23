@@ -398,6 +398,9 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
         / "E001"
         / "active.png"
     ).exists()
+    preview = Path(updated.run_root) / "nodes" / "asset_prepare" / "runs" / "001" / "output" / "processor_preview.svg"
+    assert preview.is_file()
+    assert 'data-drawai-source="page-spec-svg-draft"' in preview.read_text(encoding="utf-8")
     assert (Path(updated.run_root) / "svg_to_ppt" / "assets" / "asset_manifest.json").exists()
     assert (Path(updated.run_root) / "nodes" / "sam_parse" / "runs" / "001" / "node_run.json").exists()
     assert (Path(updated.run_root) / "nodes" / "ocr_parse" / "runs" / "001" / "node_run.json").exists()
