@@ -328,7 +328,7 @@ export interface WorkflowNodeViewer {
   agent_logs: {
     files: CaseProgressFile[];
     trace_events: Array<Record<string, unknown>>;
-    session_summary: Record<string, unknown>;
+    session_summary: Record<string, unknown> | null;
     session_events: Array<Record<string, unknown>>;
     runtime_log_tail: Array<Record<string, unknown>>;
   };

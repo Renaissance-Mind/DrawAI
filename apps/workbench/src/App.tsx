@@ -2897,7 +2897,8 @@ function agentLogEntryText(source: string, item: Record<string, unknown>): strin
   return `${prefix} ${kind}: ${summary}`;
 }
 
-function agentLogSummaryItem(summary: Record<string, unknown>): { source: string; item: Record<string, unknown> } | null {
+function agentLogSummaryItem(summary: unknown): { source: string; item: Record<string, unknown> } | null {
+  if (!isRecord(summary)) return null;
   const finalResponse = stringField(summary, "final_response").trim();
   if (!finalResponse) return null;
   return {
@@ -2907,6 +2908,10 @@ function agentLogSummaryItem(summary: Record<string, unknown>): { source: string
       summary: finalResponse
     }
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function agentLogEntryVisible(entry: { source: string; item: Record<string, unknown> }): boolean {
