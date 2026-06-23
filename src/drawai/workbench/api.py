@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import json
 import mimetypes
 import os
@@ -21,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from lxml import etree
+from PIL import Image
 
 from ..artifacts import write_json
 from .assets import process_asset_plan_elements, read_asset_draft, validate_asset_plan, write_asset_draft
@@ -30,10 +32,14 @@ from .agent_settings import (
     write_workbench_agent_settings,
 )
 from .api_presets import (
+    ApiPreset,
+    api_preset_by_id,
+    read_workbench_api_presets,
     workbench_api_presets_payload,
     write_workbench_api_presets,
 )
 from .processor_settings import (
+    ProcessorSetting,
     require_processor_configured,
     workbench_processor_settings_payload,
     write_workbench_processor_settings,
@@ -612,12 +618,18 @@ def create_app(
         if not isinstance(processor, str) or not processor:
             raise HTTPException(status_code=400, detail="processor must be a non-empty string")
         try:
-            require_processor_configured(resolved_store.workspace, processor)
+            processor_setting = require_processor_configured(resolved_store.workspace, processor)
             asset_package = process_case_asset(
                 case,
                 element_id,
                 processor,
-                providers=_asset_processor_providers(case, processor, resolved_settings, app.state.rmbg_client),
+                providers=_asset_processor_providers(
+                    case,
+                    processor,
+                    resolved_settings,
+                    app.state.rmbg_client,
+                    processor_setting=processor_setting,
+                ),
             )
         except LegacyReadOnlyCaseError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1106,6 +1118,8 @@ def _asset_processor_providers(
     processor: str,
     settings: WorkbenchSettings,
     rmbg_client: Any,
+    *,
+    processor_setting: ProcessorSetting | None = None,
 ) -> dict[str, Any]:
     providers: dict[str, Any] = {}
     if processor == "crop_nobg":
@@ -1115,7 +1129,159 @@ def _asset_processor_providers(
             cfg = load_drawai_config(case.config_path, validate_input_exists=False)
             base_url = cfg.asset_materialization.rmbg.base_url or settings.rmbg_base_url
             providers["rmbg_client"] = RemoteRmbgClient(base_url.rstrip("/"))
+    if (
+        processor == "image_generate"
+        and processor_setting is not None
+        and processor_setting.driver_id == "openai_images_api"
+    ):
+        preset = _processor_api_preset(settings.workspace, processor, processor_setting)
+        providers["image_generate"] = _images_api_generate_provider(preset)
     return providers
+
+
+def _processor_api_preset(
+    workspace: str | Path,
+    processor: str,
+    processor_setting: ProcessorSetting,
+) -> ApiPreset:
+    preset = api_preset_by_id(read_workbench_api_presets(workspace), processor_setting.api_preset_id)
+    if preset is None:
+        raise ValueError(f"API preset not found for {processor}: {processor_setting.api_preset_id or '<empty>'}")
+    return preset
+
+
+def _images_api_generate_provider(preset: ApiPreset) -> Callable[..., Mapping[str, Any]]:
+    def generate(
+        *,
+        prompt: str,
+        output_dir: str | Path,
+        task_name: str,
+        output_stem: str,
+        runtime_config: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        output_path = Path(output_dir).expanduser().resolve(strict=False)
+        output_path.mkdir(parents=True, exist_ok=True)
+        request_payload = _images_api_generation_payload(preset, prompt, runtime_config=runtime_config)
+        response_payload = _call_image_generation_upstream(
+            request_payload,
+            api_url=_image_generation_api_url(preset.base_url),
+            api_key=_api_preset_key(preset),
+        )
+        image_payload = _materialize_first_images_api_image(
+            response_payload,
+            output_dir=output_path,
+            output_stem=output_stem,
+        )
+        return {
+            "schema": "drawai.workbench.images_api_provider_result.v1",
+            "runner": "images_api",
+            "task_name": task_name,
+            "operation": "generate",
+            "provider": preset.id,
+            "model": preset.model,
+            "prompt": prompt,
+            "output_dir": str(output_path),
+            "images": [image_payload],
+            "upstream": _images_api_response_metadata(response_payload),
+        }
+
+    return generate
+
+
+def _images_api_generation_payload(
+    preset: ApiPreset,
+    prompt: str,
+    *,
+    runtime_config: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": preset.model,
+        "prompt": prompt,
+        "n": 1,
+    }
+    if isinstance(runtime_config, Mapping):
+        extra_payload = runtime_config.get("api_payload")
+        if isinstance(extra_payload, Mapping):
+            payload.update(dict(extra_payload))
+        for key in ("size", "quality", "background", "moderation", "output_format", "output_compression"):
+            value = runtime_config.get(key)
+            if value is not None and value != "":
+                payload[key] = value
+    return payload
+
+
+def _api_preset_key(preset: ApiPreset) -> str:
+    if preset.api_key:
+        return preset.api_key
+    if preset.api_key_env:
+        value = os.environ.get(preset.api_key_env)
+        if value:
+            return value
+        raise HTTPException(status_code=503, detail=f"{preset.api_key_env} is required for API preset {preset.id}")
+    raise HTTPException(status_code=503, detail=f"API preset {preset.id} must set api_key_env or api_key")
+
+
+def _materialize_first_images_api_image(
+    payload: Mapping[str, Any],
+    *,
+    output_dir: Path,
+    output_stem: str,
+) -> dict[str, Any]:
+    for index, record in enumerate(_image_generation_payload_records(payload), start=1):
+        image_bytes, suffix = _images_api_record_bytes(record)
+        if not image_bytes:
+            continue
+        if len(image_bytes) > MAX_GENERATED_IMAGE_BYTES:
+            raise HTTPException(status_code=502, detail="image generation upstream returned an image that is too large")
+        image_path = _unique_upload_path(output_dir / f"{_safe_download_stem(output_stem)}{suffix}")
+        image_path.write_bytes(image_bytes)
+        with Image.open(image_path) as image:
+            width, height = image.size
+        return {
+            "id": str(record.get("id") or f"images-api-{index}"),
+            "status": str(record.get("status") or "completed"),
+            "path": str(image_path),
+            "source_path": str(image_path),
+            "revised_prompt": str(record.get("revised_prompt") or ""),
+            "mime_type": _media_type(image_path),
+            "width": width,
+            "height": height,
+            "bytes": len(image_bytes),
+        }
+    raise HTTPException(status_code=502, detail="image generation upstream did not return an image")
+
+
+def _images_api_record_bytes(record: Mapping[str, Any]) -> tuple[bytes, str]:
+    raw_b64 = record.get("b64_json") or record.get("image_base64")
+    if isinstance(raw_b64, str) and raw_b64.strip():
+        mime_type = str(record.get("mime_type") or record.get("content_type") or "image/png").split(";", 1)[0].lower()
+        try:
+            image_bytes = base64.b64decode("".join(raw_b64.split()), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise HTTPException(status_code=502, detail="image generation upstream returned invalid base64 image data") from exc
+        return image_bytes, _image_suffix_from_mime(mime_type)
+    raw_url = record.get("url")
+    if isinstance(raw_url, str) and raw_url.strip():
+        return _read_generated_image_value(raw_url)
+    return b"", ".png"
+
+
+def _images_api_response_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
+    records = _image_generation_payload_records(payload)
+    return {
+        "created": payload.get("created"),
+        "record_count": len(records),
+        "statuses": [
+            str(record.get("status") or record.get("state") or "")
+            for record in records
+            if record.get("status") or record.get("state")
+        ],
+        "revised_prompts": [
+            str(record.get("revised_prompt"))
+            for record in records
+            if record.get("revised_prompt")
+        ],
+    }
 
 
 async def _collect_sources(

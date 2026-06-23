@@ -154,8 +154,8 @@ image_generate
   openai_images_api requires api preset type images_api
 
 image_edit
-  drivers: codex_image_edit_builtin, openai_images_api
-  openai_images_api requires api preset type images_api
+  drivers: codex_image_edit_builtin
+  images_api should not be exposed here until an executable edit adapter is registered in code
 
 figure_agent
   drivers: only the figure-agent driver registered in code
@@ -258,7 +258,7 @@ Provider injection should become settings-driven:
 
 ```text
 image_generate -> selected image generation driver provider
-image_edit -> selected image edit driver provider
+image_edit -> selected image edit driver provider; currently codex_image_edit_builtin only
 crop_nobg -> selected RMBG service driver provider
 figure_agent -> registered figure-agent provider when implemented
 ```

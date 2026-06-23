@@ -217,7 +217,7 @@ Before `process_case_asset()`, resolve processor settings. Reject disabled or in
 
 - [ ] **Step 3: Implement provider routing scaffold**
 
-Keep existing `crop_nobg` RMBG route. Add driver metadata for `image_generate` and `image_edit`; route Codex built-in drivers to existing Codex imagegen callables and API preset drivers to existing Images API paths where available.
+Keep existing `crop_nobg` RMBG route. Add driver metadata for `image_generate` and `image_edit`; route `image_generate` API preset drivers to the existing Images API path, keep `image_edit` on the executable Codex edit adapter until an Images edit adapter is registered in code, and do not silently fall back when a configured driver is unavailable.
 
 - [ ] **Step 4: Run tests**
 

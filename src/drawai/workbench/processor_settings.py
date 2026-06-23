@@ -175,7 +175,7 @@ PROCESSOR_DEFINITIONS: dict[str, ProcessorDefinition] = {
         label="Image edit",
         default_enabled=False,
         default_driver_id="codex_image_edit_builtin",
-        supported_driver_ids=("codex_image_edit_builtin", "openai_images_api"),
+        supported_driver_ids=("codex_image_edit_builtin",),
         default_operation=_default_operation("image_edit"),
     ),
     "chart_rebuild_reserved": ProcessorDefinition(

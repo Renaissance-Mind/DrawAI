@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import zipfile
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 import yaml
@@ -14,6 +17,7 @@ from drawai.workflow.node_runs import begin_node_run
 from drawai.workflow.runner import NodeRunContext
 from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
 from drawai.workbench.agent_settings import WorkbenchAgentSettings
+from drawai.workbench import api as api_module
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
 from drawai.workbench.processor_settings import require_processor_configured
@@ -312,6 +316,90 @@ def test_workbench_processor_settings_api_saves_driver_and_operation_overrides(t
     assert image_generate["driver_id"] == "openai_images_api"
     assert image_generate["api_preset_id"] == "openai_images"
     assert image_generate["operation"]["meaning"] == "Workspace image generation meaning."
+
+
+def test_asset_processor_providers_routes_images_api_generation_driver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(tmp_path)
+    preset_response = client.put(
+        "/api/workbench/api-presets",
+        json={
+            "presets": [
+                {
+                    "id": "openai_images",
+                    "label": "OpenAI Images",
+                    "type": "images_api",
+                    "base_url": "https://api.openai.com",
+                    "model": "gpt-image-2",
+                    "api_key": "plain-test-key",
+                }
+            ]
+        },
+    )
+    assert preset_response.status_code == 200
+    settings_response = client.put(
+        "/api/workbench/processor-settings",
+        json={
+            "processors": {
+                "image_generate": {
+                    "enabled": True,
+                    "driver_id": "openai_images_api",
+                    "api_preset_id": "openai_images",
+                }
+            }
+        },
+    )
+    assert settings_response.status_code == 200
+
+    captured: dict[str, object] = {}
+
+    def fake_generation_upstream(
+        payload: Mapping[str, object],
+        *,
+        api_url: str,
+        api_key: str | None = None,
+    ) -> dict[str, object]:
+        captured["payload"] = dict(payload)
+        captured["api_url"] = api_url
+        captured["api_key"] = api_key
+        buffer = io.BytesIO()
+        Image.new("RGB", (3, 2), "#1f77b4").save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return {"data": [{"id": "img_1", "b64_json": encoded, "revised_prompt": "Draw it clearly."}]}
+
+    monkeypatch.setattr(api_module, "_call_image_generation_upstream", fake_generation_upstream)
+    processor_setting = require_processor_configured(tmp_path / "workspace", "image_generate")
+
+    providers = api_module._asset_processor_providers(
+        None,  # type: ignore[arg-type]
+        "image_generate",
+        _settings(tmp_path, tmp_path / "base.yaml"),
+        None,
+        processor_setting=processor_setting,
+    )
+    provider_result = providers["image_generate"](
+        prompt="Draw it",
+        output_dir=tmp_path / "provider-output",
+        task_name="drawai.test.image_generate",
+        output_stem="image_generate",
+        runtime_config={"size": "1024x1024"},
+    )
+
+    assert captured["api_url"] == "https://api.openai.com/v1/images/generations"
+    assert captured["api_key"] == "plain-test-key"
+    assert captured["payload"] == {
+        "model": "gpt-image-2",
+        "prompt": "Draw it",
+        "n": 1,
+        "size": "1024x1024",
+    }
+    image_payload = provider_result["images"][0]
+    assert Path(image_payload["path"]).is_file()
+    assert image_payload["width"] == 3
+    assert image_payload["height"] == 2
+    assert provider_result["provider"] == "openai_images"
 
 
 def test_workbench_processor_settings_api_rejects_invalid_processor_settings(tmp_path: Path) -> None:
