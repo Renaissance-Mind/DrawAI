@@ -447,7 +447,7 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
                     "id": "apimart_images",
                     "label": "Apimart Images",
                     "type": "images_api",
-                    "base_url": "https://api.apimart.example",
+                    "base_url": "https://api.apimart.ai/v1/images/generations",
                     "model": "gpt-image-2",
                     "api_key": "plain-test-key",
                 }
@@ -518,9 +518,14 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
         api_key: str | None = None,
     ) -> dict[str, object]:
         with upstream_lock:
-            upstream_calls.append(("generate", api_url))
+            operation = "edit_reference" if "image_urls" in payload else "generate"
+            upstream_calls.append((operation, api_url))
         assert api_key == "plain-test-key"
         assert payload["model"] == "gpt-image-2"
+        if "image_urls" in payload:
+            image_urls = payload["image_urls"]
+            assert isinstance(image_urls, list)
+            assert str(image_urls[0]).startswith("data:image/png;base64,")
         return image_response("img_generate")
 
     def fake_edit_upstream(
@@ -550,8 +555,8 @@ def test_asset_prepare_receives_images_api_generate_and_edit_providers(
     )
 
     assert sorted(upstream_calls) == [
-        ("edit", "https://api.apimart.example/v1/images/edits"),
-        ("generate", "https://api.apimart.example/v1/images/generations"),
+        ("edit_reference", "https://api.apimart.ai/v1/images/generations"),
+        ("generate", "https://api.apimart.ai/v1/images/generations"),
     ]
     assert materialized["elements"][0]["materialization"]["processing_type"] == "image_generate"
     assert materialized["elements"][1]["materialization"]["processing_type"] == "image_edit"
@@ -615,6 +620,58 @@ def test_images_api_generation_retries_transient_http_errors(
 
     assert calls == 2
     assert response["data"][0]["id"] == "img_1"
+
+
+def test_images_api_provider_materializes_apimart_task_result_urls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from drawai.workbench.api_presets import ApiPreset
+    from drawai.workbench import image_processor_providers as provider_module
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (3, 2), "#1f77b4").save(buffer, format="PNG")
+    data_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    def fake_upstream(
+        payload: Mapping[str, object],
+        *,
+        api_url: str,
+        api_key: str | None = None,
+    ) -> dict[str, object]:
+        assert api_url == "https://api.apimart.ai/v1/images/generations"
+        assert api_key == "plain-test-key"
+        return {
+            "data": {
+                "id": "task_1",
+                "status": "completed",
+                "result": {"images": [{"url": [data_url]}]},
+            }
+        }
+
+    monkeypatch.setattr(provider_module, "call_image_generation_upstream", fake_upstream)
+    provider = provider_module.images_api_generate_provider(
+        ApiPreset(
+            id="apimart_images",
+            label="Apimart Images",
+            type="images_api",
+            base_url="https://api.apimart.ai/v1/images/generations",
+            model="gpt-image-2",
+            api_key="plain-test-key",
+        )
+    )
+
+    result = provider(
+        prompt="Draw it",
+        output_dir=tmp_path / "images",
+        task_name="drawai.test.image_generate",
+        output_stem="image_generate",
+    )
+
+    image_payload = result["images"][0]
+    assert Path(image_payload["path"]).is_file()
+    assert image_payload["width"] == 3
+    assert image_payload["height"] == 2
 
 
 def test_workbench_processor_settings_api_rejects_invalid_processor_settings(tmp_path: Path) -> None:

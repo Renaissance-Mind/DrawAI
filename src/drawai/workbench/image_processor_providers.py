@@ -84,12 +84,20 @@ def images_api_edit_provider(preset: ApiPreset) -> Callable[..., Mapping[str, An
         output_path = Path(output_dir).expanduser().resolve(strict=False)
         output_path.mkdir(parents=True, exist_ok=True)
         request_payload = _images_api_payload(preset, prompt, runtime_config=runtime_config)
-        response_payload = call_image_edit_upstream(
-            request_payload,
-            source_image_path=source_image_path,
-            api_url=image_edit_api_url(preset.base_url),
-            api_key=_api_preset_key(preset),
-        )
+        if _uses_reference_generation_edit(preset.base_url):
+            response_payload = call_image_reference_edit_upstream(
+                request_payload,
+                source_image_path=source_image_path,
+                api_url=image_generation_api_url(preset.base_url),
+                api_key=_api_preset_key(preset),
+            )
+        else:
+            response_payload = call_image_edit_upstream(
+                request_payload,
+                source_image_path=source_image_path,
+                api_url=image_edit_api_url(preset.base_url),
+                api_key=_api_preset_key(preset),
+            )
         image_payload = _materialize_first_images_api_image(
             response_payload,
             output_dir=output_path,
@@ -187,6 +195,29 @@ def call_image_edit_upstream(
     if task_id:
         return _poll_image_generation_task(api_url, api_key, task_id)
     return decoded
+
+
+def call_image_reference_edit_upstream(
+    payload: Mapping[str, Any],
+    *,
+    source_image_path: str | Path,
+    api_url: str,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    api_key = api_key or os.environ.get("DRAWAI_IMAGEGEN_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="DRAWAI_IMAGEGEN_API_KEY or OPENAI_API_KEY is required for image editing")
+    source_path = Path(source_image_path).expanduser().resolve(strict=False)
+    if not source_path.is_file():
+        raise HTTPException(status_code=400, detail=f"image edit source image does not exist: {source_path}")
+    source_bytes = source_path.read_bytes()
+    if len(source_bytes) > MAX_GENERATED_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="image edit source image is too large")
+    request_payload = dict(payload)
+    request_payload["image_urls"] = [
+        f"data:{_media_type(source_path)};base64,{base64.b64encode(source_bytes).decode('ascii')}"
+    ]
+    return call_image_generation_upstream(request_payload, api_url=api_url, api_key=api_key)
 
 
 def _processor_api_preset(workspace: str | Path, processor: str, api_preset_id: str) -> ApiPreset:
@@ -307,6 +338,13 @@ def _image_api_url(base_url: Any, *, endpoint: str) -> str:
     elif not endpoint_path:
         endpoint_path = f"/v1/images/{endpoint}"
     return urllib.parse.urlunparse(parsed._replace(path=endpoint_path))
+
+
+def _uses_reference_generation_edit(base_url: Any) -> bool:
+    parsed = urllib.parse.urlparse(str(base_url or "").strip())
+    netloc = parsed.netloc.lower()
+    path = parsed.path.rstrip("/")
+    return netloc.endswith("apimart.ai") or path.endswith("/images/generations")
 
 
 def _api_preset_key(preset: ApiPreset) -> str:
@@ -493,6 +531,22 @@ def _image_generation_payload_records(payload: Mapping[str, Any]) -> list[Mappin
     elif isinstance(data, list):
         records.extend(item for item in data if isinstance(item, Mapping))
     records.append(payload)
+    for record in tuple(records):
+        result = record.get("result")
+        if not isinstance(result, Mapping):
+            continue
+        images = result.get("images")
+        if isinstance(images, list):
+            for image in images:
+                if not isinstance(image, Mapping):
+                    continue
+                url = image.get("url")
+                if isinstance(url, str):
+                    records.append({"url": url})
+                elif isinstance(url, list):
+                    records.extend({"url": item} for item in url if isinstance(item, str) and item)
+                else:
+                    records.append(image)
     return records
 
 
@@ -604,6 +658,7 @@ __all__ = [
     "asset_prepare_image_providers",
     "call_image_edit_upstream",
     "call_image_generation_upstream",
+    "call_image_reference_edit_upstream",
     "image_edit_api_url",
     "image_generation_api_url",
     "images_api_edit_provider",

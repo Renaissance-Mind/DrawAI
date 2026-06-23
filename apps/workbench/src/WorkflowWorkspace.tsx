@@ -157,14 +157,14 @@ const PAGE_SPEC_PROCESSING_OPERATION_OPTIONS: PageSpecProcessingOperationOption[
     label: "No process",
     meaning: "Do not materialize this element in the processing stage; keep it as PageSpec structure for SVG Compose.",
     chooseWhen: "Use for text, lines, shapes, tables, ordinary charts, structural diagrams, panels, and simple editable marks.",
-    avoidWhen: "Avoid for photos, screenshots, textures, complex raster regions, separable foreground objects, or assets needing a processor."
+    avoidWhen: "Avoid for photos, screenshots, textures, complex raster regions, separable foreground objects, Representation 2/3/4 thumbnails, Future representations thumbnails, and assets needing a processor."
   },
   {
     processing_type: "crop",
     label: "Crop",
     meaning: "Crop source pixels with the local background preserved as an independent asset.",
-    chooseWhen: "Use for photos, screenshots, heatmaps, dense textures, raster tiles, and details coupled to their background.",
-    avoidWhen: "Avoid for editable text, lines, simple shapes, table structure, transparent foreground objects, and SVG-drawable regions."
+    chooseWhen: "Use for photos, screenshots, heatmaps, dense textures, raster tiles, details coupled to their background, and a minority of representation/future thumbnails that must stay pixel-identical.",
+    avoidWhen: "Avoid for editable text, lines, simple shapes, table structure, transparent foreground objects, SVG-drawable regions, and Representation 2/3/4 or Future representations thumbnails that should be cleaned or regenerated."
   },
   {
     processing_type: "crop_nobg",
@@ -191,14 +191,14 @@ const PAGE_SPEC_PROCESSING_OPERATION_OPTIONS: PageSpecProcessingOperationOption[
     processing_type: "image_generate",
     label: "Image generate",
     meaning: "Generate a new raster image asset from the element's semantic role, nearby labels, page context, and target box size.",
-    chooseWhen: "Use for conceptual graphics, illustrative icons, predicted/future representation thumbnails, missing assets, and low-quality visuals where copying pixels would preserve noise.",
+    chooseWhen: "Use for conceptual graphics, illustrative icons, missing assets, and semantically clear thumbnails under Representation 2/3/4 or Future representations when the source crop is too tiny/noisy or should be synthesized from context.",
     avoidWhen: "Avoid for editable text, lines, simple shapes, tables, charts, pixel-identical source crops, and foreground objects needing only background removal."
   },
   {
     processing_type: "image_edit",
     label: "Image edit",
     meaning: "Crop the source element and edit it into a cleaner raster asset while preserving composition, visual role, colors, aspect, and placement.",
-    chooseWhen: "Use when the source crop contains the target object but needs cleanup, redraw, deblurring, style harmonization, or higher-quality preservation of a tiny conceptual icon.",
+    chooseWhen: "Use as the default for most visible image/icon thumbnails under Representation 2/3/4 and Future representations when the crop contains the target object but needs cleanup, redraw, deblurring, style harmonization, or higher-quality preservation.",
     avoidWhen: "Avoid for structural elements, crops that must remain pixel-identical, fully missing assets better suited to generation, and standalone foreground objects where crop_nobg is sufficient."
   }
 ];
