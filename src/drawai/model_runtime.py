@@ -213,6 +213,8 @@ def _invoke_provider_sync(
                         input_content=input_content,
                         max_output_tokens=effective_max_output_tokens,
                         timeout_seconds=timeout_seconds,
+                        task_name=task_name,
+                        trace_path=trace_path,
                     )
                 )
             return asyncio.run(
@@ -221,6 +223,8 @@ def _invoke_provider_sync(
                     input_content=input_content,
                     max_output_tokens=effective_max_output_tokens,
                     timeout_seconds=timeout_seconds,
+                    task_name=task_name,
+                    trace_path=trace_path,
                 )
             )
         except Exception as exc:
@@ -275,6 +279,8 @@ async def _invoke_openai_compatible_response(
     input_content: list[dict[str, Any]],
     max_output_tokens: int,
     timeout_seconds: float,
+    task_name: str = "",
+    trace_path: Path | None = None,
 ) -> str:
     try:
         from openai import AsyncOpenAI
@@ -303,6 +309,16 @@ async def _invoke_openai_compatible_response(
             input=[{"role": "user", "content": input_content}],
             max_output_tokens=int(max_output_tokens),
         )
+        _append_provider_response(
+            trace_path,
+            {
+                "type": "provider_response",
+                "task_name": task_name,
+                "wire_api": settings.wire_api,
+                "model_name": settings.model_name,
+                "response": response,
+            },
+        )
     finally:
         close = getattr(client, "close", None)
         if callable(close):
@@ -325,6 +341,8 @@ async def _invoke_openai_compatible_chat_completion(
     input_content: list[dict[str, Any]],
     max_output_tokens: int,
     timeout_seconds: float,
+    task_name: str = "",
+    trace_path: Path | None = None,
 ) -> str:
     try:
         from openai import AsyncOpenAI
@@ -356,6 +374,16 @@ async def _invoke_openai_compatible_chat_completion(
         if settings.extra_body:
             request_payload["extra_body"] = settings.extra_body
         response = await client.chat.completions.create(**request_payload)
+        _append_provider_response(
+            trace_path,
+            {
+                "type": "provider_response",
+                "task_name": task_name,
+                "wire_api": settings.wire_api,
+                "model_name": settings.model_name,
+                "response": response,
+            },
+        )
     finally:
         close = getattr(client, "close", None)
         if callable(close):
@@ -602,6 +630,21 @@ def _append_trace(trace_path: Path | None, event: dict[str, Any]) -> None:
         handle.write(json.dumps(_sanitize_trace_value(event), ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _append_provider_response(trace_path: Path | None, event: Mapping[str, Any]) -> None:
+    if trace_path is None:
+        return
+    path = _provider_response_path(trace_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(_sanitize_provider_response_value(event), ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _provider_response_path(trace_path: Path) -> Path:
+    if trace_path.name == "llm_trace.jsonl":
+        return trace_path.with_name("llm_provider_response.jsonl")
+    return trace_path.with_name(f"{trace_path.stem}_provider_response.jsonl")
+
+
 def _sanitize_trace_value(value: Any) -> Any:
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
@@ -627,6 +670,46 @@ def _sanitize_trace_value(value: Any) -> Any:
     return value
 
 
+def _sanitize_provider_response_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            lower_key = key_text.lower()
+            normalized_key = lower_key.replace("-", "_")
+            if lower_key == "authorization" or "api_key" in normalized_key:
+                sanitized[key_text] = "[redacted]"
+            elif lower_key in {"image_base64", "base64", "data", "payload"} and (
+                lower_key == "payload" or _looks_like_base64(item)
+            ):
+                sanitized[key_text] = _redacted_base64(item)
+            elif lower_key.endswith("payload") and isinstance(item, str) and _looks_like_base64(item):
+                sanitized[key_text] = _redacted_base64(item)
+            else:
+                sanitized[key_text] = _sanitize_provider_response_value(item)
+        return sanitized
+    if isinstance(value, list | tuple):
+        return [_sanitize_provider_response_value(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_provider_response_string(value)
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _sanitize_provider_response_value(model_dump(mode="json"))
+        except TypeError:
+            return _sanitize_provider_response_value(model_dump())
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _sanitize_provider_response_value(to_dict())
+    if hasattr(value, "__dict__"):
+        return _sanitize_provider_response_value(
+            {key: item for key, item in vars(value).items() if not str(key).startswith("_")}
+        )
+    return _sanitize_provider_response_string(str(value))
+
+
 _DATA_URL_RE = re.compile(r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+")
 _AUTH_HEADER_RE = re.compile(r"(?i)(authorization\s*:\s*)[^\n\r,;\"']+")
 _BARE_BEARER_RE = re.compile(
@@ -650,6 +733,15 @@ def _sanitize_trace_string(value: str) -> str:
         digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
         return f"{text[:1000]}\n...[trace truncated len={len(text)} sha256={digest}]"
     return text
+
+
+def _sanitize_provider_response_string(value: str) -> str:
+    text = _DATA_URL_RE.sub("[redacted-inline-image-base64]", value)
+    text = _AUTH_HEADER_RE.sub(r"\1[redacted]", text)
+    text = _X_API_KEY_HEADER_RE.sub(r"\1[redacted]", text)
+    text = _API_KEY_ASSIGN_RE.sub(r"\1[redacted]", text)
+    text = _BASE64_ASSIGN_RE.sub(r"\1[redacted-base64]", text)
+    return _BARE_BEARER_RE.sub(r"\1[redacted]", text)
 
 
 def _redacted_base64(value: Any) -> dict[str, Any]:

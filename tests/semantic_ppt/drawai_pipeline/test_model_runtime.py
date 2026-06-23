@@ -1,4 +1,8 @@
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
 from PIL import Image
 
 from drawai import model_runtime
@@ -77,6 +81,55 @@ def test_invoke_multimodal_text_can_use_chat_completions_with_extra_body(monkeyp
     assert captured["input_content"] == [{"type": "input_text", "text": "return json"}]
     assert captured["extra_body"] == {"reasoning": {"enabled": True}}
     assert captured["wire_api"] == "chat_completions"
+
+
+def test_invoke_multimodal_text_saves_provider_reasoning_details(monkeypatch, tmp_path: Path):
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="ok",
+                            reasoning_details=[
+                                {"type": "reasoning.text", "text": "kept provider reasoning"}
+                            ],
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(total_tokens=3),
+            )
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        async def close(self):
+            return None
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI))
+    trace_path = tmp_path / "llm_trace.jsonl"
+
+    result = model_runtime.invoke_multimodal_text(
+        image_paths=(),
+        prompt="return json",
+        task_name="reasoning_capture",
+        runtime_config={
+            "provider": "openrouter",
+            "model_name": "minimax/minimax-m3",
+            "wire_api": "chat_completions",
+        },
+        trace_path=trace_path,
+    )
+
+    provider_response_path = tmp_path / "llm_provider_response.jsonl"
+    provider_response = json.loads(provider_response_path.read_text(encoding="utf-8").splitlines()[0])
+    message = provider_response["response"]["choices"][0]["message"]
+    assert result == "ok"
+    assert message["content"] == "ok"
+    assert message["reasoning_details"] == [
+        {"type": "reasoning.text", "text": "kept provider reasoning"}
+    ]
 
 
 def test_invoke_multimodal_text_disables_reasoning_for_direct_outputs(monkeypatch):
