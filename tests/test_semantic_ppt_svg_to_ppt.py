@@ -242,7 +242,8 @@ def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_
   <rect x="0" y="0" width="640" height="360" fill="#ffffff"/>
   <g id="formula-gaussian" data-pb-role="formula" data-pb-editable="true"
      data-pb-formula-latex-b64="{latex_b64}" data-pb-formula-bbox="170 130 300 70">
-    <text x="170" y="176" font-size="28" fill="#111827" data-pb-role="formula"
+    <text x="170" y="176" font-family="Times New Roman, Times, serif" font-size="28"
+          fill="#0070c0" font-weight="700" font-style="italic" data-pb-role="formula"
           data-pb-editable="true" data-pb-text-source="model_inferred"
           data-pb-orientation="horizontal">SVG fallback formula only</text>
   </g>
@@ -281,6 +282,10 @@ def test_svg_to_ppt_compiler_promotes_latex_formula_metadata_to_office_math(tmp_
     with zipfile.ZipFile(output) as archive:
         slide_xml = archive.read("ppt/slides/slide1.xml").decode("utf-8")
     assert "<mc:AlternateContent" in slide_xml
+    assert '<a:defRPr sz="2800" b="1" i="1">' in slide_xml
+    assert '<a:srgbClr val="0070C0"' in slide_xml
+    assert '<a:latin typeface="Times New Roman"' in slide_xml
+    assert '<m:sty m:val="bi"' in slide_xml
     assert "<m:oMathPara" in slide_xml
     assert "converted office math" in slide_xml
     assert "SVG fallback formula only" not in slide_xml

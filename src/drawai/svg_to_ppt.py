@@ -119,11 +119,21 @@ ElementTree.register_namespace("mc", PPTX_MARKUP_COMPATIBILITY_NAMESPACE)
 
 
 @dataclass(frozen=True)
+class SvgFormulaStyle:
+    font_family: str | None = None
+    font_size: float | None = None
+    fill: str | None = None
+    font_weight: str | None = None
+    font_style: str | None = None
+
+
+@dataclass(frozen=True)
 class SvgFormulaSpec:
     element_id: str
     latex: str
     bbox: tuple[float, float, float, float]
     latex_source: str
+    style: SvgFormulaStyle = SvgFormulaStyle()
 
 
 @dataclass(frozen=True)
@@ -296,6 +306,27 @@ def _fallback_formula_text_width(
     return measured
 
 
+def _fallback_formula_style(element: ElementTree.Element) -> SvgFormulaStyle:
+    text_element = None
+    for descendant in element.iter():
+        if _svg_local_name(descendant.tag) == "text":
+            text_element = descendant
+            break
+    if text_element is None:
+        return SvgFormulaStyle()
+
+    def style_value(name: str) -> str | None:
+        return _svg_style_value(text_element, name) or _svg_style_value(element, name)
+
+    return SvgFormulaStyle(
+        font_family=style_value("font-family"),
+        font_size=_parse_svg_number(style_value("font-size")),
+        fill=style_value("fill"),
+        font_weight=style_value("font-weight"),
+        font_style=style_value("font-style"),
+    )
+
+
 def _should_replace_formula_bbox_with_fallback(
     metadata_bbox: tuple[float, float, float, float],
     fallback_bbox: tuple[float, float, float, float],
@@ -350,6 +381,7 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
             continue
         bbox = _parse_formula_bbox(element.get(DRAWAI_FORMULA_BBOX_ATTR))
         fallback_bbox = _fallback_formula_bbox(element)
+        style = _fallback_formula_style(element)
         if latex is None:
             issues.append(
                 {
@@ -391,7 +423,15 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
                     "reason": "fallback_text_bbox_misaligned",
                 }
             )
-        specs.append(SvgFormulaSpec(element_id=element_id, latex=latex, bbox=bbox, latex_source=latex_source or ""))
+        specs.append(
+            SvgFormulaSpec(
+                element_id=element_id,
+                latex=latex,
+                bbox=bbox,
+                latex_source=latex_source or "",
+                style=style,
+            )
+        )
 
     report = {
         "candidate_count": candidate_count,
@@ -403,11 +443,27 @@ def _collect_svg_formula_specs(svg_path: str | Path) -> tuple[list[SvgFormulaSpe
                 "element_id": spec.element_id,
                 "latex_source": spec.latex_source,
                 "bbox": list(spec.bbox),
+                "style": _formula_style_report(spec.style),
             }
             for spec in specs
         ],
     }
     return specs, report
+
+
+def _formula_style_report(style: SvgFormulaStyle) -> dict[str, Any]:
+    report: dict[str, Any] = {}
+    if style.font_family:
+        report["font_family"] = style.font_family
+    if style.font_size is not None:
+        report["font_size"] = style.font_size
+    if style.fill:
+        report["fill"] = style.fill
+    if style.font_weight:
+        report["font_weight"] = style.font_weight
+    if style.font_style:
+        report["font_style"] = style.font_style
+    return report
 
 
 def _strip_converted_formula_elements(
@@ -590,6 +646,82 @@ def _office_math_element(omml_xml: str) -> ElementTree.Element:
     raise SvgToPptError("Formula converter returned XML without an a14:m or m:oMathPara root.")
 
 
+def _formula_drawing_run_attrs(style: SvgFormulaStyle) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+    if style.font_size is not None and style.font_size > 0:
+        attrs["sz"] = str(max(100, int(round(style.font_size * 100))))
+    if _svg_font_weight_is_bold(style.font_weight or ""):
+        attrs["b"] = "1"
+    if (style.font_style or "").strip().lower() in {"italic", "oblique"}:
+        attrs["i"] = "1"
+    return attrs
+
+
+def _svg_color_to_srgb_hex(value: str | None) -> str | None:
+    if value is None:
+        return None
+    color = value.strip()
+    if not color or color.lower() in {"none", "currentcolor", "context-fill", "context-stroke"}:
+        return None
+    if color.startswith("#"):
+        digits = color[1:].strip()
+        if len(digits) == 3 and all(ch in "0123456789abcdefABCDEF" for ch in digits):
+            return "".join(ch * 2 for ch in digits).upper()
+        if len(digits) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in digits):
+            return digits.upper()
+    return None
+
+
+def _primary_svg_font_family(font_family: str | None) -> str | None:
+    if not font_family:
+        return None
+    names = _svg_font_family_names(font_family)
+    return names[0].title() if names else None
+
+
+def _append_formula_drawing_style(parent: ElementTree.Element, style: SvgFormulaStyle) -> None:
+    run_attrs = _formula_drawing_run_attrs(style)
+    fill = _svg_color_to_srgb_hex(style.fill)
+    typeface = _primary_svg_font_family(style.font_family)
+    if not run_attrs and fill is None and typeface is None:
+        return
+
+    default_run = ElementTree.SubElement(parent, f"{{{PPTX_DRAWING_NAMESPACE}}}defRPr", run_attrs)
+    if fill is not None:
+        solid_fill = ElementTree.SubElement(default_run, f"{{{PPTX_DRAWING_NAMESPACE}}}solidFill")
+        ElementTree.SubElement(solid_fill, f"{{{PPTX_DRAWING_NAMESPACE}}}srgbClr", {"val": fill})
+    if typeface is not None:
+        for tag_name in ("latin", "ea", "cs"):
+            ElementTree.SubElement(default_run, f"{{{PPTX_DRAWING_NAMESPACE}}}{tag_name}", {"typeface": typeface})
+
+
+def _office_math_style_value(style: SvgFormulaStyle) -> str | None:
+    bold = _svg_font_weight_is_bold(style.font_weight or "")
+    italic = (style.font_style or "").strip().lower() in {"italic", "oblique"}
+    if bold and italic:
+        return "bi"
+    if bold:
+        return "b"
+    if italic:
+        return "i"
+    return None
+
+
+def _apply_office_math_style(math_element: ElementTree.Element, style: SvgFormulaStyle) -> None:
+    style_value = _office_math_style_value(style)
+    if style_value is None:
+        return
+    for run in math_element.iter(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}r"):
+        run_properties = run.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}rPr")
+        if run_properties is None:
+            run_properties = ElementTree.Element(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}rPr")
+            run.insert(0, run_properties)
+        sty = run_properties.find(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
+        if sty is None:
+            sty = ElementTree.SubElement(run_properties, f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}sty")
+        sty.set(f"{{{PPTX_OFFICE_MATH_NAMESPACE}}}val", style_value)
+
+
 def _append_office_math_shape(
     slide_root: ElementTree.Element,
     formula: ConvertedFormulaSpec,
@@ -636,8 +768,11 @@ def _append_office_math_shape(
     ElementTree.SubElement(body_pr, f"{{{PPTX_DRAWING_NAMESPACE}}}spAutoFit")
     ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}lstStyle")
     paragraph = ElementTree.SubElement(tx_body, f"{{{PPTX_DRAWING_NAMESPACE}}}p")
-    ElementTree.SubElement(paragraph, f"{{{PPTX_DRAWING_NAMESPACE}}}pPr", {"algn": "ctr"})
-    paragraph.append(_office_math_element(formula.omml_xml))
+    paragraph_properties = ElementTree.SubElement(paragraph, f"{{{PPTX_DRAWING_NAMESPACE}}}pPr", {"algn": "ctr"})
+    _append_formula_drawing_style(paragraph_properties, formula.source.style)
+    math_element = _office_math_element(formula.omml_xml)
+    _apply_office_math_style(math_element, formula.source.style)
+    paragraph.append(math_element)
     sp_tree.append(alternate_content)
 
 
