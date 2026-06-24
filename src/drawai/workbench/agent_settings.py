@@ -79,6 +79,15 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
         default_command=("kimi",),
         description="Kimi CLI provider for all file-backed Agent stages.",
     ),
+    "kimi_acp": WorkbenchAgentDefinition(
+        provider_id="kimi_acp",
+        label="Kimi ACP",
+        kind="acp",
+        workflow_provider_id="kimi_acp",
+        pipeline_agent="kimi",
+        default_command=("kimi", "acp"),
+        description="Kimi Agent Client Protocol provider for all file-backed Agent stages.",
+    ),
     "claude_cli": WorkbenchAgentDefinition(
         provider_id="claude_cli",
         label="Claude CLI",
@@ -259,7 +268,10 @@ def apply_workbench_llm_settings_to_node_config(
 
 
 def workbench_agent_runtime_options(settings: WorkbenchAgentSettings) -> dict[str, Any]:
+    definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     command = resolved_agent_command(settings.selected_provider_id)
+    if definition.kind == "acp":
+        return {"acp_agent_command": command} if command else {}
     return {"agent_cli_command": command} if command else {}
 
 
@@ -298,6 +310,14 @@ def apply_workbench_agent_settings_to_config_payload(
             runtime_config["api_key_env"] = settings.llm_api_key_env
         if settings.llm_extra_body:
             runtime_config["extra_body"] = dict(settings.llm_extra_body)
+    elif definition.kind == "acp":
+        svg_config["generation_backend"] = "acp_agent"
+        runtime_config["provider"] = "acp-agent"
+        runtime_config["connection_id"] = definition.pipeline_agent
+        runtime_config["model_name"] = settings.model
+        acp_config = _mapping_child(runtime_config, "acp")
+        acp_config["agent"] = definition.pipeline_agent
+        acp_config["command"] = resolved_agent_command(definition.provider_id)
     else:
         svg_config["generation_backend"] = "agent_cli"
         runtime_config["provider"] = "agent-cli"
@@ -346,7 +366,7 @@ def _apply_workbench_llm_settings_to_config_payload(
 
 def resolved_agent_command(provider_id: str) -> list[str]:
     definition = AGENT_DEFINITIONS[provider_id]
-    if definition.kind != "cli":
+    if definition.kind not in {"cli", "acp"}:
         return []
     if definition.provider_id == "codex_cli":
         path = resolve_codex_executable()

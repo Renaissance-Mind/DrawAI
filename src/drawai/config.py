@@ -12,13 +12,14 @@ from .prompt_plan import DEFAULT_SAM3_PROMPTS, Sam3Prompt
 RECOGNIZED_OCR_PROVIDERS = frozenset({"remote_paddleocr", "fixture"})
 RECOGNIZED_ASSET_SELECTION_PROVIDERS = frozenset({"deterministic"})
 RECOGNIZED_SVG_GENERATION_BACKENDS = frozenset(
-    {"responses", "sdk_tool_loop", "codex_python_sdk_controlled", "agent_cli", "tool_agent"}
+    {"responses", "sdk_tool_loop", "codex_python_sdk_controlled", "agent_cli", "acp_agent", "tool_agent"}
 )
 RECOGNIZED_SVG_TEXT_RENDERING = frozenset({"model_text"})
 RECOGNIZED_VISUAL_REVIEW_ROUNDS = frozenset({"text_style", "layout"})
 RECOGNIZED_RMBG_PROVIDERS = frozenset({"service"})
 RECOGNIZED_CODEX_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
 RECOGNIZED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "openclaw", "hermes", "custom"})
+RECOGNIZED_ACP_AGENTS = frozenset({"kimi", "custom"})
 RECOGNIZED_V2_REFINE_PROVIDERS = frozenset({"codex_element_refiner", "deterministic"})
 
 
@@ -127,6 +128,18 @@ class AgentCliConfig:
 
 
 @dataclass(frozen=True)
+class AcpAgentConfig:
+    agent: str = "kimi"
+    command: tuple[str, ...] = ()
+
+    def to_runtime_dict(self) -> dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "command": list(self.command),
+        }
+
+
+@dataclass(frozen=True)
 class ApiProviderConfig:
     mode: str = "auth"
     base_url: str = ""
@@ -174,6 +187,7 @@ class ModelRuntimeConfig:
     max_concurrent: int = 20
     max_critic_rounds: int = 3
     cli: AgentCliConfig = AgentCliConfig()
+    acp: AcpAgentConfig = AcpAgentConfig()
     api_provider: ApiProviderConfig = ApiProviderConfig()
 
     def to_runtime_dict(self) -> dict[str, Any]:
@@ -194,6 +208,7 @@ class ModelRuntimeConfig:
             "max_concurrent": self.max_concurrent,
             "max_critic_rounds": self.max_critic_rounds,
             "cli": self.cli.to_runtime_dict(),
+            "acp": self.acp.to_runtime_dict(),
             "api_provider": self.api_provider.to_runtime_dict(),
         }
 
@@ -593,6 +608,7 @@ def _parse_model_runtime_config(raw: Any) -> ModelRuntimeConfig:
             "model_runtime.max_critic_rounds",
         ),
         cli=_parse_agent_cli_config(data.get("cli")),
+        acp=_parse_acp_agent_config(data.get("acp")),
         api_provider=_parse_api_provider_config(data.get("api_provider")),
     )
 
@@ -669,6 +685,16 @@ def _parse_agent_cli_config(raw: Any) -> AgentCliConfig:
     return AgentCliConfig(agent=agent, command=command)
 
 
+def _parse_acp_agent_config(raw: Any) -> AcpAgentConfig:
+    if raw is None:
+        return AcpAgentConfig()
+    data = _require_mapping(raw, "model_runtime.acp")
+    agent = _as_non_empty_str(data.get("agent", AcpAgentConfig.agent), "model_runtime.acp.agent").strip().lower()
+    command_raw = data.get("command", AcpAgentConfig.command)
+    command = _parse_acp_agent_command(command_raw)
+    return AcpAgentConfig(agent=agent, command=command)
+
+
 def _parse_agent_cli_command(raw: Any) -> tuple[str, ...]:
     if raw in (None, ""):
         return ()
@@ -678,6 +704,18 @@ def _parse_agent_cli_command(raw: Any) -> tuple[str, ...]:
         command = tuple(_as_non_empty_str(item, "model_runtime.cli.command[]") for item in raw)
     else:
         raise ValueError("model_runtime.cli.command must be a string or list of strings")
+    return command
+
+
+def _parse_acp_agent_command(raw: Any) -> tuple[str, ...]:
+    if raw in (None, ""):
+        return ()
+    if isinstance(raw, str):
+        command = tuple(shlex.split(raw))
+    elif isinstance(raw, (list, tuple)):
+        command = tuple(_as_non_empty_str(item, "model_runtime.acp.command[]") for item in raw)
+    else:
+        raise ValueError("model_runtime.acp.command must be a string or list of strings")
     return command
 
 
@@ -802,6 +840,14 @@ def _validate_config(cfg: DrawAiPipelineConfig, validate_input_exists: bool) -> 
         )
     if cfg.model_runtime.cli.agent == "custom" and not cfg.model_runtime.cli.command:
         raise ValueError("model_runtime.cli.command is required when model_runtime.cli.agent is custom")
+    if cfg.model_runtime.acp.agent not in RECOGNIZED_ACP_AGENTS:
+        supported = ", ".join(sorted(RECOGNIZED_ACP_AGENTS))
+        raise ValueError(
+            f"Unsupported model_runtime.acp.agent: {cfg.model_runtime.acp.agent!r}. "
+            f"Expected one of: {supported}"
+        )
+    if cfg.model_runtime.acp.agent == "custom" and not cfg.model_runtime.acp.command:
+        raise ValueError("model_runtime.acp.command is required when model_runtime.acp.agent is custom")
     if cfg.model_runtime.max_concurrent <= 0:
         raise ValueError("model_runtime.max_concurrent must be positive")
     if cfg.model_runtime.max_critic_rounds < 0:

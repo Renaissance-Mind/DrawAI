@@ -29,7 +29,7 @@ from drawai.tooling import render_drawai_tool_prompt_section
 
 from .formats import default_format_contract_descriptions, default_format_registry
 
-AgentProviderKind = Literal["sdk", "cli", "api"]
+AgentProviderKind = Literal["sdk", "cli", "api", "acp"]
 
 SUPPORTED_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 DANGEROUS_AGENT_CONFIG_KEYS = (
@@ -207,6 +207,15 @@ def default_agent_provider_registry() -> dict[str, AgentProviderSpec]:
             default_max_concurrent=2,
             executable="kimi",
             description="Kimi CLI provider for file-backed Agent nodes.",
+        ),
+        "kimi_acp": AgentProviderSpec(
+            provider_id="kimi_acp",
+            label="Kimi ACP",
+            kind="acp",
+            resource_key="agent_provider:kimi_acp",
+            default_max_concurrent=1,
+            executable="kimi",
+            description="Kimi Agent Client Protocol provider for file-backed Agent nodes.",
         ),
         "claude_cli": AgentProviderSpec(
             provider_id="claude_cli",

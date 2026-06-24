@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -357,8 +358,162 @@ def test_execute_agent_prompt_runs_generic_local_cli_provider(tmp_path: Path, mo
     assert (workdir / "claude_cli_stdout.txt").read_text(encoding="utf-8") == "claude done\n"
 
 
+def test_execute_agent_prompt_runs_kimi_acp_provider(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "agent" / "runs" / "001"
+    image_path = run_root / "input.png"
+    output_path = workdir / "output" / "result.json"
+    log_path = workdir / "fake_acp.jsonl"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    workdir.mkdir(parents=True)
+    prompt = AgentPrompt(
+        preset_id="custom_agent",
+        provider_id="kimi_acp",
+        text="Inspect input.png and write output/result.json.",
+        inputs=(
+            {
+                "path": "input.png",
+                "format_id": "image/png",
+                "type": "image",
+            },
+        ),
+        outputs=(
+            {
+                "port_id": "result",
+                "path": "output/result.json",
+                "format_id": "drawai.element_plans.v1",
+                "type": "element_plans",
+                "description": "Result.",
+            },
+        ),
+        options={
+            "timeout_seconds": 5,
+            "acp_agent_command": [
+                sys.executable,
+                "-c",
+                _FAKE_WORKFLOW_ACP_SERVER,
+                str(log_path),
+                str(output_path),
+            ],
+        },
+    )
+
+    result = execute_agent_prompt(
+        AgentExecutionRequest(
+            prompt=prompt,
+            workdir=workdir,
+            run_root=run_root,
+            node_id="agent",
+            node_type="agent",
+        )
+    )
+
+    assert result.provider_id == "kimi_acp"
+    assert json.loads(output_path.read_text(encoding="utf-8")) == {"ok": True}
+    assert result.stdout_path is not None
+    assert result.stdout_path.read_text(encoding="utf-8") == "workflow acp complete\n"
+    assert result.trace_path is not None and result.trace_path.is_file()
+    assert result.execution_manifest_path is not None and result.execution_manifest_path.is_file()
+
+
 def _write_executable(path: Path, body: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
     path.chmod(0o755)
     return path
+
+
+_FAKE_WORKFLOW_ACP_SERVER = r"""
+import json
+import sys
+from pathlib import Path
+
+log_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+
+
+def write_log(payload):
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def emit(payload):
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def read_response(expected_id):
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            raise SystemExit(1)
+        message = json.loads(line)
+        write_log({"from_client": message})
+        if message.get("id") == expected_id:
+            return message
+
+
+for line in sys.stdin:
+    message = json.loads(line)
+    write_log({"from_client": message})
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        emit(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": 1,
+                    "agentCapabilities": {
+                        "promptCapabilities": {
+                            "image": True,
+                            "audio": False,
+                            "embeddedContext": False,
+                        }
+                    },
+                    "authMethods": [],
+                },
+            }
+        )
+    elif method == "session/new":
+        emit({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": "sess_workflow"}})
+    elif method == "session/prompt":
+        server_request_id = "srv-write-json"
+        emit(
+            {
+                "jsonrpc": "2.0",
+                "id": server_request_id,
+                "method": "fs/write_text_file",
+                "params": {
+                    "sessionId": "sess_workflow",
+                    "path": str(output_path),
+                    "content": "{\"ok\": true}\n",
+                },
+            }
+        )
+        read_response(server_request_id)
+        emit(
+            {
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": "sess_workflow",
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "messageId": "msg_workflow",
+                        "content": {"type": "text", "text": "workflow acp complete\n"},
+                    },
+                },
+            }
+        )
+        emit({"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": "end_turn"}})
+    elif method == "session/close":
+        emit({"jsonrpc": "2.0", "id": request_id, "result": {}})
+    elif request_id is not None:
+        emit({"jsonrpc": "2.0", "id": request_id, "result": {}})
+"""

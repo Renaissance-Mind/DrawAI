@@ -1764,11 +1764,13 @@ class _DefaultSvgInvoker:
     def __call__(self, **kwargs: Any) -> str:
         phase = str(kwargs.get("phase") or "single")
         prompt_kwargs = dict(kwargs)
-        if self.cfg.svg.generation_backend in {"codex_python_sdk_controlled", "agent_cli", "tool_agent"}:
+        if self.cfg.svg.generation_backend in {"codex_python_sdk_controlled", "agent_cli", "acp_agent", "tool_agent"}:
             prompt_kwargs["file_context_mode"] = True
             prompt_kwargs["workspace_dir"] = self.paths.root
             if self.cfg.svg.generation_backend == "agent_cli":
                 prompt_kwargs["agent_label"] = _agent_cli_label(self.cfg.model_runtime.cli.agent)
+            elif self.cfg.svg.generation_backend == "acp_agent":
+                prompt_kwargs["agent_label"] = _acp_agent_label(self.cfg.model_runtime.acp.agent)
             elif self.cfg.svg.generation_backend == "tool_agent":
                 prompt_kwargs["agent_label"] = "DrawAI Tool Agent"
             else:
@@ -1783,6 +1785,8 @@ class _DefaultSvgInvoker:
             return self._invoke_codex_thread(phase=phase, prompt=prompt, kwargs=kwargs)
         if self.cfg.svg.generation_backend == "agent_cli":
             return self._invoke_agent_cli(phase=phase, prompt=prompt, kwargs=kwargs)
+        if self.cfg.svg.generation_backend == "acp_agent":
+            return self._invoke_acp_agent(phase=phase, prompt=prompt, kwargs=kwargs)
         if self.cfg.svg.generation_backend == "tool_agent":
             return self._invoke_tool_agent(phase=phase, prompt=prompt, kwargs=kwargs)
         if self.cfg.svg.generation_backend == "sdk_tool_loop":
@@ -1877,6 +1881,29 @@ class _DefaultSvgInvoker:
             runtime_config=self.runtime_config,
             trace_path=self.trace_path,
             isolated_cwd=self.paths.root,
+        )
+        return session.invoke(
+            image_paths=[Path(kwargs["figure_path"]), Path(kwargs["reference_image_path"])],
+            prompt=prompt,
+            task_name=f"box_ir_semantic_svg.{phase}.v1",
+            output_svg_path=Path(kwargs["output_svg_path"]),
+            output_response_path=Path(kwargs["output_response_path"]),
+        )
+
+    def _invoke_acp_agent(
+        self,
+        *,
+        phase: str,
+        prompt: str,
+        kwargs: Mapping[str, Any],
+    ) -> str:
+        from .acp_agent import AcpAgentSession
+
+        session = AcpAgentSession(
+            runtime_config=self.runtime_config,
+            trace_path=self.trace_path,
+            isolated_cwd=self.paths.root,
+            additional_roots=(Path(__file__).resolve().parents[2],),
         )
         return session.invoke(
             image_paths=[Path(kwargs["figure_path"]), Path(kwargs["reference_image_path"])],
@@ -3388,6 +3415,13 @@ def _agent_cli_label(agent: str) -> str:
     return "Agent CLI"
 
 
+def _acp_agent_label(agent: str) -> str:
+    agent_name = str(agent or "").strip().lower()
+    if agent_name == "kimi":
+        return "Kimi ACP"
+    return "ACP Agent"
+
+
 def _svg_to_ppt_effective_export_mode(compiler_report: Any) -> str | None:
     if not isinstance(compiler_report, Mapping):
         return None
@@ -3443,11 +3477,12 @@ def _run_codex_run0_asset_analysis(cfg: DrawAiPipelineConfig, paths: DrawAiArtif
         repo_root=repo_root,
         label="assemble debug report",
     )
-    element_analysis_invoker = (
-        "agent_cli"
-        if cfg.svg.generation_backend == "agent_cli" or cfg.model_runtime.provider == "agent-cli"
-        else "cli"
-    )
+    if cfg.svg.generation_backend == "acp_agent" or cfg.model_runtime.provider == "acp-agent":
+        element_analysis_invoker = "acp_agent"
+    elif cfg.svg.generation_backend == "agent_cli" or cfg.model_runtime.provider == "agent-cli":
+        element_analysis_invoker = "agent_cli"
+    else:
+        element_analysis_invoker = "cli"
     command = [
         sys.executable,
         str(element_analysis_script),
@@ -3469,6 +3504,11 @@ def _run_codex_run0_asset_analysis(cfg: DrawAiPipelineConfig, paths: DrawAiArtif
         if cfg.model_runtime.cli.command:
             command.append("--agent-cli-command")
             command.extend(cfg.model_runtime.cli.command)
+    if element_analysis_invoker == "acp_agent":
+        command.extend(["--acp-agent", cfg.model_runtime.acp.agent])
+        if cfg.model_runtime.acp.command:
+            command.append("--acp-agent-command")
+            command.extend(cfg.model_runtime.acp.command)
     _run_repo_script(command, repo_root=repo_root, label="Codex run0 asset analysis")
 
 

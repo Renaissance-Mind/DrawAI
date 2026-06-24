@@ -326,6 +326,45 @@ model_runtime:
     }
 
 
+def test_config_accepts_acp_agent_svg_backend_and_command(tmp_path: Path):
+    image = tmp_path / "input.png"
+    image.write_bytes(b"not-used-by-config")
+    config_path = tmp_path / "acp_agent.yaml"
+    config_path.write_text(
+        """
+input:
+  image: input.png
+  output_dir: out
+svg:
+  generation_backend: acp_agent
+model_runtime:
+  provider: acp-agent
+  connection_id: kimi
+  model_name: kimi-code/kimi-for-coding
+  acp:
+    agent: kimi
+    command:
+      - kimi
+      - acp
+  timeout_seconds: 120
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_drawai_config(config_path)
+
+    assert cfg.svg.generation_backend == "acp_agent"
+    assert cfg.model_runtime.provider == "acp-agent"
+    assert cfg.model_runtime.connection_id == "kimi"
+    assert cfg.model_runtime.model_name == "kimi-code/kimi-for-coding"
+    assert cfg.model_runtime.acp.agent == "kimi"
+    assert cfg.model_runtime.acp.command == ("kimi", "acp")
+    assert cfg.model_runtime.to_runtime_dict()["acp"] == {
+        "agent": "kimi",
+        "command": ["kimi", "acp"],
+    }
+
+
 def test_config_accepts_tool_agent_svg_backend(tmp_path: Path):
     image = tmp_path / "input.png"
     image.write_bytes(b"not-used-by-config")

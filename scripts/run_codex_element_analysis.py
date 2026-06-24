@@ -37,6 +37,7 @@ from drawai.codex_python_sdk_svg import (  # noqa: E402
 from drawai.codex_cli import resolve_codex_executable  # noqa: E402
 from drawai.config import load_drawai_config  # noqa: E402
 from drawai.asset_geometry import geometry_crop, normalize_asset_geometry  # noqa: E402
+from drawai.acp_agent import invoke_acp_agent_text  # noqa: E402
 from drawai.agent_cli_svg import invoke_agent_cli_text  # noqa: E402
 from drawai.v2.refine import (  # noqa: E402
     CodexElementRefiner,
@@ -94,7 +95,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=float, default=900.0)
     parser.add_argument(
         "--invoker",
-        choices=("cli", "sdk", "agent_cli"),
+        choices=("cli", "sdk", "agent_cli", "acp_agent"),
         default="cli",
         help="Use codex exec CLI by default; sdk/agent_cli are retained for parity with SVG generation experiments.",
     )
@@ -109,6 +110,18 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         nargs="+",
         default=[],
         help="Base agent CLI command used when --invoker agent_cli is selected.",
+    )
+    parser.add_argument(
+        "--acp-agent",
+        choices=("kimi", "custom"),
+        default="kimi",
+        help="ACP agent preset used when --invoker acp_agent is selected.",
+    )
+    parser.add_argument(
+        "--acp-agent-command",
+        nargs="+",
+        default=[],
+        help="Base ACP server command used when --invoker acp_agent is selected.",
     )
     parser.add_argument(
         "--skip-existing",
@@ -166,7 +179,12 @@ def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
     trace_path = output_dir / "codex_element_analysis_trace.jsonl"
     write_json(request_path, request)
     write_candidate_table(candidate_table_path, request)
-    prompt_builder = build_agent_cli_review_prompt if args.invoker == "agent_cli" else build_prompt
+    if args.invoker == "agent_cli":
+        prompt_builder = build_agent_cli_review_prompt
+    elif args.invoker == "acp_agent":
+        prompt_builder = build_acp_agent_review_prompt
+    else:
+        prompt_builder = build_prompt
     prompt_path.write_text(
         prompt_builder(case_dir, request_path, candidate_table_path, output_path),
         encoding="utf-8",
@@ -210,6 +228,18 @@ def run_case(case_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
             timeout_seconds=args.timeout_seconds,
             agent=args.agent_cli_agent,
             command=args.agent_cli_command,
+        )
+    elif args.invoker == "acp_agent":
+        codex_result = invoke_acp_agent_element_analysis(
+            case_dir=case_dir,
+            prompt=prompt_path.read_text(encoding="utf-8"),
+            image_paths=analysis_images(case_dir),
+            output_dir=output_dir,
+            trace_path=trace_path,
+            model_name=args.model,
+            timeout_seconds=args.timeout_seconds,
+            agent=args.acp_agent,
+            command=args.acp_agent_command,
         )
     else:
         codex_result = invoke_codex_element_analysis_cli(
@@ -1253,6 +1283,83 @@ def invoke_agent_cli_element_analysis(
     }
 
 
+def invoke_acp_agent_element_analysis(
+    *,
+    case_dir: Path,
+    prompt: str,
+    image_paths: Sequence[Path],
+    output_dir: Path,
+    trace_path: Path,
+    model_name: str,
+    timeout_seconds: float,
+    agent: str,
+    command: Sequence[str],
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "element_analysis.json"
+    request_path = output_dir / "element_analysis_request.json"
+    preseeded = False
+    if request_path.exists():
+        request = read_json(request_path)
+        if isinstance(request.get("candidates"), list):
+            write_json(output_path, build_baseline_analysis(case_dir, request, source="acp_agent_baseline_review"))
+            preseeded = True
+    started_at = time.monotonic()
+    runtime_config = {
+        "provider": "acp-agent",
+        "connection_id": f"drawai-{agent}-acp-element-analysis",
+        "model_name": model_name,
+        "timeout_seconds": timeout_seconds,
+        "acp": {
+            "agent": agent,
+            "command": list(command),
+        },
+    }
+    final_message = invoke_acp_agent_text(
+        image_paths=image_paths,
+        prompt=prompt,
+        task_name=f"drawai.element_analysis.acp_agent.{agent}.v1",
+        runtime_config=runtime_config,
+        trace_path=trace_path,
+        isolated_cwd=case_dir,
+        additional_roots=(REPO_ROOT,),
+    )
+    if not output_path.exists():
+        raise RuntimeError(f"ACP agent element analysis did not write required output: {output_path}")
+    review_path = output_dir / "acp_agent_review.json"
+    if preseeded and review_path.exists():
+        analysis = read_json(output_path)
+        review = read_json(review_path)
+        analysis["acp_agent_review"] = review
+        if isinstance(review, Mapping) and review.get("strategy_summary"):
+            analysis["strategy_summary"] = str(review["strategy_summary"])
+        write_json(output_path, analysis)
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    trace = {
+        "schema": "drawai.acp_agent_element_analysis_trace.v1",
+        "invoker": "acp_agent",
+        "agent": agent,
+        "case_dir": str(case_dir),
+        "model_name": model_name or f"{agent}-acp-default",
+        "timeout_seconds": timeout_seconds,
+        "image_paths": [str(path) for path in image_paths],
+        "duration_ms": duration_ms,
+        "output_path": str(output_path),
+        "preseeded_baseline": preseeded,
+        "review_path": str(review_path) if review_path.exists() else None,
+        "final_message_excerpt": final_message[:2000],
+    }
+    with trace_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(trace, ensure_ascii=False, sort_keys=True) + "\n")
+    return {
+        "invoker": "acp_agent",
+        "agent": agent,
+        "model_name": model_name or f"{agent}-acp-default",
+        "duration_ms": duration_ms,
+        "output_path": str(output_path),
+    }
+
+
 def build_agent_cli_review_prompt(case_dir: Path, request_path: Path, candidate_table_path: Path, output_path: Path) -> str:
     review_path = output_path.with_name("agent_cli_review.json")
     return f"""DrawAI agent CLI lightweight run0 asset review.
@@ -1285,6 +1392,39 @@ The review JSON must have this shape:
 }}
 
 Keep the final chat response to one short sentence. The preseeded element_analysis.json remains the source of truth for this run.
+"""
+
+
+def build_acp_agent_review_prompt(case_dir: Path, request_path: Path, candidate_table_path: Path, output_path: Path) -> str:
+    review_path = output_path.with_name("acp_agent_review.json")
+    return f"""DrawAI ACP agent lightweight run0 asset review.
+
+Workspace/case root:
+{case_dir}
+
+Python has already generated a complete baseline element analysis at:
+{output_path.relative_to(case_dir)}
+
+Your job is to inspect the attached original image and asset-plan overlay, then write only a concise review JSON. Do not regenerate the full element list, do not run visualization scripts, and do not print large JSON files.
+
+Read these compact files only if needed:
+- Candidate table: {candidate_table_path.relative_to(case_dir)}
+- Baseline element analysis: {output_path.relative_to(case_dir)}
+- Machine-readable request, only for exact bbox checks: {request_path.relative_to(case_dir)}
+
+Write UTF-8 JSON to:
+{review_path.relative_to(case_dir)}
+
+The review JSON must have this shape:
+{{
+  "schema": "drawai.acp_agent_element_analysis_review.v1",
+  "status": "ok",
+  "strategy_summary": "short summary of whether the baseline asset source decisions are reasonable",
+  "notable_adjustments": [
+    {{"box_id": "B001", "suggestion": "optional short suggestion"}}
+  ],
+  "notes": []
+}}
 """
 
 
