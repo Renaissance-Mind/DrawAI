@@ -365,6 +365,56 @@ model_runtime:
     }
 
 
+@pytest.mark.parametrize(
+    ("agent", "command"),
+    [
+        ("gemini", ("gemini", "--experimental-acp")),
+        ("qwen", ("qwen", "--acp")),
+        ("opencode", ("opencode", "acp")),
+        ("goose", ("goose", "acp")),
+        ("kiro", ("kiro-cli", "acp")),
+        ("qoder", ("qodercli", "--acp")),
+        ("cursor", ("agent", "acp")),
+        ("cline", ("cline", "--acp")),
+        ("copilot", ("copilot", "--acp", "--stdio")),
+        ("hermes", ("hermes", "acp")),
+    ],
+)
+def test_config_accepts_supported_acp_agent_presets(
+    tmp_path: Path,
+    agent: str,
+    command: tuple[str, ...],
+):
+    image = tmp_path / "input.png"
+    image.write_bytes(b"not-used-by-config")
+    config_path = tmp_path / f"{agent}_acp.yaml"
+    config_path.write_text(
+        f"""
+input:
+  image: input.png
+  output_dir: out
+svg:
+  generation_backend: acp_agent
+model_runtime:
+  provider: acp-agent
+  connection_id: {agent}
+  acp:
+    agent: {agent}
+    command: {list(command)}
+  timeout_seconds: 120
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_drawai_config(config_path)
+
+    assert cfg.svg.generation_backend == "acp_agent"
+    assert cfg.model_runtime.provider == "acp-agent"
+    assert cfg.model_runtime.connection_id == agent
+    assert cfg.model_runtime.acp.agent == agent
+    assert cfg.model_runtime.acp.command == command
+
+
 def test_config_accepts_tool_agent_svg_backend(tmp_path: Path):
     image = tmp_path / "input.png"
     image.write_bytes(b"not-used-by-config")

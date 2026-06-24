@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping, Sequence
 from PIL import Image
 
 from .artifacts import DrawAiArtifactPaths, prepare_artifact_paths, write_json, write_stage_status
+from .acp_agent_presets import acp_agent_label
 from .asset_materialization import materialize_run0_refined_assets
 from .asset_manifest_utils import (
     extend_asset_manifest_for_svg_export,
@@ -3416,10 +3417,7 @@ def _agent_cli_label(agent: str) -> str:
 
 
 def _acp_agent_label(agent: str) -> str:
-    agent_name = str(agent or "").strip().lower()
-    if agent_name == "kimi":
-        return "Kimi ACP"
-    return "ACP Agent"
+    return acp_agent_label(str(agent or "").strip().lower())
 
 
 def _svg_to_ppt_effective_export_mode(compiler_report: Any) -> str | None:

@@ -4,7 +4,43 @@ import json
 import sys
 from pathlib import Path
 
-from drawai.acp_agent import invoke_acp_agent_svg_text, invoke_acp_agent_text
+from drawai.acp_agent import (
+    SUPPORTED_ACP_AGENTS,
+    _acp_agent_command,
+    _agent_label,
+    invoke_acp_agent_svg_text,
+    invoke_acp_agent_text,
+)
+
+
+ACP_AGENT_COMMANDS = {
+    "kimi": ("kimi", "acp"),
+    "gemini": ("gemini", "--experimental-acp"),
+    "qwen": ("qwen", "--acp"),
+    "opencode": ("opencode", "acp"),
+    "goose": ("goose", "acp"),
+    "kiro": ("kiro-cli", "acp"),
+    "qoder": ("qodercli", "--acp"),
+    "cursor": ("agent", "acp"),
+    "cline": ("cline", "--acp"),
+    "copilot": ("copilot", "--acp", "--stdio"),
+    "hermes": ("hermes", "acp"),
+}
+
+
+ACP_AGENT_LABELS = {
+    "kimi": "Kimi ACP",
+    "gemini": "Gemini CLI ACP",
+    "qwen": "Qwen Code ACP",
+    "opencode": "OpenCode ACP",
+    "goose": "Goose ACP",
+    "kiro": "Kiro CLI ACP",
+    "qoder": "Qoder CLI ACP",
+    "cursor": "Cursor ACP",
+    "cline": "Cline ACP",
+    "copilot": "GitHub Copilot ACP",
+    "hermes": "Hermes ACP",
+}
 
 
 FAKE_ACP_SERVER = r"""
@@ -105,6 +141,14 @@ for line in sys.stdin:
     elif request_id is not None:
         emit({"jsonrpc": "2.0", "id": request_id, "result": {}})
 """
+
+
+def test_acp_agent_presets_resolve_supported_default_commands() -> None:
+    assert set(ACP_AGENT_COMMANDS) <= SUPPORTED_ACP_AGENTS
+
+    for agent, command in ACP_AGENT_COMMANDS.items():
+        assert _acp_agent_command({"provider": "acp-agent", "acp": {"agent": agent}}, agent) == list(command)
+        assert _agent_label(agent) == ACP_AGENT_LABELS[agent]
 
 
 def test_acp_agent_writes_svg_via_client_filesystem(tmp_path: Path) -> None:

@@ -15,10 +15,15 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import model_runtime
+from .acp_agent_presets import (
+    SUPPORTED_ACP_AGENTS,
+    acp_agent_default_command,
+    acp_agent_from_value,
+    acp_agent_label,
+)
 
 
 ACP_AGENT_RUNNER = "acp_agent"
-SUPPORTED_ACP_AGENTS = frozenset({"kimi", "custom"})
 ACP_PROTOCOL_VERSION = 1
 
 
@@ -725,14 +730,12 @@ def _acp_agent(runtime_config: Mapping[str, Any]) -> str:
     acp = runtime_config.get("acp")
     agent = ""
     if isinstance(acp, Mapping):
-        agent = str(acp.get("agent") or "").strip().lower()
+        raw_agent = str(acp.get("agent") or "")
+        agent = acp_agent_from_value(raw_agent) or raw_agent.strip().lower()
     if not agent:
-        provider = str(runtime_config.get("provider") or "").strip().lower().replace("_", "-")
-        connection_id = str(runtime_config.get("connection_id") or "").strip().lower().replace("_", "-")
-        if provider in {"acp-agent", "kimi-acp"} or connection_id in {"kimi", "kimi-acp"}:
-            agent = "kimi"
-        else:
-            agent = "kimi"
+        provider = str(runtime_config.get("provider") or "")
+        connection_id = str(runtime_config.get("connection_id") or "")
+        agent = acp_agent_from_value(connection_id) or acp_agent_from_value(provider) or "kimi"
     if agent not in SUPPORTED_ACP_AGENTS:
         supported = ", ".join(sorted(SUPPORTED_ACP_AGENTS))
         raise AcpAgentError(f"Unsupported ACP agent preset: {agent!r}. Expected one of: {supported}")
@@ -746,8 +749,8 @@ def _acp_agent_command(runtime_config: Mapping[str, Any], agent: str) -> list[st
         raw = acp.get("command")
     if not raw:
         raw = os.environ.get("DRAWAI_ACP_AGENT_COMMAND")
-    if not raw and agent == "kimi":
-        raw = ("kimi", "acp")
+    if not raw and agent != "custom":
+        raw = acp_agent_default_command(agent)
     if not raw:
         raise AcpAgentError("model_runtime.acp.command is required for custom ACP agents")
     if isinstance(raw, str):
@@ -806,9 +809,7 @@ def _controlled_prompt(
 
 
 def _agent_label(agent: str) -> str:
-    if agent == "kimi":
-        return "Kimi ACP"
-    return "ACP Agent"
+    return acp_agent_label(agent)
 
 
 def _normalize_workspace_output_path(path_value: str | Path, workspace_dir: Path) -> Path:

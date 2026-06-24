@@ -7,6 +7,7 @@ from pathlib import Path
 from posixpath import normpath
 from typing import Any, Literal
 
+from drawai.acp_agent_presets import ACP_AGENT_PRESETS
 from drawai.tool_agent_runtime import (
     DRAWAI_TOOL_AGENT_PROVIDER,
     MAX_APPEND_WRITE_CHARS,
@@ -208,15 +209,19 @@ def default_agent_provider_registry() -> dict[str, AgentProviderSpec]:
             executable="kimi",
             description="Kimi CLI provider for file-backed Agent nodes.",
         ),
-        "kimi_acp": AgentProviderSpec(
-            provider_id="kimi_acp",
-            label="Kimi ACP",
-            kind="acp",
-            resource_key="agent_provider:kimi_acp",
-            default_max_concurrent=1,
-            executable="kimi",
-            description="Kimi Agent Client Protocol provider for file-backed Agent nodes.",
-        ),
+        **{
+            preset.provider_id: AgentProviderSpec(
+                provider_id=preset.provider_id,
+                label=preset.label,
+                kind="acp",
+                resource_key=f"agent_provider:{preset.provider_id}",
+                default_max_concurrent=preset.default_max_concurrent,
+                executable=preset.executable,
+                supports_images=preset.supports_images,
+                description=preset.description,
+            )
+            for preset in ACP_AGENT_PRESETS.values()
+        },
         "claude_cli": AgentProviderSpec(
             provider_id="claude_cli",
             label="Claude CLI",

@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from .acp_agent_presets import SUPPORTED_ACP_AGENTS
 from .prompt_plan import DEFAULT_SAM3_PROMPTS, Sam3Prompt
 
 RECOGNIZED_OCR_PROVIDERS = frozenset({"remote_paddleocr", "fixture"})
@@ -19,7 +20,7 @@ RECOGNIZED_VISUAL_REVIEW_ROUNDS = frozenset({"text_style", "layout"})
 RECOGNIZED_RMBG_PROVIDERS = frozenset({"service"})
 RECOGNIZED_CODEX_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
 RECOGNIZED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "openclaw", "hermes", "custom"})
-RECOGNIZED_ACP_AGENTS = frozenset({"kimi", "custom"})
+RECOGNIZED_ACP_AGENTS = SUPPORTED_ACP_AGENTS
 RECOGNIZED_V2_REFINE_PROVIDERS = frozenset({"codex_element_refiner", "deterministic"})
 
 

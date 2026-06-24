@@ -358,7 +358,27 @@ def test_execute_agent_prompt_runs_generic_local_cli_provider(tmp_path: Path, mo
     assert (workdir / "claude_cli_stdout.txt").read_text(encoding="utf-8") == "claude done\n"
 
 
-def test_execute_agent_prompt_runs_kimi_acp_provider(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("provider_id", "agent"),
+    [
+        ("kimi_acp", "kimi"),
+        ("gemini_acp", "gemini"),
+        ("qwen_acp", "qwen"),
+        ("opencode_acp", "opencode"),
+        ("goose_acp", "goose"),
+        ("kiro_acp", "kiro"),
+        ("qoder_acp", "qoder"),
+        ("cursor_acp", "cursor"),
+        ("cline_acp", "cline"),
+        ("copilot_acp", "copilot"),
+        ("hermes_acp", "hermes"),
+    ],
+)
+def test_execute_agent_prompt_runs_acp_provider(
+    tmp_path: Path,
+    provider_id: str,
+    agent: str,
+) -> None:
     run_root = tmp_path / "run"
     workdir = run_root / "nodes" / "agent" / "runs" / "001"
     image_path = run_root / "input.png"
@@ -372,7 +392,7 @@ def test_execute_agent_prompt_runs_kimi_acp_provider(tmp_path: Path) -> None:
     workdir.mkdir(parents=True)
     prompt = AgentPrompt(
         preset_id="custom_agent",
-        provider_id="kimi_acp",
+        provider_id=provider_id,
         text="Inspect input.png and write output/result.json.",
         inputs=(
             {
@@ -412,11 +432,14 @@ def test_execute_agent_prompt_runs_kimi_acp_provider(tmp_path: Path) -> None:
         )
     )
 
-    assert result.provider_id == "kimi_acp"
+    assert result.provider_id == provider_id
     assert json.loads(output_path.read_text(encoding="utf-8")) == {"ok": True}
     assert result.stdout_path is not None
+    assert result.stdout_path.name == f"{provider_id}_final_response.txt"
     assert result.stdout_path.read_text(encoding="utf-8") == "workflow acp complete\n"
     assert result.trace_path is not None and result.trace_path.is_file()
+    trace_text = result.trace_path.read_text(encoding="utf-8")
+    assert f'"agent": "{agent}"' in trace_text
     assert result.execution_manifest_path is not None and result.execution_manifest_path.is_file()
 
 

@@ -127,7 +127,20 @@ def test_workbench_workflow_provider_api_lists_provider_scoped_limits(tmp_path: 
     providers = {item["provider_id"]: item for item in response.json()["providers"]}
     assert providers["codex_sdk"]["resource_key"] == "agent_provider:codex_sdk"
     assert providers["kimi_cli"]["resource_key"] == "agent_provider:kimi_cli"
-    assert providers["kimi_acp"]["resource_key"] == "agent_provider:kimi_acp"
+    for provider_id in (
+        "kimi_acp",
+        "gemini_acp",
+        "qwen_acp",
+        "opencode_acp",
+        "goose_acp",
+        "kiro_acp",
+        "qoder_acp",
+        "cursor_acp",
+        "cline_acp",
+        "copilot_acp",
+        "hermes_acp",
+    ):
+        assert providers[provider_id]["resource_key"] == f"agent_provider:{provider_id}"
     assert "drawai_tool_agent" not in providers
 
 
@@ -137,6 +150,16 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
 ) -> None:
     bin_dir = tmp_path / "bin"
     kimi = _write_executable(bin_dir / "kimi", "echo 'kimi 1.2.3'\n")
+    gemini = _write_executable(bin_dir / "gemini", "echo 'gemini 1.2.3'\n")
+    qwen = _write_executable(bin_dir / "qwen", "echo 'qwen 1.2.3'\n")
+    opencode = _write_executable(bin_dir / "opencode", "echo 'opencode 1.2.3'\n")
+    goose = _write_executable(bin_dir / "goose", "echo 'goose 1.2.3'\n")
+    kiro = _write_executable(bin_dir / "kiro-cli", "echo 'kiro 1.2.3'\n")
+    qoder = _write_executable(bin_dir / "qodercli", "echo 'qoder 1.2.3'\n")
+    cursor = _write_executable(bin_dir / "agent", "echo 'cursor 1.2.3'\n")
+    cline = _write_executable(bin_dir / "cline", "echo 'cline 1.2.3'\n")
+    copilot = _write_executable(bin_dir / "copilot", "echo 'copilot 1.2.3'\n")
+    hermes = _write_executable(bin_dir / "hermes", "echo 'hermes 1.2.3'\n")
     monkeypatch.setenv("PATH", str(bin_dir))
     client = _client(tmp_path)
 
@@ -150,6 +173,16 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     assert agents["kimi_cli"]["version"] == "kimi 1.2.3"
     assert agents["kimi_acp"]["available"] is True
     assert agents["kimi_acp"]["command"] == [str(kimi), "acp"]
+    assert agents["gemini_acp"]["command"] == [str(gemini), "--experimental-acp"]
+    assert agents["qwen_acp"]["command"] == [str(qwen), "--acp"]
+    assert agents["opencode_acp"]["command"] == [str(opencode), "acp"]
+    assert agents["goose_acp"]["command"] == [str(goose), "acp"]
+    assert agents["kiro_acp"]["command"] == [str(kiro), "acp"]
+    assert agents["qoder_acp"]["command"] == [str(qoder), "--acp"]
+    assert agents["cursor_acp"]["command"] == [str(cursor), "acp"]
+    assert agents["cline_acp"]["command"] == [str(cline), "--acp"]
+    assert agents["copilot_acp"]["command"] == [str(copilot), "--acp", "--stdio"]
+    assert agents["hermes_acp"]["command"] == [str(hermes), "acp"]
     assert "drawai_tool_agent" not in agents
 
     save_response = client.put(
@@ -867,12 +900,31 @@ def test_create_batch_applies_saved_workbench_agent_to_case_config(
     assert payload["model_runtime"]["cli"]["command"][0] == str(bin_dir / "kimi")
 
 
+@pytest.mark.parametrize(
+    ("provider_id", "agent", "command"),
+    [
+        ("kimi_acp", "kimi", ("kimi", "acp")),
+        ("gemini_acp", "gemini", ("gemini", "--experimental-acp")),
+        ("qwen_acp", "qwen", ("qwen", "--acp")),
+        ("opencode_acp", "opencode", ("opencode", "acp")),
+        ("goose_acp", "goose", ("goose", "acp")),
+        ("kiro_acp", "kiro", ("kiro-cli", "acp")),
+        ("qoder_acp", "qoder", ("qodercli", "--acp")),
+        ("cursor_acp", "cursor", ("agent", "acp")),
+        ("cline_acp", "cline", ("cline", "--acp")),
+        ("copilot_acp", "copilot", ("copilot", "--acp", "--stdio")),
+        ("hermes_acp", "hermes", ("hermes", "acp")),
+    ],
+)
 def test_create_batch_applies_saved_workbench_acp_agent_to_case_config(
     tmp_path: Path,
     monkeypatch,
+    provider_id: str,
+    agent: str,
+    command: tuple[str, ...],
 ) -> None:
     bin_dir = tmp_path / "bin"
-    _write_executable(bin_dir / "kimi", "echo 'kimi 1.2.3'\n")
+    executable = _write_executable(bin_dir / command[0], f"echo '{agent} 1.2.3'\n")
     monkeypatch.setenv("PATH", str(bin_dir))
     client = _client(tmp_path)
     source = tmp_path / "single.png"
@@ -880,7 +932,7 @@ def test_create_batch_applies_saved_workbench_acp_agent_to_case_config(
     save_response = client.put(
         "/api/workbench/agent-settings",
         json={
-            "selected_provider_id": "kimi_acp",
+            "selected_provider_id": provider_id,
             "model": "kimi-code/kimi-for-coding",
             "reasoning_effort": "medium",
             "timeout_seconds": 240,
@@ -907,12 +959,12 @@ def test_create_batch_applies_saved_workbench_acp_agent_to_case_config(
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert payload["svg"]["generation_backend"] == "acp_agent"
     assert payload["model_runtime"]["provider"] == "acp-agent"
-    assert payload["model_runtime"]["connection_id"] == "kimi"
+    assert payload["model_runtime"]["connection_id"] == agent
     assert payload["model_runtime"]["model_name"] == "kimi-code/kimi-for-coding"
     assert payload["model_runtime"]["reasoning_effort"] == "medium"
     assert payload["model_runtime"]["timeout_seconds"] == 240
-    assert payload["model_runtime"]["acp"]["agent"] == "kimi"
-    assert payload["model_runtime"]["acp"]["command"] == [str(bin_dir / "kimi"), "acp"]
+    assert payload["model_runtime"]["acp"]["agent"] == agent
+    assert payload["model_runtime"]["acp"]["command"] == [str(executable), *command[1:]]
 
 
 def test_create_batch_applies_saved_workbench_llm_runtime_to_case_config(tmp_path: Path) -> None:

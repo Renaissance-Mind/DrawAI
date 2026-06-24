@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from drawai.acp_agent_presets import ACP_AGENT_BY_PROVIDER_ID
 from drawai.acp_agent import AcpAgentError, invoke_acp_agent_text
 from drawai.codex_cli import resolve_codex_executable
 from drawai.agent_cli_svg import AgentCliSvgError, invoke_agent_cli_text
@@ -43,6 +44,9 @@ GENERIC_AGENT_CLI_PROVIDERS: dict[str, str] = {
     "claude_cli": "claude",
     "openclaw_cli": "openclaw",
     "hermes_cli": "hermes",
+}
+ACP_AGENT_PROVIDERS: dict[str, str] = {
+    provider_id: preset.agent_id for provider_id, preset in ACP_AGENT_BY_PROVIDER_ID.items()
 }
 
 
@@ -105,8 +109,13 @@ def execute_agent_prompt(request: AgentExecutionRequest) -> AgentExecutionResult
         result = _execute_codex_cli_agent(request, prompt_path=prompt_path)
     elif provider_id == "kimi_cli":
         result = _execute_kimi_cli_agent(request, prompt_path=prompt_path)
-    elif provider_id == "kimi_acp":
-        result = _execute_acp_agent(request, prompt_path=prompt_path)
+    elif provider_id in ACP_AGENT_PROVIDERS:
+        result = _execute_acp_agent(
+            request,
+            prompt_path=prompt_path,
+            provider_id=provider_id,
+            agent=ACP_AGENT_PROVIDERS[provider_id],
+        )
     elif provider_id == DRAWAI_TOOL_AGENT_PROVIDER:
         result = _execute_drawai_tool_agent(request, prompt_path=prompt_path)
     elif provider_id in GENERIC_AGENT_CLI_PROVIDERS:
@@ -505,19 +514,21 @@ def _execute_acp_agent(
     request: AgentExecutionRequest,
     *,
     prompt_path: Path,
+    provider_id: str,
+    agent: str,
 ) -> AgentExecutionResult:
     options = dict(request.prompt.options)
-    stdout_path = request.workdir / "kimi_acp_final_response.txt"
-    stderr_path = request.workdir / "kimi_acp_error.txt"
-    trace_path = request.workdir / "kimi_acp_trace.jsonl"
+    stdout_path = request.workdir / f"{provider_id}_final_response.txt"
+    stderr_path = request.workdir / f"{provider_id}_error.txt"
+    trace_path = request.workdir / f"{provider_id}_trace.jsonl"
     runtime_config: dict[str, Any] = {
         "provider": "acp-agent",
-        "connection_id": "kimi",
+        "connection_id": agent,
         "model_name": str(options.get("model") or ""),
         "reasoning_effort": str(options.get("reasoning_effort") or ""),
         "timeout_seconds": _timeout_seconds(options),
         "acp": {
-            "agent": "kimi",
+            "agent": agent,
             "command": _acp_agent_command_option(options),
         },
     }
@@ -525,7 +536,7 @@ def _execute_acp_agent(
         stdout = invoke_acp_agent_text(
             image_paths=_image_input_paths(request),
             prompt=request.prompt.text,
-            task_name=f"drawai.workflow.agent.{request.node_id}.kimi_acp",
+            task_name=f"drawai.workflow.agent.{request.node_id}.{provider_id}",
             runtime_config=runtime_config,
             trace_path=trace_path,
             isolated_cwd=_agent_cwd(request),
@@ -534,7 +545,7 @@ def _execute_acp_agent(
     except (AcpAgentError, OSError, subprocess.TimeoutExpired) as exc:
         stderr_path.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
         raise AgentExecutionError(
-            f"kimi_acp Agent run failed: {exc}",
+            f"{provider_id} Agent run failed: {exc}",
             prompt_path=prompt_path,
             stdout_path=stdout_path if stdout_path.exists() else None,
             stderr_path=stderr_path,
@@ -543,7 +554,7 @@ def _execute_acp_agent(
         ) from exc
     stdout_path.write_text(stdout, encoding="utf-8")
     return AgentExecutionResult(
-        provider_id="kimi_acp",
+        provider_id=provider_id,
         prompt_path=prompt_path,
         stdout_path=stdout_path,
         stderr_path=stderr_path if stderr_path.exists() else None,

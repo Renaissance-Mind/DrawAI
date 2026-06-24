@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from drawai.acp_agent_presets import ACP_AGENT_PRESETS
 from drawai.codex_cli import resolve_codex_executable
 from drawai.tool_agent_runtime import DRAWAI_TOOL_AGENT_PROVIDER
 from drawai.workflow.agents import SUPPORTED_REASONING_EFFORTS
@@ -79,15 +80,18 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
         default_command=("kimi",),
         description="Kimi CLI provider for all file-backed Agent stages.",
     ),
-    "kimi_acp": WorkbenchAgentDefinition(
-        provider_id="kimi_acp",
-        label="Kimi ACP",
-        kind="acp",
-        workflow_provider_id="kimi_acp",
-        pipeline_agent="kimi",
-        default_command=("kimi", "acp"),
-        description="Kimi Agent Client Protocol provider for all file-backed Agent stages.",
-    ),
+    **{
+        preset.provider_id: WorkbenchAgentDefinition(
+            provider_id=preset.provider_id,
+            label=preset.label,
+            kind="acp",
+            workflow_provider_id=preset.provider_id,
+            pipeline_agent=preset.agent_id,
+            default_command=preset.default_command,
+            description=preset.description,
+        )
+        for preset in ACP_AGENT_PRESETS.values()
+    },
     "claude_cli": WorkbenchAgentDefinition(
         provider_id="claude_cli",
         label="Claude CLI",
