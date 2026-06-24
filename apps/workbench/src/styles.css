@@ -165,6 +165,7 @@ select:focus {
 }
 
 .app-root > .board-workspace,
+.app-root > .board-mode-panels,
 .app-root > .editor-workspace,
 .app-root > .svg-workspace,
 .app-root > .svg-studio {
@@ -787,6 +788,29 @@ select:focus {
   padding: 0;
 }
 
+.board-mode-panels,
+.board-mode-panel {
+  min-height: 0;
+  height: 100%;
+}
+
+.board-mode-panels {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.board-mode-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.board-mode-panels > [hidden],
+.board-mode-panel[hidden] {
+  display: none !important;
+}
+
 .board-grid {
   min-height: 0;
   display: grid;
@@ -822,6 +846,7 @@ select:focus {
   position: relative;
   overflow: hidden;
   background: rgba(248, 250, 252, 0.72);
+  padding: 6px;
 }
 
 .task-detail-panel {
@@ -933,7 +958,11 @@ select:focus {
 
 .task-list {
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  padding-bottom: 96px;
+  grid-auto-rows: minmax(268px, auto);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: y proximity;
+  padding: 18px 18px 112px;
 }
 
 .batch-download-floating {
@@ -1269,9 +1298,17 @@ select:focus {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  min-height: 238px;
+  min-height: 268px;
+  align-self: start;
+  scroll-snap-align: start;
   padding: 11px;
   cursor: pointer;
+  z-index: 0;
+}
+
+.task-row:hover,
+.task-row:focus-within {
+  z-index: 12;
 }
 
 .task-row.editor-ready {
@@ -1334,7 +1371,8 @@ select:focus {
 .task-thumb {
   position: relative;
   width: 100%;
-  height: 170px;
+  min-height: 168px;
+  aspect-ratio: 16 / 10;
   border: 1px solid rgba(226, 232, 240, 0.98);
   border-radius: 7px;
   background:
@@ -1815,6 +1853,17 @@ select:focus {
   stroke-linejoin: round;
 }
 
+.view-result-icon,
+.breakpoint-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .task-list .empty-state {
   grid-column: 1 / -1;
 }
@@ -1824,7 +1873,7 @@ select:focus {
   align-content: start;
   gap: 14px;
   overflow: auto;
-  padding: clamp(12px, 2vh, 20px) 10px;
+  padding: clamp(18px, 2.4vh, 28px) clamp(18px, 2vw, 30px);
 }
 
 .svg-studio {
@@ -2318,8 +2367,8 @@ select:focus {
 .dag-run-body {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(360px, 1fr) auto;
-  gap: 12px;
+  grid-template-rows: auto auto auto;
+  gap: 14px;
 }
 
 .dag-run-canvas {
@@ -2336,7 +2385,7 @@ select:focus {
     linear-gradient(90deg, rgba(18, 32, 24, 0.045) 1px, transparent 1px),
     #ffffff;
   background-size: 26px 26px;
-  padding: 24px;
+  padding: 32px;
 }
 
 .dag-run-stage {
@@ -2368,6 +2417,11 @@ select:focus {
 .dag-run-edges path.running {
   opacity: 1;
   filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.28));
+}
+
+.dag-run-edges path.failed {
+  stroke: rgba(220, 38, 38, 0.86);
+  filter: drop-shadow(0 0 5px rgba(220, 38, 38, 0.24));
 }
 
 .dag-run-edges path.waiting {
@@ -2561,7 +2615,123 @@ button.dag-run-node.running.active {
 .dag-node-detail {
   min-height: 190px;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  padding: 16px 4px 0;
+}
+
+.dag-run-action-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 0 4px 2px;
+}
+
+.dag-action-button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 760;
+  box-shadow: none;
+}
+
+.dag-action-button:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.26);
+  color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.dag-action-button.active {
+  border-color: rgba(197, 106, 8, 0.32);
+  background: #fff8ec;
+  color: var(--amber);
+}
+
+.dag-action-button.primary {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.dag-action-button .button-spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.dag-action-dropdown {
+  position: relative;
+  display: inline-grid;
+}
+
+.dag-action-dropdown::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  top: 100%;
+  height: 10px;
+}
+
+.dag-action-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  min-width: 236px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 6px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.dag-action-dropdown:hover .dag-action-menu,
+.dag-action-dropdown:focus-within .dag-action-menu {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.dag-action-menu button {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 9px 10px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.dag-action-menu button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.dag-action-menu button span {
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.dag-action-menu button em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .dag-node-detail-head {

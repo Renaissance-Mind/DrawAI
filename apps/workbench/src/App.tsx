@@ -892,6 +892,25 @@ export default function App() {
     }
   }
 
+  async function rerunStageForCase(item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    const optimisticCase = currentCaseForOptimisticUpdate(item);
+    if (optimisticCase) {
+      mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, stage));
+    }
+    try {
+      const response = await runCaseStage(item.case_id, stage);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+      await refreshBatches();
+      setActiveView("board");
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
   async function exportPptxForCase(caseId: string): Promise<ArtifactRecord[]> {
     if (pptxExportPendingCaseId) return [];
     setPptxExportPendingCaseId(caseId);
@@ -1047,8 +1066,8 @@ export default function App() {
       )}
 
       {activeView === "board" ? (
-        boardMode === "generate" ? (
-          <main className="board-workspace board-generate-workspace">
+        <div className="board-mode-panels">
+          <main className="board-workspace board-generate-workspace" hidden={boardMode !== "generate"}>
             <ImageGenStudio
               connection={imageGenConnection}
               onConnectionChange={(nextConnection) => {
@@ -1059,53 +1078,56 @@ export default function App() {
               onError={setError}
             />
           </main>
-        ) : boardMode === "workflow" ? (
-          <WorkflowWorkspace onError={setError} />
-        ) : (
-        <BoardWorkspace
-          batches={batches}
-          activeBatch={activeBatch}
-          activeCase={activeCase}
-          caseProgress={caseProgress}
-          assetsReady={assetsReady}
-          canvasReady={canvasReady}
-          runInProgress={activeCaseRunning}
-          canRunFromAssets={canRunFromAssets}
-          runCompatibility={runCompatibility}
-          runPackage={activeRunPackage}
-          v2Elements={v2Elements}
-          selectedV2ElementId={selectedV2ElementId}
-          selectedAssetPackage={selectedAssetPackage}
-          v2PackageError={v2PackageError}
-          v2AssetLoadingElementId={v2AssetLoadingElementId}
-          v2ActionPending={v2ActionPending}
-          canForkV2FromSource={canForkV2FromSource}
-          caseActionPendingId={assetsRunPendingCaseId}
-          pptxExportPendingCaseId={pptxExportPendingCaseId}
-          batchPptxDownloadPendingId={batchPptxDownloadPendingId}
-          batchRunPendingId={batchRunPendingId}
-          onOpenSubmit={() => setSubmitOpen(true)}
-          onOpenCaseAssets={(caseId) => openAssetsEditorForCase(caseId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onOpenSvgEditor={() => setActiveView("svg")}
-          onRenameBatch={(batch) => setTaskRenameTarget({ batchId: batch.batch_id, name: batch.name })}
-          onDeleteBatch={(batch) => setTaskDeleteTarget({ batchId: batch.batch_id, name: batch.name })}
-          onRunBatch={(batchId) => runTaskBatch(batchId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onSelectBatch={(batchId) => selectBatch(batchId).catch((err) => setError(err.message))}
-          onFocusCase={(caseId) => selectCase(caseId).then(() => undefined).catch((err) => setError(err.message))}
-          onSelectCase={(caseId) => openCaseFromTask(caseId).catch((err) => setError(err.message))}
-          onRunFromAssets={() => runFromAssets().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onRetryCase={(item) => retryFailedCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onRerunAnalysis={(item) => rerunAnalysisForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onExportPptx={(caseId) => exportPptxForCase(caseId)}
-          onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
-          onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onOpenWorkflowNodeArtifact={(caseId, nodeId) => openWorkflowNodeArtifactCanvas(caseId, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-        />
-        )
+          <div className="board-mode-panel" hidden={boardMode !== "workflow"}>
+            <WorkflowWorkspace onError={setError} />
+          </div>
+          <div className="board-mode-panel" hidden={boardMode !== "process"}>
+            <BoardWorkspace
+              batches={batches}
+              activeBatch={activeBatch}
+              activeCase={activeCase}
+              caseProgress={caseProgress}
+              assetsReady={assetsReady}
+              canvasReady={canvasReady}
+              runInProgress={activeCaseRunning}
+              canRunFromAssets={canRunFromAssets}
+              runCompatibility={runCompatibility}
+              runPackage={activeRunPackage}
+              v2Elements={v2Elements}
+              selectedV2ElementId={selectedV2ElementId}
+              selectedAssetPackage={selectedAssetPackage}
+              v2PackageError={v2PackageError}
+              v2AssetLoadingElementId={v2AssetLoadingElementId}
+              v2ActionPending={v2ActionPending}
+              canForkV2FromSource={canForkV2FromSource}
+              caseActionPendingId={assetsRunPendingCaseId}
+              pptxExportPendingCaseId={pptxExportPendingCaseId}
+              batchPptxDownloadPendingId={batchPptxDownloadPendingId}
+              batchRunPendingId={batchRunPendingId}
+              onOpenSubmit={() => setSubmitOpen(true)}
+              onOpenCaseAssets={(caseId) => openAssetsEditorForCase(caseId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onOpenSvgEditor={() => setActiveView("svg")}
+              onRenameBatch={(batch) => setTaskRenameTarget({ batchId: batch.batch_id, name: batch.name })}
+              onDeleteBatch={(batch) => setTaskDeleteTarget({ batchId: batch.batch_id, name: batch.name })}
+              onRunBatch={(batchId) => runTaskBatch(batchId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSelectBatch={(batchId) => selectBatch(batchId).catch((err) => setError(err.message))}
+              onFocusCase={(caseId) => selectCase(caseId).then(() => undefined).catch((err) => setError(err.message))}
+              onSelectCase={(caseId) => openCaseFromTask(caseId).catch((err) => setError(err.message))}
+              onRunFromAssets={() => runFromAssets().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRetryCase={(item) => retryFailedCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRerunAnalysis={(item) => rerunAnalysisForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRerunStage={(item, stage) => rerunStageForCase(item, stage).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onExportPptx={(caseId) => exportPptxForCase(caseId)}
+              onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
+              onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onOpenWorkflowNodeArtifact={(caseId, nodeId) => openWorkflowNodeArtifactCanvas(caseId, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+            />
+          </div>
+        </div>
       ) : activeView === "editor" && runCompatibility === "v2" ? (
         <V2AssetsWorkspace
           activeCase={activeCase}
@@ -1239,6 +1261,7 @@ function BoardWorkspace({
   onRunFromAssets,
   onRetryCase,
   onRerunAnalysis,
+  onRerunStage,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx,
@@ -1281,6 +1304,7 @@ function BoardWorkspace({
   onRunFromAssets: () => void;
   onRetryCase: (item: CaseRecord) => void;
   onRerunAnalysis: (item: CaseRecord) => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -1336,6 +1360,11 @@ function BoardWorkspace({
           v2ActionPending={v2ActionPending}
           onOpenCaseAssets={onOpenCaseAssets}
           onOpenWorkflowNodeArtifact={onOpenWorkflowNodeArtifact}
+          runInProgress={runInProgress}
+          canRunFromAssets={canRunFromAssets}
+          caseActionPendingId={caseActionPendingId}
+          onRunFromAssets={onRunFromAssets}
+          onRerunStage={onRerunStage}
         />
       </div>
     </main>
@@ -2604,7 +2633,12 @@ function TaskDetailPanel({
   v2AssetLoadingElementId,
   v2ActionPending,
   onOpenCaseAssets,
-  onOpenWorkflowNodeArtifact
+  onOpenWorkflowNodeArtifact,
+  runInProgress,
+  canRunFromAssets,
+  caseActionPendingId,
+  onRunFromAssets,
+  onRerunStage
 }: {
   caseDetail: CaseDetail | null;
   progress: CaseProgress | null;
@@ -2619,6 +2653,11 @@ function TaskDetailPanel({
   v2ActionPending: string;
   onOpenCaseAssets: (caseId: string) => void;
   onOpenWorkflowNodeArtifact: (caseId: string, nodeId: string) => void;
+  runInProgress: boolean;
+  canRunFromAssets: boolean;
+  caseActionPendingId: string;
+  onRunFromAssets: () => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
 }) {
   if (!caseDetail) {
     return (
@@ -2637,6 +2676,11 @@ function TaskDetailPanel({
         workflowTemplateId={workflowTemplateId}
         onOpenAssetsReview={() => onOpenCaseAssets(currentCase.case_id)}
         onOpenNodeArtifact={(nodeId) => onOpenWorkflowNodeArtifact(currentCase.case_id, nodeId)}
+        runInProgress={runInProgress}
+        canRunFromAssets={canRunFromAssets}
+        caseActionPendingId={caseActionPendingId}
+        onContinueFromReview={onRunFromAssets}
+        onRerunStage={onRerunStage}
       />
       {runCompatibility === "v2" && v2PackageError && <ErrorDetail message={v2PackageError} />}
       {currentCase.error_message && <ErrorDetail message={currentCase.error_message} />}
@@ -2663,19 +2707,30 @@ function DagRunPanel({
   progress,
   workflowTemplateId,
   onOpenAssetsReview,
-  onOpenNodeArtifact
+  onOpenNodeArtifact,
+  runInProgress,
+  canRunFromAssets,
+  caseActionPendingId,
+  onContinueFromReview,
+  onRerunStage
 }: {
   caseDetail: CaseDetail;
   progress: CaseProgress | null;
   workflowTemplateId: string;
   onOpenAssetsReview: () => void;
   onOpenNodeArtifact: (nodeId: string) => void | Promise<void>;
+  runInProgress: boolean;
+  canRunFromAssets: boolean;
+  caseActionPendingId: string;
+  onContinueFromReview: () => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
 }) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loadError, setLoadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [viewerError, setViewerError] = useState("");
   const [viewerLoadingNodeId, setViewerLoadingNodeId] = useState("");
+  const [breakpointNodeId, setBreakpointNodeId] = useState("");
 
   useEffect(() => {
     let canceled = false;
@@ -2705,10 +2760,17 @@ function DagRunPanel({
   const views = useMemo(() => buildDagNodeViews(template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files), [template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
+  const selectedRerunStage = workflowStageRerunStage(selectedView?.stage || "");
+  const actionPending = runInProgress || caseActionPendingId === currentCase.case_id;
+  const rerunDisabled = !selectedRerunStage || actionPending;
+  const continueEnabled = currentCase.status === "assets_review" && canRunFromAssets && !actionPending;
+  const breakpointSupported = selectedView?.node.node_type === "human_review";
+  const breakpointActive = Boolean(selectedView && breakpointNodeId === selectedView.node.node_id);
   useEffect(() => {
     setSelectedNodeId("");
     setViewerError("");
     setViewerLoadingNodeId("");
+    setBreakpointNodeId("");
   }, [caseDetail.case.case_id, workflowTemplateId]);
 
   useEffect(() => {
@@ -2726,6 +2788,16 @@ function DagRunPanel({
     } finally {
       setViewerLoadingNodeId((current) => (current === nodeId ? "" : current));
     }
+  }
+
+  function rerunSelectedStage() {
+    if (!selectedRerunStage || actionPending) return;
+    void onRerunStage(currentCase, selectedRerunStage);
+  }
+
+  function toggleBreakpoint() {
+    if (!selectedView || !breakpointSupported || actionPending) return;
+    setBreakpointNodeId((current) => (current === selectedView.node.node_id ? "" : selectedView.node.node_id));
   }
 
   return (
@@ -2818,6 +2890,55 @@ function DagRunPanel({
           ) : (
             <EmptyState label="还没有 Workflow 节点" />
           )}
+        </div>
+        <div className="dag-run-action-strip" aria-label="DAG 节点操作">
+          <button
+            type="button"
+            className="dag-action-button"
+            disabled={!selectedView || viewerLoadingNodeId === selectedView?.node.node_id}
+            onClick={() => {
+              if (!selectedView) return;
+              void openNodeViewer(selectedView.node.node_id);
+            }}
+          >
+            <ViewResultIcon />
+            <span>{viewerLoadingNodeId === selectedView?.node.node_id ? "加载中" : "查看结果"}</span>
+          </button>
+          <div className="dag-action-dropdown">
+            <button type="button" className="dag-action-button" disabled={rerunDisabled}>
+              {actionPending ? <ButtonSpinner /> : <RetryIcon />}
+              <span>重新运行</span>
+            </button>
+            <div className="dag-action-menu" role="menu">
+              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
+                <span>重跑当前阶段</span>
+                <em>{selectedRerunStage ? `仅从 ${humanize(selectedRerunStage)} 发起` : "当前节点暂无可重跑阶段"}</em>
+              </button>
+              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
+                <span>从此阶段运行到结束</span>
+                <em>{selectedRerunStage ? "清理后续过期结果并恢复流水线" : "当前节点暂无可恢复阶段"}</em>
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`dag-action-button${breakpointActive ? " active" : ""}`}
+            disabled={!breakpointSupported || actionPending}
+            title={breakpointSupported ? "运行到确认节点后等待继续" : "当前后端仅支持确认节点断点"}
+            onClick={toggleBreakpoint}
+          >
+            <BreakpointIcon />
+            <span>{breakpointActive ? "断点已设" : "设置断点"}</span>
+          </button>
+          <button
+            type="button"
+            className="dag-action-button primary"
+            disabled={!continueEnabled}
+            onClick={onContinueFromReview}
+          >
+            <PlayIcon />
+            <span>继续</span>
+          </button>
         </div>
         <aside className="dag-node-detail">
           {selectedView ? (
@@ -6594,6 +6715,24 @@ function RetryIcon() {
   );
 }
 
+function ViewResultIcon() {
+  return (
+    <svg className="view-result-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.6 10s2.6-4.7 7.4-4.7 7.4 4.7 7.4 4.7-2.6 4.7-7.4 4.7S2.6 10 2.6 10Z" />
+      <path d="M8.1 10a1.9 1.9 0 1 0 3.8 0 1.9 1.9 0 0 0-3.8 0Z" />
+    </svg>
+  );
+}
+
+function BreakpointIcon() {
+  return (
+    <svg className="breakpoint-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5.2 4.6h5.4l4.2 5.4-4.2 5.4H5.2Z" />
+      <path d="M8.1 7.8h2.6v4.4H8.1Z" />
+    </svg>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg className="download-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -7645,6 +7784,13 @@ function retryStageForCase(item: Pick<CaseRecord, "phase" | "stage" | "stale_fro
   const canonical = canonicalPipelineStage(stage);
   if (canonical) return canonical;
   return "analysis";
+}
+
+function workflowStageRerunStage(stage: string): WorkbenchRerunStage | "" {
+  const canonical = canonicalPipelineStage(stage.toLowerCase());
+  if (!canonical) return "";
+  if (canonical === "package_run") return "package_run";
+  return canonical;
 }
 
 function latestProgressFile(progress: CaseProgress | null, label: string) {

@@ -84,6 +84,119 @@ test("running edge animation only applies to edges entering the running node", a
   assert.equal(dagRunEdgeState("done", "done"), "done");
 });
 
+test("failed DAG edges stay failed instead of running or done", async () => {
+  const { dagRunEdgeState } = await loadTsModule("../src/workflowRunState.ts");
+
+  assert.equal(dagRunEdgeState("done", "failed"), "failed");
+  assert.equal(dagRunEdgeState("failed", "waiting"), "failed");
+  assert.equal(dagRunEdgeState("failed", "done"), "failed");
+});
+
+test("failed case status overrides a stale running workflow node record", async () => {
+  const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
+  const node = {
+    node_id: "svg_compose",
+    node_type: "agent",
+    title: "SVG Compose",
+    inputs: [port("in")],
+    outputs: [port("out")],
+    config: { preset_id: "svg_generation" },
+    position: {},
+    description: ""
+  };
+  const nodeRuns = [
+    workflowNodeRun({
+      nodeId: "svg_compose",
+      status: "running",
+      attemptId: "001",
+      startedAt: "2026-06-23T04:02:00Z",
+      endedAt: "",
+      errorMessage: ""
+    })
+  ];
+
+  const state = workflowNodeRuntimeState(
+    node,
+    caseRecord({
+      status: "failed",
+      stage: "compose_svg",
+      phase: "reconstruction",
+      errorMessage: "RuntimeError: SVG compose failed"
+    }),
+    [],
+    nodeRuns,
+    [],
+    []
+  );
+
+  assert.equal(state.state, "failed");
+  assert.equal(state.meta, "失败");
+  assert.equal(state.error, "RuntimeError: SVG compose failed");
+});
+
+test("failed case status turns unrelated stale running node records red", async () => {
+  const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
+  const node = {
+    node_id: "page_spec_refine",
+    node_type: "agent",
+    title: "PageSpec Refine",
+    inputs: [port("in")],
+    outputs: [port("out")],
+    config: { preset_id: "page_spec_refine" },
+    position: {},
+    description: ""
+  };
+  const state = workflowNodeRuntimeState(
+    node,
+    caseRecord({
+      status: "failed",
+      stage: "prepare",
+      phase: "analysis",
+      errorMessage: "Workbench restarted while this case was running"
+    }),
+    [],
+    [
+      workflowNodeRun({
+        nodeId: "page_spec_refine",
+        status: "running",
+        attemptId: "002",
+        startedAt: "2026-06-23T04:02:00Z",
+        endedAt: "",
+        errorMessage: ""
+      })
+    ],
+    [],
+    []
+  );
+
+  assert.equal(state.state, "failed");
+  assert.equal(state.meta, "失败");
+  assert.equal(state.error, "Workbench restarted while this case was running");
+});
+
+test("failed detail case is not overwritten by stale running progress", async () => {
+  const { currentCaseRecord } = await loadTsModule("../src/workflowRunState.ts");
+
+  const state = currentCaseRecord(
+    caseRecord({
+      status: "failed",
+      stage: "prepare",
+      phase: "analysis",
+      errorMessage: "Workbench restarted while this case was running"
+    }),
+    caseRecord({
+      status: "analysis_running",
+      stage: "refine_elements",
+      phase: "analysis",
+      errorMessage: ""
+    })
+  );
+
+  assert.equal(state.status, "failed");
+  assert.equal(state.stage, "prepare");
+  assert.equal(state.error_message, "Workbench restarted while this case was running");
+});
+
 test("error detail text stays complete for processing failures", async () => {
   const { errorDetailText } = await loadTsModule("../src/workflowRunState.ts");
   const message = [
@@ -284,6 +397,39 @@ function stageRun({
     ended_at: endedAt,
     log_path: "",
     error_message: errorMessage
+  };
+}
+
+function workflowNodeRun({
+  nodeId,
+  status,
+  attemptId,
+  startedAt,
+  endedAt,
+  errorMessage
+}) {
+  return {
+    node_id: nodeId,
+    node_type: "agent",
+    attempt_id: attemptId,
+    status,
+    workdir: `nodes/${nodeId}/runs/${attemptId}`,
+    provider_id: "codex_sdk",
+    resource_id: "",
+    started_at: startedAt,
+    ended_at: endedAt,
+    duration_ms: 0,
+    error_message: errorMessage,
+    output_types: [],
+    output_count: 0,
+    output_files: [],
+    prompt_path: "",
+    stdout_path: "",
+    stderr_path: "",
+    trace_path: "",
+    session_log_path: "",
+    execution_manifest_path: "",
+    exit_code: 0
   };
 }
 

@@ -2,7 +2,7 @@ import type { ArtifactRecord, CaseProgressFile, CaseRecord, StageRunRecord, Work
 import type { WorkflowNode } from "./workflowTypes";
 
 export type DagRunNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale";
-export type DagRunEdgeState = "waiting" | "running" | "done";
+export type DagRunEdgeState = "waiting" | "running" | "done" | "failed";
 
 export type WorkflowStageRuntimeState = {
   stage: string;
@@ -31,6 +31,7 @@ const PIPELINE_STAGE_ORDER = [
 ] as const;
 
 export function dagRunEdgeState(sourceState: DagRunNodeState, targetState: DagRunNodeState): DagRunEdgeState {
+  if (sourceState === "failed" || targetState === "failed") return "failed";
   if (targetState === "running") return "running";
   if (sourceState === "done" && targetState === "done") return "done";
   return "waiting";
@@ -42,6 +43,21 @@ export function errorDetailText(value: string): string {
 
 export function currentCaseRecord(detailCase: CaseRecord, progressCase?: CaseRecord | null): CaseRecord {
   if (!progressCase || progressCase.case_id !== detailCase.case_id) return detailCase;
+  if (
+    detailCase.status === "failed" &&
+    Boolean(detailCase.error_message) &&
+    (progressCase.status === "queued" || progressCase.status === "analysis_running" || progressCase.status === "svg_running")
+  ) {
+    return {
+      ...detailCase,
+      ...progressCase,
+      status: "failed",
+      phase: detailCase.phase,
+      stage: detailCase.stage,
+      error_message: detailCase.error_message,
+      stale_from_stage: detailCase.stale_from_stage
+    };
+  }
   return { ...detailCase, ...progressCase };
 }
 
@@ -82,6 +98,12 @@ export function workflowStageSpecState(
   artifacts: ArtifactRecord[]
 ): WorkflowStageRuntimeState {
   const latest = latestStageRun(stageRuns, (stageRun) => stageMatchesNode(stageRun.stage_name, spec.stage));
+  if (current.status === "failed" && stageMatchesNode(current.stage, spec.stage)) {
+    return { stage: spec.stage, state: "failed", meta: "失败", error: current.error_message };
+  }
+  if (current.status === "failed" && latest?.status === "running") {
+    return { stage: spec.stage, state: "failed", meta: "失败", error: current.error_message };
+  }
   if (isCurrentRunningStage(current, spec.stage)) {
     return { stage: spec.stage, state: "running", meta: "正在运行", error: "" };
   }
@@ -186,6 +208,12 @@ export function workflowNodeRuntimeState(
 ): WorkflowStageRuntimeState {
   const stage = workflowStageForNode(node);
   const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
+  if (current.status === "failed" && stage && stageMatchesNode(current.stage, stage)) {
+    return { state: "failed", stage, meta: "失败", error: current.error_message };
+  }
+  if (current.status === "failed" && latestNodeRun?.status === "running") {
+    return { state: "failed", stage, meta: "失败", error: current.error_message };
+  }
   if (latestNodeRun) {
     if (latestNodeRun.status === "ok") {
       return { state: "done", stage, meta: durationText(latestNodeRun.started_at, latestNodeRun.ended_at), error: "" };
