@@ -1177,7 +1177,6 @@ export default function App() {
               setImageGenConnection(nextConnection);
               saveImageGenConnectionSettings(nextConnection);
             }
-            setWorkbenchSettingsOpen(false);
           }}
           onError={setError}
         />
@@ -2201,17 +2200,6 @@ function WorkbenchSettingsCenter({
             </div>
           </div>
         </div>
-        <footer className="settings-actions">
-          <button type="button" onClick={() => void loadSettings()} disabled={loading || saving}>
-            刷新验证
-          </button>
-          <button type="button" onClick={onClose} disabled={saving}>
-            取消
-          </button>
-          <button type="button" className="primary" onClick={() => void saveSettings()} disabled={loading || saving}>
-            {saving ? "保存中" : "保存"}
-          </button>
-        </footer>
       </section>
     </div>
   );

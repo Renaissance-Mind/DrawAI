@@ -6668,10 +6668,10 @@ button.asset-status-unsupported {
 .workbench-agent-settings-dialog {
   position: relative;
   width: min(74vw, 1180px);
-  height: min(88vh, 860px);
-  max-height: calc(100vh - 28px);
+  height: 100vh;
+  max-height: none;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 58px;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   border: 0;
   border-radius: 0;
