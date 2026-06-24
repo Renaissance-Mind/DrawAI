@@ -1218,6 +1218,89 @@ def test_api_exposes_workflow_node_viewer_for_asset_packages(tmp_path: Path) -> 
     assert payload["elements"][0]["bbox"] == [2.0, 2.0, 12.0, 12.0]
     assert payload["elements"][0]["processing_intent"]["processing_type"] == "crop"
     assert payload["elements"][0]["review_status"] == "ok"
+    assert payload["asset_packages"][0]["element_id"] == "E001"
+    assert payload["asset_packages"][0]["status"] == "ok"
+
+
+def test_api_exposes_asset_prepare_viewer_as_asset_package_table(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    settings = _settings(tmp_path, base_config)
+    runner = WorkbenchRunner(
+        store,
+        settings,
+        stage_executor=_deterministic_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+    app = create_app(settings, store=store, runner=runner)
+    client = TestClient(app)
+    batch = store.create_batch(
+        name="viewer batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=base_config,
+    )
+    root = Path(case.run_root)
+    _write_minimal_v2_package(root, case.case_id)
+    page_spec = {
+        "schema": "drawai.page_spec.v1",
+        "page_id": case.case_id,
+        "source": {"image": str(source), "width_px": 24, "height_px": 24},
+        "canvas": {"width_px": 24, "height_px": 24},
+        "elements": [
+            {
+                "id": "E001",
+                "kind": "image",
+                "role": "picture",
+                "box_px": [2, 2, 12, 12],
+                "z_index": 1,
+                "confidence": "high",
+                "build": {"mode": "asset_ref", "processing_type": "crop", "asset_id": "A001"},
+                "source_refs": [{"kind": "candidate", "id": "fixture:E001"}],
+            }
+        ],
+    }
+    _write_workflow_node_run(
+        root,
+        "asset_prepare",
+        output_type="page_spec",
+        format_id="drawai.page_spec.v1",
+        output_payload=page_spec,
+        output_name="page_spec.json",
+    )
+    package_payload = json.loads((root / "drawai_package.json").read_text(encoding="utf-8"))["asset_packages"][0]
+    package_payload["status"] = "ok"
+    package_payload["active_result"] = {
+        "result_id": "crop_test",
+        "processor_type": "crop",
+        "status": "ok",
+        "kind": "raster",
+        "path": "elements/E001/results/crop_test/crop.png",
+        "files": [{"kind": "raster", "path": "elements/E001/results/crop_test/crop.png"}],
+    }
+    package_payload["all_results"] = [package_payload["active_result"]]
+    _write_json(root / "nodes" / "asset_prepare" / "runs" / "001" / "output" / "elements" / "E001" / "asset_package.json", package_payload)
+
+    response = client.get(f"/api/cases/{case.case_id}/workflow/nodes/asset_prepare/viewer")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["kind"] == "asset_packages"
+    assert payload["elements"][0]["element_id"] == "E001"
+    assert payload["asset_packages"][0]["element_id"] == "E001"
+    assert payload["asset_packages"][0]["active_result"]["path"] == (
+        "nodes/asset_prepare/runs/001/output/elements/E001/results/crop_test/crop.png"
+    )
 
 
 def test_api_exposes_workflow_node_viewer_for_page_spec(tmp_path: Path) -> None:

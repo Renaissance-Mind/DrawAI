@@ -2658,6 +2658,7 @@ function nodeViewerKindLabel(kind: string): string {
   if (kind === "element_candidates") return "候选框";
   if (kind === "element_plans") return "元素计划";
   if (kind === "element_analysis") return "Agent 分析";
+  if (kind === "asset_packages") return "Assets 表格";
   return "文件";
 }
 
@@ -2675,10 +2676,37 @@ function WorkflowNodeArtifactWorkspace({
   const [selectedElementId, setSelectedElementId] = useState(viewer.elements[0]?.element_id || "");
   const [elementFilter, setElementFilter] = useState<V2ElementFilter>(EMPTY_V2_ELEMENT_FILTER);
   const [viewMode, setViewMode] = useState<NodeArtifactViewMode>("artifact");
+  const isAssetPackageViewer = viewer.kind === "asset_packages";
+  const assetPackageByElementId = useMemo(() => {
+    const items = new Map<string, V2AssetPackage>();
+    (viewer.asset_packages || []).forEach((assetPackage) => {
+      items.set(assetPackage.element_id, assetPackage);
+    });
+    return items;
+  }, [viewer.asset_packages]);
+  const statusFallback = isAssetPackageViewer ? "pending" : viewer.kind;
   const filteredElements = useMemo(
-    () => filterV2Elements(viewer.elements, elementFilter, null, viewer.kind),
-    [viewer.elements, elementFilter, viewer.kind]
+    () => filterV2Elements(viewer.elements, elementFilter, isAssetPackageViewer ? assetPackageByElementId : null, statusFallback),
+    [viewer.elements, elementFilter, isAssetPackageViewer, assetPackageByElementId, statusFallback]
   );
+  const viewerRunPackage = useMemo<V2RunPackage | null>(() => {
+    if (!isAssetPackageViewer) return null;
+    return {
+      schema: "drawai.workflow_node_asset_packages.viewer.v1",
+      run_id: viewer.case_id,
+      root: viewer.workdir,
+      source_image: viewer.source_image.relative_path,
+      canvas: {},
+      created_at: "",
+      metadata: {
+        node_id: viewer.node_id,
+        attempt_id: viewer.attempt_id,
+        source_path: viewer.source_path || ""
+      },
+      elements: viewer.elements,
+      asset_packages: viewer.asset_packages || []
+    };
+  }, [isAssetPackageViewer, viewer]);
   const fileLinks = viewer.files.filter((file) => file.exists && file.url);
   const agentLogs = viewer.agent_logs || {
     files: [],
@@ -2781,16 +2809,16 @@ function WorkflowNodeArtifactWorkspace({
                 elements={viewer.elements}
                 filter={elementFilter}
                 onChange={setElementFilter}
-                packageByElementId={null}
-                statusFallback={viewer.kind}
-                showStatus={false}
+                packageByElementId={isAssetPackageViewer ? assetPackageByElementId : null}
+                statusFallback={statusFallback}
+                showStatus={isAssetPackageViewer}
               />
             ) : (
               <div className="toolbar-note">{agentLogCount} 条事件 · {agentLogLinks.length} 个日志文件</div>
             )}
           </div>
           <div className="editor-actions">
-            {viewMode === "artifact" && (
+            {viewMode === "artifact" && !isAssetPackageViewer && (
               <div className="tool-group">
                 <button className="icon-button" title="缩小" onClick={() => changeZoom(-0.1)}>−</button>
                 <span className="zoom-readout">{Math.round(zoom * 100)}%</span>
@@ -2810,7 +2838,25 @@ function WorkflowNodeArtifactWorkspace({
         {viewMode === "artifact" ? (
           <>
             <div className="asset-stage v2-assets-stage" data-asset-view="extraction">
-              {viewer.available && viewer.source_image.url ? (
+              {isAssetPackageViewer ? (
+                <section className="v2-assets-processing-stage node-artifact-asset-packages">
+                  <V2AssetPackagePanel
+                    activeCase={activeCase}
+                    runPackage={viewerRunPackage}
+                    elements={filteredElements}
+                    totalElementCount={viewer.elements.length}
+                    selectedElementId={selectedElementId}
+                    selectedAssetPackage={null}
+                    loadingElementId=""
+                    packageError=""
+                    actionPending=""
+                    readOnly
+                    onSelectElement={setSelectedElementId}
+                    onProcessAsset={() => undefined}
+                    onSetActiveResult={() => undefined}
+                  />
+                </section>
+              ) : viewer.available && viewer.source_image.url ? (
                 <V2AssetCanvas
                   activeCase={activeCase}
                   runPackage={null}
@@ -2820,7 +2866,7 @@ function WorkflowNodeArtifactWorkspace({
                   figureUrl={viewer.source_image.url}
                   zoom={zoom}
                   filter={elementFilter}
-                  statusFallback={viewer.kind}
+                  statusFallback={statusFallback}
                   onSelectElement={setSelectedElementId}
                 />
               ) : (
@@ -2966,6 +3012,7 @@ function V2AssetPackagePanel({
   loadingElementId,
   packageError,
   actionPending,
+  readOnly = false,
   onSelectElement,
   onProcessAsset,
   onSetActiveResult
@@ -2979,6 +3026,7 @@ function V2AssetPackagePanel({
   loadingElementId: string;
   packageError: string;
   actionPending: string;
+  readOnly?: boolean;
   onSelectElement: (elementId: string) => void;
   onProcessAsset: (processor: V2ProcessorType, elementId?: string) => void;
   onSetActiveResult: (resultId: string) => void;
@@ -3004,7 +3052,7 @@ function V2AssetPackagePanel({
     const status = packageByElementId.get(element.element_id)?.status || "pending";
     return status === "pending" || status === "running";
   }).length;
-  const canProcess = Boolean(selectedElement && !actionPending);
+  const canProcess = Boolean(selectedElement && !actionPending && !readOnly);
   const activeProcessAction = (elementId: string, processor: V2ProcessorType) => actionPending === `process:${elementId}:${processor}`;
   const activeAction = (prefix: string) => actionPending.startsWith(prefix);
 
@@ -3060,7 +3108,11 @@ function V2AssetPackagePanel({
                       <span>{activeResult ? v2ResultLabel(activeResult) : "未生成"}</span>
                     </td>
                     <td>
-                      {plannedProcessor ? (
+                      {readOnly ? (
+                        <button type="button" disabled title="节点产物查看为只读模式">
+                          只读
+                        </button>
+                      ) : plannedProcessor ? (
                         <button
                           type="button"
                           className={rowPending ? "running" : ""}
@@ -3132,22 +3184,24 @@ function V2AssetPackagePanel({
               <code>{compactJson(selectedElement.processing_intent.parameters)}</code>
             </div>
 
-            <div className="v2-processor-toolbar" aria-label="v2 资产处理器">
-              {V2_PROCESSABLE_PROCESSORS.map((processor) => (
-                <button
-                  type="button"
-                  key={processor}
-                  disabled={!canProcess || activeAction("process:")}
-                  onClick={() => onProcessAsset(processor, selectedElement.element_id)}
-                >
-                  {activeProcessAction(selectedElement.element_id, processor) && <ButtonSpinner />}
-                  {v2ProcessorLabel(processor)}
+            {!readOnly && (
+              <div className="v2-processor-toolbar" aria-label="v2 资产处理器">
+                {V2_PROCESSABLE_PROCESSORS.map((processor) => (
+                  <button
+                    type="button"
+                    key={processor}
+                    disabled={!canProcess || activeAction("process:")}
+                    onClick={() => onProcessAsset(processor, selectedElement.element_id)}
+                  >
+                    {activeProcessAction(selectedElement.element_id, processor) && <ButtonSpinner />}
+                    {v2ProcessorLabel(processor)}
+                  </button>
+                ))}
+                <button type="button" className="asset-status-unsupported" disabled title="图表 Agent 接口已预留，当前版本不执行">
+                  Chart Agent
                 </button>
-              ))}
-              <button type="button" className="asset-status-unsupported" disabled title="图表 Agent 接口已预留，当前版本不执行">
-                Chart Agent
-              </button>
-            </div>
+              </div>
+            )}
 
             {selectedPackage?.failure && (
               <ErrorDetail message={selectedPackage.failure} className="asset-status-failed" />
@@ -3170,6 +3224,8 @@ function V2AssetPackagePanel({
                       {resultUrl && <a href={resultUrl} target="_blank" rel="noreferrer">查看</a>}
                       {result.result_id === activeResultId ? (
                         <em>Active</em>
+                      ) : readOnly ? (
+                        <em>只读</em>
                       ) : (
                         <button type="button" disabled={Boolean(actionPending)} onClick={() => onSetActiveResult(result.result_id)}>
                           {actionPending === `active:${result.result_id}` && <ButtonSpinner />}
@@ -6643,7 +6699,8 @@ function humanize(value: string): string {
     svg_running: "SVG生成中",
     element_candidates: "候选框",
     element_plans: "元素计划",
-    element_analysis: "Agent 分析"
+    element_analysis: "Agent 分析",
+    asset_packages: "Assets 表格"
   };
   return labels[value] || value.replace(/_/g, " ");
 }

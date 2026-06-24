@@ -333,6 +333,7 @@ export interface WorkflowNodeViewer {
     runtime_log_tail: Array<Record<string, unknown>>;
   };
   elements: V2ElementPlan[];
+  asset_packages: V2AssetPackage[];
 }
 
 export interface SvgAttemptProgress {

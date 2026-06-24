@@ -2721,6 +2721,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
             "runtime_log_tail": [],
         },
         "elements": [],
+        "asset_packages": [],
     }
     if run_dir is None:
         base_payload["message"] = "这个节点还没有运行记录。"
@@ -2749,11 +2750,18 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
         return base_payload
 
     kind, relative_path, payload = overlay_source
-    elements = _workflow_viewer_elements_from_payload(payload, kind, root=root)
+    element_kind = kind
+    asset_packages = _workflow_viewer_asset_packages_from_payload(payload) if kind == "asset_packages" else []
+    if safe_node_id == "asset_prepare":
+        asset_packages = asset_packages or _workflow_viewer_asset_packages_from_output(root, run_dir)
+        if asset_packages:
+            kind = "asset_packages"
+    elements = _workflow_viewer_elements_from_payload(payload, element_kind, root=root)
     if not elements:
         base_payload["message"] = "这个节点产物已生成，但没有可绘制的 bbox。"
         base_payload["kind"] = kind
         base_payload["source_path"] = relative_path
+        base_payload["asset_packages"] = asset_packages
         return base_payload
 
     base_payload.update(
@@ -2763,6 +2771,7 @@ def _workflow_node_viewer_payload(case: CaseRecord, node_id: str) -> dict[str, A
             "message": "",
             "source_path": relative_path,
             "elements": elements,
+            "asset_packages": asset_packages,
         }
     )
     return base_payload
@@ -3216,13 +3225,15 @@ def _workflow_overlay_kind(output_type: str, format_id: str, path: str) -> str:
 def _workflow_overlay_kind_from_payload(payload: object, *, fallback: str) -> str:
     if isinstance(payload, Mapping):
         schema = str(payload.get("schema") or "")
+        if schema == "drawai.asset_packages.v1" or (fallback == "asset_packages" and "asset_packages" in payload):
+            return "asset_packages"
         if schema == "drawai.page_spec.v1":
             return "page_spec"
         if "element_candidate" in schema or "candidates" in payload:
             return "element_candidates"
         if "element_plan" in schema or "run_package" in schema:
             return "element_plans"
-        if schema == "drawai.asset_packages.v1" or "asset_packages" in payload:
+        if "asset_packages" in payload:
             return "asset_packages"
         if "element_analysis" in schema:
             return "element_analysis"
@@ -3282,6 +3293,65 @@ def _workflow_viewer_elements_from_payload(
             if (element := _workflow_viewer_element_from_asset_package(item, index, page_elements_by_id)) is not None
         ]
     return []
+
+
+def _workflow_viewer_asset_packages_from_payload(payload: Mapping[str, Any] | list[Any]) -> list[dict[str, Any]]:
+    items = payload.get("asset_packages", []) if isinstance(payload, Mapping) else payload
+    return [dict(item) for item in _json_list(items) if isinstance(item, Mapping)]
+
+
+def _workflow_viewer_asset_packages_from_output(root: Path, run_dir: Path) -> list[dict[str, Any]]:
+    output_dir = run_dir / "output"
+    elements_dir = output_dir / "elements"
+    if not elements_dir.is_dir():
+        return []
+    prefix = _case_relative_path(root, output_dir)
+    packages: list[dict[str, Any]] = []
+    for package_path in sorted(elements_dir.glob("*/asset_package.json")):
+        payload = _read_json_object_if_exists(package_path)
+        if not payload:
+            continue
+        packages.append(_workflow_viewer_package_with_prefixed_paths(payload, prefix))
+    return packages
+
+
+def _workflow_viewer_package_with_prefixed_paths(package: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    payload = dict(package)
+    payload["files"] = [_prefix_workflow_viewer_relpath(prefix, item) for item in _string_sequence(payload.get("files"))]
+    active_result = payload.get("active_result")
+    if isinstance(active_result, Mapping):
+        payload["active_result"] = _workflow_viewer_result_with_prefixed_paths(active_result, prefix)
+    payload["all_results"] = [
+        _workflow_viewer_result_with_prefixed_paths(item, prefix) for item in _json_list(payload.get("all_results")) if isinstance(item, Mapping)
+    ]
+    return payload
+
+
+def _workflow_viewer_result_with_prefixed_paths(result: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    payload = dict(result)
+    path = payload.get("path")
+    if isinstance(path, str):
+        payload["path"] = _prefix_workflow_viewer_relpath(prefix, path)
+    payload["files"] = [
+        _workflow_viewer_file_ref_with_prefixed_path(item, prefix) for item in _json_list(payload.get("files")) if isinstance(item, Mapping)
+    ]
+    return payload
+
+
+def _workflow_viewer_file_ref_with_prefixed_path(item: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    payload = dict(item)
+    path = payload.get("path")
+    if isinstance(path, str):
+        payload["path"] = _prefix_workflow_viewer_relpath(prefix, path)
+    return payload
+
+
+def _prefix_workflow_viewer_relpath(prefix: str, path: str) -> str:
+    if not path or path.startswith("/") or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", path):
+        return path
+    if path.startswith(prefix + "/"):
+        return path
+    return f"{prefix}/{path}"
 
 
 def _workflow_viewer_element_from_page_spec(item: Mapping[str, Any], index: int) -> dict[str, Any] | None:
