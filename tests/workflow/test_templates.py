@@ -106,6 +106,7 @@ def test_default_template_uses_pagespec_processor_formats() -> None:
         "no_process",
         "crop",
         "crop_nobg",
+        "image_edit",
     ]
     assert nodes["asset_prepare"].inputs[1].types == ("page_spec",)
     assert nodes["asset_prepare"].outputs[0].types == ("page_spec",)
