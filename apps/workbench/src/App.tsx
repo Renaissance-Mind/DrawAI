@@ -1465,6 +1465,7 @@ function WorkbenchSettingsCenter({
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
   const [settingsCategory, setSettingsCategory] = useState<WorkbenchSettingsCategory>("api");
+  const [settingsDetailTarget, setSettingsDetailTarget] = useState<WorkbenchSettingsCategory | null>(null);
   const [selectedApiPresetId, setSelectedApiPresetId] = useState("");
   const [selectedLlmPresetId, setSelectedLlmPresetId] = useState("");
   const [selectedProcessorId, setSelectedProcessorId] = useState("");
@@ -1523,6 +1524,43 @@ function WorkbenchSettingsCenter({
     const nextPreset = newApiPresetDraft(apiDrafts);
     setApiDrafts((current) => [...current, nextPreset]);
     setSelectedApiPresetId(nextPreset.id);
+    return nextPreset;
+  };
+
+  const currentSettingsItem =
+    WORKBENCH_SETTINGS_NAV_SECTIONS.flatMap((section) => section.items).find((item) => item.id === settingsCategory) ||
+    WORKBENCH_SETTINGS_NAV_SECTIONS[0].items[0];
+  const settingsDetailTitle =
+    settingsCategory === "api"
+      ? selectedApiPreset?.label || selectedApiPreset?.id || "API 预设"
+      : settingsCategory === "agent"
+        ? selectedAgent?.label || "Agent"
+        : settingsCategory === "llm"
+          ? selectedLlmPreset?.label || selectedLlmPreset?.id || "LLM 配置"
+          : selectedProcessor?.label || "Processor";
+
+  const openApiPresetSettings = (presetId: string) => {
+    setSettingsCategory("api");
+    setSelectedApiPresetId(presetId);
+    setSettingsDetailTarget("api");
+  };
+
+  const openAgentSettings = (providerId: string) => {
+    setSettingsCategory("agent");
+    selectAgentProvider(providerId);
+    setSettingsDetailTarget("agent");
+  };
+
+  const openLlmSettings = (presetId: string) => {
+    setSettingsCategory("llm");
+    setSelectedLlmPresetId(presetId);
+    setSettingsDetailTarget("llm");
+  };
+
+  const openProcessorSettings = (processorId: string) => {
+    setSettingsCategory("processor");
+    setSelectedProcessorId(processorId);
+    setSettingsDetailTarget("processor");
   };
 
   const saveSettings = async () => {
@@ -1602,7 +1640,10 @@ function WorkbenchSettingsCenter({
                           key={item.id}
                           className={`settings-nav-item${settingsCategory === item.id ? " active" : ""}`}
                           aria-current={settingsCategory === item.id ? "page" : undefined}
-                          onClick={() => setSettingsCategory(item.id)}
+                          onClick={() => {
+                            setSettingsCategory(item.id);
+                            setSettingsDetailTarget(null);
+                          }}
                         >
                           <span className="settings-nav-icon" aria-hidden="true">
                             <SettingsNavIcon icon={item.icon} />
@@ -1617,93 +1658,210 @@ function WorkbenchSettingsCenter({
             </aside>
             <div className="settings-full-main">
               <div className={`agent-settings-shell category-${settingsCategory}`}>
-            {settingsCategory === "api" && (
-              <div className="agent-settings-list-panel">
-                <div className="agent-settings-list" aria-label="API 预设">
-                  {apiDrafts.map((preset) => (
-                    <button
-                      type="button"
-                      key={preset.id}
-                      className={`agent-option${selectedApiPreset?.id === preset.id ? " active" : ""}`}
-                      onClick={() => setSelectedApiPresetId(preset.id)}
-                    >
-                      <span className="agent-option-main">
-                        <strong>{preset.label || preset.id}</strong>
-                        <span className="agent-status ok">{preset.type}</span>
-                      </span>
-                      <span className="agent-command">{preset.base_url || "未设置 Base URL"}</span>
-                      <span className="agent-option-meta">{preset.model || "未设置模型"}</span>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="agent-option agent-option-add"
-                    onClick={createApiPresetDraft}
-                  >
-                    <span className="agent-option-add-icon" aria-hidden="true">
-                      <PlusIcon />
-                    </span>
-                    <span className="agent-option-add-text">
-                      <strong>{apiDrafts.length === 0 ? "还没有 API 预设" : "新建 API 预设"}</strong>
-                      <em>{apiDrafts.length === 0 ? "点击添加第一个预设" : "添加新的 API 预设"}</em>
-                    </span>
-                  </button>
-                </div>
-              </div>
-            )}
-            {settingsCategory === "agent" && (
-              <div className="agent-settings-list-panel">
-                <div className="agent-settings-list" aria-label="本地 Agent">
-                  {loading && <div className="agent-settings-empty">加载中</div>}
-                  {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
-                  {agents.map((agent) => (
-                    <button
-                      type="button"
-                      key={agent.provider_id}
-                      className={`agent-option${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
-                      onClick={() => selectAgentProvider(agent.provider_id)}
-                    >
-                      <span className="agent-option-main">
-                        <strong>{agent.label}</strong>
-                        <span className={`agent-status ${agent.available ? "ok" : "missing"}`}>{agent.available ? "可用" : "未通过"}</span>
-                      </span>
-                      <span className="agent-option-meta">{agent.kind.toUpperCase()}</span>
-                      <span className="agent-command">{agent.command.length ? agent.command.join(" ") : "SDK"}</span>
-                      {agent.version && <span className="agent-version">{agent.version}</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {settingsCategory === "processor" && (
-              <div className="agent-settings-list-panel">
-                <div className="agent-settings-list" aria-label="Processors">
-                  {processorIds.map((processorId) => {
-                    const definition = processorDefinitions[processorId];
-                    const setting = processorDrafts[processorId];
-                    const status = processorResponse?.validation.processors[processorId];
-                    return (
+                <div className="settings-card-board">
+                  <div className="settings-card-heading">
+                    <span>{currentSettingsItem.label}</span>
+                    <strong>
+                      {settingsCategory === "api"
+                        ? "模型与 API 预设"
+                        : settingsCategory === "agent"
+                          ? "Agent 运行配置"
+                          : settingsCategory === "llm"
+                            ? "默认 LLM 配置"
+                            : "处理器配置"}
+                    </strong>
+                    <p>
+                      {settingsCategory === "api"
+                        ? `${apiDrafts.length} 个 API 预设`
+                        : settingsCategory === "agent"
+                          ? `${agents.length} 个 Agent 供应方`
+                          : settingsCategory === "llm"
+                            ? `${llmPresets.length} 个 LLM 预设`
+                            : `${processorIds.length} 个处理器`}
+                    </p>
+                  </div>
+                  {settingsCategory === "api" && (
+                    <div className="settings-model-grid" aria-label="API 预设">
+                      {apiDrafts.map((preset) => (
+                        <article
+                          key={preset.id}
+                          className={`settings-model-card${selectedApiPreset?.id === preset.id ? " active" : ""}`}
+                        >
+                          <div className="settings-model-card-head">
+                            <span className="settings-model-icon" aria-hidden="true">
+                              <SettingsNavIcon icon="api" />
+                            </span>
+                            <div>
+                              <strong>{preset.label || preset.id}</strong>
+                              <span>{preset.type}</span>
+                            </div>
+                          </div>
+                          <dl className="settings-model-meta">
+                            <div>
+                              <dt>模型</dt>
+                              <dd>{preset.model || "未设置"}</dd>
+                            </div>
+                            <div>
+                              <dt>Base URL</dt>
+                              <dd>{preset.base_url || "未设置"}</dd>
+                            </div>
+                          </dl>
+                          <button type="button" className="settings-model-action" onClick={() => openApiPresetSettings(preset.id)}>
+                            设置
+                          </button>
+                        </article>
+                      ))}
                       <button
                         type="button"
-                        key={processorId}
-                        className={`agent-option${selectedProcessorId === processorId ? " active" : ""}${status?.configured ? "" : " missing"}`}
-                        onClick={() => setSelectedProcessorId(processorId)}
+                        className="settings-model-card settings-model-card-add"
+                        onClick={() => {
+                          const nextPreset = createApiPresetDraft();
+                          openApiPresetSettings(nextPreset.id);
+                        }}
                       >
-                        <span className="agent-option-main">
-                          <strong>{definition.label}</strong>
-                          <span className={`agent-status ${status?.configured ? "ok" : "missing"}`}>
-                            {setting?.enabled ? (status?.configured ? "可用" : "未配置") : "关闭"}
-                          </span>
+                        <span className="settings-add-icon" aria-hidden="true">
+                          <PlusIcon />
                         </span>
-                        <span className="agent-command">{processorId}</span>
-                        <span className="agent-option-meta">{setting?.driver_id || definition.default_driver_id}</span>
+                        <strong>{apiDrafts.length === 0 ? "添加第一个 API 预设" : "新建 API 预设"}</strong>
+                        <span>API 预设</span>
                       </button>
-                    );
-                  })}
+                    </div>
+                  )}
+                  {settingsCategory === "agent" && (
+                    <div className="settings-model-grid" aria-label="本地 Agent">
+                      {loading && <div className="agent-settings-empty">加载中</div>}
+                      {!loading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
+                      {agents.map((agent) => (
+                        <article
+                          key={agent.provider_id}
+                          className={`settings-model-card${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
+                        >
+                          <div className="settings-model-card-head">
+                            <span className="settings-model-icon" aria-hidden="true">
+                              <SettingsNavIcon icon="agent" />
+                            </span>
+                            <div>
+                              <strong>{agent.label}</strong>
+                              <span>{agent.kind.toUpperCase()}</span>
+                            </div>
+                            <em className={`settings-card-status ${agent.available ? "ok" : "missing"}`}>
+                              {agent.available ? "可用" : "未通过"}
+                            </em>
+                          </div>
+                          <dl className="settings-model-meta">
+                            <div>
+                              <dt>命令</dt>
+                              <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
+                            </div>
+                            {agent.version && (
+                              <div>
+                                <dt>版本</dt>
+                                <dd>{agent.version}</dd>
+                              </div>
+                            )}
+                          </dl>
+                          <button type="button" className="settings-model-action" onClick={() => openAgentSettings(agent.provider_id)}>
+                            设置
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {settingsCategory === "llm" && (
+                    <div className="settings-model-grid" aria-label="LLM 预设">
+                      {llmPresets.length === 0 && <div className="agent-settings-empty">未发现 LLM API 预设</div>}
+                      {llmPresets.map((preset) => (
+                        <article
+                          key={preset.id}
+                          className={`settings-model-card${selectedLlmPresetId === preset.id ? " active" : ""}`}
+                        >
+                          <div className="settings-model-card-head">
+                            <span className="settings-model-icon" aria-hidden="true">
+                              <SettingsNavIcon icon="llm" />
+                            </span>
+                            <div>
+                              <strong>{preset.label || preset.id}</strong>
+                              <span>{preset.type === "llm_responses" ? "Responses" : "Chat Completions"}</span>
+                            </div>
+                          </div>
+                          <dl className="settings-model-meta">
+                            <div>
+                              <dt>模型</dt>
+                              <dd>{preset.model || "未设置"}</dd>
+                            </div>
+                            <div>
+                              <dt>Base URL</dt>
+                              <dd>{preset.base_url || "未设置"}</dd>
+                            </div>
+                          </dl>
+                          <button type="button" className="settings-model-action" onClick={() => openLlmSettings(preset.id)}>
+                            设置
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {settingsCategory === "processor" && (
+                    <div className="settings-model-grid" aria-label="Processors">
+                      {processorIds.map((processorId) => {
+                        const definition = processorDefinitions[processorId];
+                        const setting = processorDrafts[processorId];
+                        const status = processorResponse?.validation.processors[processorId];
+                        return (
+                          <article
+                            key={processorId}
+                            className={`settings-model-card${selectedProcessorId === processorId ? " active" : ""}${status?.configured ? "" : " missing"}`}
+                          >
+                            <div className="settings-model-card-head">
+                              <span className="settings-model-icon" aria-hidden="true">
+                                <SettingsNavIcon icon="processor" />
+                              </span>
+                              <div>
+                                <strong>{definition.label}</strong>
+                                <span>{processorId}</span>
+                              </div>
+                              <em className={`settings-card-status ${status?.configured ? "ok" : "missing"}`}>
+                                {setting?.enabled ? (status?.configured ? "可用" : "未配置") : "关闭"}
+                              </em>
+                            </div>
+                            <dl className="settings-model-meta">
+                              <div>
+                                <dt>Driver</dt>
+                                <dd>{setting?.driver_id || definition.default_driver_id}</dd>
+                              </div>
+                              <div>
+                                <dt>API 预设</dt>
+                                <dd>{setting?.api_preset_id || "未选择"}</dd>
+                              </div>
+                            </dl>
+                            <button type="button" className="settings-model-action" onClick={() => openProcessorSettings(processorId)}>
+                              设置
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-            <div className="agent-settings-panel">
+                {settingsDetailTarget && (
+                  <div className="settings-detail-backdrop" role="presentation" onMouseDown={() => setSettingsDetailTarget(null)}>
+                    <section
+                      className="settings-detail-modal"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label={`${currentSettingsItem.label}设置`}
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <header className="settings-detail-modal-head">
+                        <div>
+                          <span>{currentSettingsItem.label}</span>
+                          <strong>{settingsDetailTitle}</strong>
+                        </div>
+                        <button type="button" className="settings-detail-close" aria-label="关闭设置" onClick={() => setSettingsDetailTarget(null)}>
+                          ×
+                        </button>
+                      </header>
+                      <div className="agent-settings-panel settings-detail-panel">
               {settingsCategory === "api" && (
                 <div className="agent-settings-section">
                   <div className="agent-settings-section-title">
@@ -2027,9 +2185,20 @@ function WorkbenchSettingsCenter({
                   )}
                 </div>
               )}
+                      </div>
+                      <footer className="settings-detail-modal-actions">
+                        <button type="button" onClick={() => setSettingsDetailTarget(null)} disabled={saving}>
+                          取消
+                        </button>
+                        <button type="button" className="primary" onClick={() => void saveSettings()} disabled={loading || saving}>
+                          {saving ? "保存中" : "保存"}
+                        </button>
+                      </footer>
+                    </section>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          </div>
           </div>
         </div>
         <footer className="settings-actions">
