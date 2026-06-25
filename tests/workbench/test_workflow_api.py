@@ -236,6 +236,29 @@ def test_workbench_agent_settings_api_can_skip_agent_discovery(tmp_path: Path) -
     assert save_payload["agents"] == []
 
 
+def test_workbench_agent_settings_api_preserves_explicit_empty_llm_key_env(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    save_response = client.put(
+        "/api/workbench/agent-settings?include_agents=false",
+        json={
+            "selected_provider_id": "codex_cli",
+            "model": "gpt-5",
+            "llm_model": "llama3.1",
+            "llm_base_url": "http://localhost:11434/v1",
+            "llm_api_key_env": "",
+            "llm_wire_api": "chat_completions",
+        },
+    )
+
+    assert save_response.status_code == 200
+    assert save_response.json()["settings"]["llm_api_key_env"] == ""
+
+    read_response = client.get("/api/workbench/agent-settings?include_agents=false")
+    assert read_response.status_code == 200
+    assert read_response.json()["settings"]["llm_api_key_env"] == ""
+
+
 def test_workbench_agent_settings_api_rejects_hidden_drawai_tool_agent(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
@@ -296,6 +319,33 @@ def test_workbench_api_presets_api_saves_and_validates_presets(tmp_path: Path) -
     assert saved["type"] == "images_api"
     assert saved["api_key"] == "sk-local"
     assert (tmp_path / "workspace" / "settings" / "api_presets.json").is_file()
+
+
+def test_workbench_api_presets_api_saves_keyless_local_presets(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    save_response = client.put(
+        "/api/workbench/api-presets",
+        json={
+            "presets": [
+                {
+                    "id": "ollama",
+                    "label": "Ollama",
+                    "type": "llm_chat_completions",
+                    "base_url": "http://localhost:11434/v1",
+                    "model": "llama3.1",
+                    "api_key_env": "",
+                    "api_key": "",
+                }
+            ]
+        },
+    )
+
+    assert save_response.status_code == 200
+    saved = save_response.json()["presets"][0]
+    assert saved["id"] == "ollama"
+    assert saved["api_key_env"] == ""
+    assert saved["api_key"] == ""
 
 
 def test_workbench_api_presets_api_rejects_invalid_payloads(tmp_path: Path) -> None:

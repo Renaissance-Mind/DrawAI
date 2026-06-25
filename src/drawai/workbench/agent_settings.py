@@ -167,6 +167,7 @@ def normalize_workbench_agent_settings(
     fallback_hidden_provider: bool = False,
 ) -> WorkbenchAgentSettings:
     data = dict(payload or {})
+    raw_llm_api_key_env = data.get("llm_api_key_env")
     provider_id = str(data.get("selected_provider_id") or data.get("provider_id") or DEFAULT_AGENT_PROVIDER_ID).strip()
     if provider_id not in AGENT_DEFINITIONS:
         supported = ", ".join(WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS)
@@ -199,7 +200,7 @@ def normalize_workbench_agent_settings(
         llm_model=str(data.get("llm_model") or "").strip(),
         llm_base_url=str(data.get("llm_base_url") or "").strip().rstrip("/"),
         llm_api_key=str(data.get("llm_api_key") or "").strip(),
-        llm_api_key_env=str(data.get("llm_api_key_env") or "OPENAI_API_KEY").strip(),
+        llm_api_key_env=("OPENAI_API_KEY" if raw_llm_api_key_env is None else str(raw_llm_api_key_env)).strip(),
         llm_wire_api=llm_wire_api,
         llm_extra_body=dict(llm_extra_body),
     )

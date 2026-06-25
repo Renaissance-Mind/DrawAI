@@ -86,8 +86,6 @@ def _normalize_api_preset(item: Mapping[str, Any], index: int) -> ApiPreset:
     model = _required_string(item.get("model"), f"presets[{index}].model")
     api_key_env = str(item.get("api_key_env") or "").strip()
     api_key = str(item.get("api_key") or "").strip()
-    if not api_key_env and not api_key:
-        raise ValueError(f"presets[{index}] must set api_key_env or api_key")
     return ApiPreset(
         id=preset_id,
         label=label,
