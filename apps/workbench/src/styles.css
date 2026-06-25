@@ -164,6 +164,10 @@ select:focus {
   padding: 0;
 }
 
+.app-root.editor-mode .app-topbar {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .app-root > .board-workspace,
 .app-root > .board-mode-panels,
 .app-root > .editor-workspace,
@@ -214,6 +218,7 @@ select:focus {
 }
 
 .app-root.editor-mode .topbar-view-controls {
+  justify-content: flex-start;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -846,7 +851,7 @@ select:focus {
   position: relative;
   overflow: hidden;
   background: rgba(248, 250, 252, 0.72);
-  padding: 6px;
+  padding: 12px;
 }
 
 .task-detail-panel {
@@ -957,12 +962,13 @@ select:focus {
 }
 
 .task-list {
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  grid-auto-rows: minmax(268px, auto);
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: auto;
+  gap: 24px;
   overflow-x: hidden;
   overflow-y: auto;
-  scroll-snap-type: y proximity;
-  padding: 18px 18px 112px;
+  scroll-snap-type: y mandatory;
+  padding: 24px 24px 132px;
 }
 
 .batch-download-floating {
@@ -1297,11 +1303,12 @@ select:focus {
   position: relative;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  min-height: 268px;
+  gap: 12px;
+  min-height: 312px;
   align-self: start;
   scroll-snap-align: start;
-  padding: 11px;
+  scroll-snap-stop: always;
+  padding: 13px;
   cursor: pointer;
   z-index: 0;
 }
@@ -1871,9 +1878,9 @@ select:focus {
 .task-detail-panel {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 18px;
   overflow: auto;
-  padding: clamp(18px, 2.4vh, 28px) clamp(18px, 2vw, 30px);
+  padding: clamp(26px, 3vh, 38px) clamp(28px, 3vw, 46px);
 }
 
 .svg-studio {
@@ -2368,7 +2375,7 @@ select:focus {
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto auto;
-  gap: 14px;
+  gap: 18px;
 }
 
 .dag-run-canvas {
@@ -2385,7 +2392,7 @@ select:focus {
     linear-gradient(90deg, rgba(18, 32, 24, 0.045) 1px, transparent 1px),
     #ffffff;
   background-size: 26px 26px;
-  padding: 32px;
+  padding: 40px;
 }
 
 .dag-run-stage {
@@ -2422,6 +2429,11 @@ select:focus {
 .dag-run-edges path.failed {
   stroke: rgba(220, 38, 38, 0.86);
   filter: drop-shadow(0 0 5px rgba(220, 38, 38, 0.24));
+}
+
+.dag-run-edges path.breakpoint {
+  stroke: rgba(217, 119, 6, 0.86);
+  filter: drop-shadow(0 0 5px rgba(217, 119, 6, 0.2));
 }
 
 .dag-run-edges path.waiting {
@@ -2524,6 +2536,12 @@ select:focus {
   background: #fff8ec;
 }
 
+.dag-run-node.breakpoint {
+  border-color: var(--amber);
+  background: #fff8ec;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12), var(--shadow-soft);
+}
+
 .dag-run-node.failed {
   border-color: var(--danger);
   background: #fff7f6;
@@ -2572,6 +2590,11 @@ button.dag-run-node.review.active {
   background: #fff8ec;
 }
 
+button.dag-run-node.breakpoint.active {
+  border-color: var(--amber);
+  background: #fff8ec;
+}
+
 button.dag-run-node.failed.active {
   border-color: var(--danger);
   background: #fff7f6;
@@ -2615,7 +2638,7 @@ button.dag-run-node.running.active {
 .dag-node-detail {
   min-height: 190px;
   border-top: 1px solid var(--line);
-  padding: 16px 4px 0;
+  padding: 20px 8px 0;
 }
 
 .dag-run-action-strip {
@@ -2776,6 +2799,12 @@ button.dag-run-node.running.active {
 }
 
 .dag-node-detail-head em.review {
+  border-color: rgba(197, 106, 8, 0.24);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber);
+}
+
+.dag-node-detail-head em.breakpoint {
   border-color: rgba(197, 106, 8, 0.24);
   background: rgba(245, 158, 11, 0.1);
   color: var(--amber);
@@ -4741,7 +4770,7 @@ button.asset-status-unsupported {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;

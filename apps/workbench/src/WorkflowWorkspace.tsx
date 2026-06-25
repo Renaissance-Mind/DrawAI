@@ -545,16 +545,6 @@ const NODE_PRESETS: NodePreset[] = [
     }
   },
   {
-    key: "human",
-    node_type: "human_review",
-    title: "PageSpec Confirm",
-    icon: "H",
-    description: "Human review node that confirms a PageSpec before later materialization.",
-    inputs: [port("page_spec", "Page Spec", ["page_spec"], "drawai.page_spec.v1")],
-    outputs: [port("page_spec", "Confirmed PageSpec", ["page_spec"], "drawai.page_spec.v1", false)],
-    config: { review_surface: "page_spec", result_path: "output/page_spec.json" }
-  },
-  {
     key: "export",
     node_type: "export",
     title: "SVG to PPT",
@@ -1573,7 +1563,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
           <div className="workflow-rail-stats">
             <span>P {nodeStats.parser}</span>
             <span>A {nodeStats.agent}</span>
-            <span>H {nodeStats.human_review}</span>
+            <span>R {nodeStats.processor}</span>
           </div>
         </aside>
         {validation && !validation.ok && (
@@ -2134,33 +2124,6 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
               </div>
             )}
 
-            {selectedNode.node_type === "human_review" && (
-              <div className="workflow-inspector-section">
-                <div className="workflow-section-title">
-                  <span>人工确认界面</span>
-                </div>
-                <label className="workflow-field">
-                  <span>界面</span>
-                  <select
-                    value={String(selectedNode.config.review_surface || "assets")}
-                    disabled={readOnly}
-                    onChange={(event) => updateSelectedNodeConfig({ review_surface: event.target.value })}
-                  >
-                    <option value="assets">资产画布/表格</option>
-                    <option value="output">输出可视化</option>
-                  </select>
-                </label>
-                <label className="workflow-field">
-                  <span>结果路径</span>
-                  <input
-                    value={String(selectedNode.config.result_path || "")}
-                    disabled={readOnly}
-                    onChange={(event) => updateSelectedNodeConfig({ result_path: event.target.value })}
-                  />
-                </label>
-              </div>
-            )}
-
             <div className="workflow-inspector-section">
               <div className="workflow-section-title">
                 <span>连接端口</span>
@@ -2443,7 +2406,6 @@ function nodePresetGroup(preset: NodePreset): string {
   if (preset.node_type === "llm") return "LLM";
   if (preset.node_type === "processor") return "Processor";
   if (preset.node_type === "fusion") return "Fusion";
-  if (preset.node_type === "human_review") return "Review";
   if (preset.node_type === "export" || preset.node_type === "output") return "Export";
   return "Other";
 }
@@ -2918,7 +2880,7 @@ function workflowCanvasSize(template: WorkflowTemplate | null): { width: number;
 }
 
 function workflowNodeStats(template: WorkflowTemplate | null): Record<string, number> {
-  const stats: Record<string, number> = { parser: 0, agent: 0, llm: 0, processor: 0, export: 0, human_review: 0 };
+  const stats: Record<string, number> = { parser: 0, agent: 0, llm: 0, processor: 0, export: 0 };
   template?.nodes.forEach((node) => {
     if (node.node_type in stats) stats[node.node_type] += 1;
   });

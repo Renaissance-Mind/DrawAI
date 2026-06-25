@@ -73,7 +73,7 @@ from ..v2.workbench import (
 )
 from .agent_settings import WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS
 from .models import BatchExecutionMode, CaseRecord, WorkbenchSettings
-from .runner import WorkbenchRunner, create_case_config, _workflow_template_with_agent_settings
+from .runner import WorkbenchRunner, create_case_config, workflow_breakpoint_node_id, _workflow_template_with_agent_settings
 from .store import WorkbenchStore
 from drawai.workflow.agents import (
     agent_preset_by_id,
@@ -620,6 +620,35 @@ def create_app(
             return _workflow_node_viewer_payload(case, node_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/cases/{case_id}/workflow/breakpoint")
+    async def set_workflow_breakpoint(case_id: str, request: Request) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
+        payload = await request.json()
+        node_id = str(payload.get("node_id") or "")
+        try:
+            resolved_runner.set_workflow_breakpoint(case_id, node_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"case": _case_to_api_with_preview(resolved_store, resolved_store.get_case(case_id))}
+
+    @app.delete("/api/cases/{case_id}/workflow/breakpoint")
+    def clear_workflow_breakpoint(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
+        resolved_runner.clear_workflow_breakpoint(case_id)
+        return {"case": _case_to_api_with_preview(resolved_store, resolved_store.get_case(case_id))}
+
+    @app.post("/api/cases/{case_id}/workflow/continue")
+    def continue_workflow_case(case_id: str) -> dict[str, Any]:
+        case = _get_case_or_404(resolved_store, case_id)
+        _reject_legacy_case_mutation(case)
+        try:
+            resolved_runner.continue_workflow_case(case_id)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"case": _case_to_api_with_preview(resolved_store, resolved_store.get_case(case_id))}
 
     @app.post("/api/cases/{case_id}/elements/{element_id}/process")
     async def process_case_element(case_id: str, element_id: str, request: Request) -> dict[str, Any]:
@@ -2516,6 +2545,7 @@ def _case_to_api_with_preview(store: WorkbenchStore, case: CaseRecord) -> dict[s
         else "none"
     )
     payload["can_fork_from_source"] = classification.can_fork_from_source
+    payload["workflow_breakpoint_node_id"] = workflow_breakpoint_node_id(case.run_root)
     return payload
 
 

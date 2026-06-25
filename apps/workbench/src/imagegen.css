@@ -1766,7 +1766,7 @@
 /* Task rail + large panel workflow */
 
 .gen-task-root {
-  grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-columns: 272px minmax(0, 1fr);
   background: var(--canvas);
 }
 
@@ -1779,13 +1779,14 @@
 }
 
 .gen-task-head {
-  min-height: 62px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 13px 14px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
+  background: rgba(248, 250, 252, 0.48);
 }
 
 .gen-task-head div {
@@ -1807,8 +1808,11 @@
 
 .gen-task-head strong {
   color: var(--ink);
-  font-size: 18px;
-  line-height: 1;
+  font-size: 19px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gen-task-add {
@@ -1834,38 +1838,49 @@
 .gen-task-list {
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
 }
 
 .gen-task-item {
+  position: relative;
   min-width: 0;
-  min-height: 74px;
+  min-height: 62px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
-  gap: 4px 8px;
-  align-items: start;
-  padding: 10px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: var(--surface-soft);
+  gap: 3px 8px;
+  align-items: center;
+  padding: 10px 14px 10px 16px;
+  border: 0;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+  border-radius: 0;
+  background: rgba(248, 250, 252, 0.54);
   color: var(--ink-soft);
   text-align: left;
   box-shadow: none;
 }
 
 .gen-task-item:hover {
-  background: #fff;
-  border-color: var(--line);
+  background: #f1f5f9;
 }
 
 .gen-task-item.active {
-  border-color: rgba(15, 118, 110, 0.36);
-  background: #fff;
-  box-shadow: inset 3px 0 0 var(--teal);
+  background: #e6efff;
+  box-shadow: none;
+}
+
+.gen-task-item.active::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: var(--blue);
 }
 
 .gen-task-item.running {
@@ -1916,9 +1931,7 @@
 .gen-task-empty {
   display: grid;
   place-items: center;
-  min-height: 120px;
-  border: 1px dashed var(--line);
-  border-radius: 7px;
+  min-height: 160px;
   color: var(--faint);
   font-size: 12px;
 }
@@ -1945,7 +1958,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px 20px;
   align-content: start;
-  padding: 24px 28px;
+  padding: 34px 42px;
 }
 
 .gen-prompt-wide {
@@ -1974,7 +1987,7 @@
   gap: 14px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.9);
-  padding: 14px 28px;
+  padding: 14px 42px;
   backdrop-filter: blur(14px);
 }
 
@@ -1994,7 +2007,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 18px;
-  padding: 24px 28px;
+  padding: 34px 42px;
 }
 
 .gen-thumb-panel-head {

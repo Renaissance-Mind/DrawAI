@@ -33,6 +33,9 @@ import {
   saveProcessorSettings,
   saveWorkbenchAgentSettings,
   setActiveAssetResult,
+  setWorkflowBreakpoint,
+  clearWorkflowBreakpoint,
+  continueWorkflowCase,
   type WorkbenchRerunStage,
 } from "./api";
 import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudio";
@@ -911,6 +914,51 @@ export default function App() {
     }
   }
 
+  async function setBreakpointForCase(item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    try {
+      const response = await setWorkflowBreakpoint(item.case_id, nodeId);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
+  async function clearBreakpointForCase(item: Pick<CaseRecord, "case_id" | "batch_id">) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    try {
+      const response = await clearWorkflowBreakpoint(item.case_id);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
+  async function continueWorkflowForCase(item: Pick<CaseRecord, "case_id" | "batch_id">) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    const optimisticCase = currentCaseForOptimisticUpdate(item);
+    if (optimisticCase) {
+      mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, "prepare"));
+    }
+    try {
+      const response = await continueWorkflowCase(item.case_id);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+      await refreshBatches();
+      setActiveView("board");
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
   async function exportPptxForCase(caseId: string): Promise<ArtifactRecord[]> {
     if (pptxExportPendingCaseId) return [];
     setPptxExportPendingCaseId(caseId);
@@ -1117,6 +1165,9 @@ export default function App() {
               onRetryCase={(item) => retryFailedCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onRerunAnalysis={(item) => rerunAnalysisForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onRerunStage={(item, stage) => rerunStageForCase(item, stage).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSetWorkflowBreakpoint={(item, nodeId) => setBreakpointForCase(item, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onClearWorkflowBreakpoint={(item) => clearBreakpointForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onContinueWorkflow={(item) => continueWorkflowForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onExportPptx={(caseId) => exportPptxForCase(caseId)}
               onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
@@ -1262,6 +1313,9 @@ function BoardWorkspace({
   onRetryCase,
   onRerunAnalysis,
   onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx,
@@ -1305,6 +1359,9 @@ function BoardWorkspace({
   onRetryCase: (item: CaseRecord) => void;
   onRerunAnalysis: (item: CaseRecord) => void;
   onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -1365,6 +1422,9 @@ function BoardWorkspace({
           caseActionPendingId={caseActionPendingId}
           onRunFromAssets={onRunFromAssets}
           onRerunStage={onRerunStage}
+          onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
+          onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
+          onContinueWorkflow={onContinueWorkflow}
         />
       </div>
     </main>
@@ -2638,7 +2698,10 @@ function TaskDetailPanel({
   canRunFromAssets,
   caseActionPendingId,
   onRunFromAssets,
-  onRerunStage
+  onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow
 }: {
   caseDetail: CaseDetail | null;
   progress: CaseProgress | null;
@@ -2658,6 +2721,9 @@ function TaskDetailPanel({
   caseActionPendingId: string;
   onRunFromAssets: () => void;
   onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
 }) {
   if (!caseDetail) {
     return (
@@ -2681,6 +2747,9 @@ function TaskDetailPanel({
         caseActionPendingId={caseActionPendingId}
         onContinueFromReview={onRunFromAssets}
         onRerunStage={onRerunStage}
+        onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
+        onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
+        onContinueWorkflow={onContinueWorkflow}
       />
       {runCompatibility === "v2" && v2PackageError && <ErrorDetail message={v2PackageError} />}
       {currentCase.error_message && <ErrorDetail message={currentCase.error_message} />}
@@ -2712,7 +2781,10 @@ function DagRunPanel({
   canRunFromAssets,
   caseActionPendingId,
   onContinueFromReview,
-  onRerunStage
+  onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow
 }: {
   caseDetail: CaseDetail;
   progress: CaseProgress | null;
@@ -2724,13 +2796,15 @@ function DagRunPanel({
   caseActionPendingId: string;
   onContinueFromReview: () => void;
   onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
 }) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loadError, setLoadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [viewerError, setViewerError] = useState("");
   const [viewerLoadingNodeId, setViewerLoadingNodeId] = useState("");
-  const [breakpointNodeId, setBreakpointNodeId] = useState("");
 
   useEffect(() => {
     let canceled = false;
@@ -2762,15 +2836,18 @@ function DagRunPanel({
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   const selectedRerunStage = workflowStageRerunStage(selectedView?.stage || "");
   const actionPending = runInProgress || caseActionPendingId === currentCase.case_id;
+  const breakpointMutationPending = caseActionPendingId === currentCase.case_id;
   const rerunDisabled = !selectedRerunStage || actionPending;
-  const continueEnabled = currentCase.status === "assets_review" && canRunFromAssets && !actionPending;
-  const breakpointSupported = selectedView?.node.node_type === "human_review";
+  const breakpointNodeId = currentCase.workflow_breakpoint_node_id || "";
+  const casePausedAtBreakpoint = Boolean(breakpointNodeId && currentCase.status === "assets_review" && currentCase.stage === breakpointNodeId);
+  const needsReviewContinue = currentCase.status === "assets_review" && !casePausedAtBreakpoint && canRunFromAssets;
+  const continueEnabled = (casePausedAtBreakpoint || needsReviewContinue) && !actionPending;
+  const breakpointSupported = Boolean(selectedView);
   const breakpointActive = Boolean(selectedView && breakpointNodeId === selectedView.node.node_id);
   useEffect(() => {
     setSelectedNodeId("");
     setViewerError("");
     setViewerLoadingNodeId("");
-    setBreakpointNodeId("");
   }, [caseDetail.case.case_id, workflowTemplateId]);
 
   useEffect(() => {
@@ -2796,8 +2873,21 @@ function DagRunPanel({
   }
 
   function toggleBreakpoint() {
-    if (!selectedView || !breakpointSupported || actionPending) return;
-    setBreakpointNodeId((current) => (current === selectedView.node.node_id ? "" : selectedView.node.node_id));
+    if (!selectedView || !breakpointSupported || breakpointMutationPending) return;
+    if (breakpointActive) {
+      void onClearWorkflowBreakpoint(currentCase);
+      return;
+    }
+    void onSetWorkflowBreakpoint(currentCase, selectedView.node.node_id);
+  }
+
+  function continueRun() {
+    if (!continueEnabled) return;
+    if (casePausedAtBreakpoint) {
+      void onContinueWorkflow(currentCase);
+      return;
+    }
+    onContinueFromReview();
   }
 
   return (
@@ -2923,8 +3013,8 @@ function DagRunPanel({
           <button
             type="button"
             className={`dag-action-button${breakpointActive ? " active" : ""}`}
-            disabled={!breakpointSupported || actionPending}
-            title={breakpointSupported ? "运行到确认节点后等待继续" : "当前后端仅支持确认节点断点"}
+            disabled={!breakpointSupported || breakpointMutationPending}
+            title={breakpointActive ? "取消这个节点的断点" : "运行到这个节点后暂停并等待继续"}
             onClick={toggleBreakpoint}
           >
             <BreakpointIcon />
@@ -2934,7 +3024,7 @@ function DagRunPanel({
             type="button"
             className="dag-action-button primary"
             disabled={!continueEnabled}
-            onClick={onContinueFromReview}
+            onClick={continueRun}
           >
             <PlayIcon />
             <span>继续</span>
@@ -2963,25 +3053,6 @@ function DagRunPanel({
                 <div><dt>Outputs</dt><dd>{selectedView.node.outputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
               </dl>
               {selectedView.error && <ErrorDetail message={selectedView.error} />}
-              <div className="dag-node-actions">
-                <button
-                  type="button"
-                  onClick={() => openNodeViewer(selectedView.node.node_id)}
-                  disabled={viewerLoadingNodeId === selectedView.node.node_id}
-                >
-                  {viewerLoadingNodeId === selectedView.node.node_id ? "加载中" : "查看产物"}
-                </button>
-                {selectedView.node.node_type === "human_review" && String(selectedView.node.config.review_surface || "assets") === "assets" && (
-                  <button type="button" className="primary" onClick={onOpenAssetsReview}>
-                    Open assets review
-                  </button>
-                )}
-                {selectedView.node.node_type === "output" && caseDetail.artifacts.length > 0 && (
-                  <a href={caseDetail.artifacts[0].url} target="_blank" rel="noreferrer">
-                    Open output
-                  </a>
-                )}
-              </div>
               {viewerError && <ErrorDetail message={viewerError} />}
             </>
           ) : (
@@ -6905,7 +6976,8 @@ function stateLabel(state: PipelineNodeState): string {
     done: "完成",
     failed: "失败",
     review: "待确认",
-    stale: "需更新"
+    stale: "需更新",
+    breakpoint: "断点"
   };
   return labels[state];
 }

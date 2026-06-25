@@ -305,7 +305,7 @@ export default function ImageGenStudio({
 
   const [tasks, setTasks] = useState<ImageGenerationTask[]>([]);
   const [activeTaskId, setActiveTaskId] = useState("");
-  const [composerOpen, setComposerOpen] = useState(true);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [selectionMode, setSelectionMode] = useState<ImageGenSelectionMode>("off");
   const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
@@ -602,7 +602,7 @@ export default function ImageGenStudio({
         <div className="gen-task-head">
           <div>
             <span>生成任务</span>
-            <strong>{tasks.length || 0}</strong>
+            <strong>{tasks.length} 个任务</strong>
           </div>
           <button
             type="button"
@@ -620,19 +620,6 @@ export default function ImageGenStudio({
           </button>
         </div>
         <div className="gen-task-list" role="list">
-          <button
-            type="button"
-            className={`gen-task-item gen-task-all${!activeTaskId && !composerOpen ? " active" : ""}`}
-            onClick={() => {
-              setComposerOpen(false);
-              setActiveTaskId("");
-              setSelectionMode("off");
-              setSelectedImageIds([]);
-            }}
-          >
-            <span>全部结果</span>
-            <strong>{imageGenVisibleTiles(tasks).filter((tile) => tile.status === "completed").length} 张</strong>
-          </button>
           {tasks.map((task) => (
             <button
               type="button"
@@ -651,7 +638,6 @@ export default function ImageGenStudio({
               <em>{task.prompt}</em>
             </button>
           ))}
-          {tasks.length === 0 && <div className="gen-task-empty">还没有生成任务</div>}
         </div>
       </aside>
 
@@ -974,7 +960,7 @@ function GeneratedThumbnailPanel({
     <div className="gen-thumb-panel">
       <header className="gen-thumb-panel-head">
         <div>
-          <span>{activeTask ? activeTask.title : "全部结果"}</span>
+          <span>{activeTask ? activeTask.title : "生成结果"}</span>
           <strong>{completedCount} 张图片</strong>
         </div>
         <em>{hasRunningTasks ? "还有任务生成中" : tiles.length > 0 ? "可提交到可编辑化任务" : "等待生成"}</em>

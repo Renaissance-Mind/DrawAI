@@ -1,8 +1,8 @@
 import type { ArtifactRecord, CaseProgressFile, CaseRecord, StageRunRecord, WorkflowNodeRunRecord } from "./types";
 import type { WorkflowNode } from "./workflowTypes";
 
-export type DagRunNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale";
-export type DagRunEdgeState = "waiting" | "running" | "done" | "failed";
+export type DagRunNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale" | "breakpoint";
+export type DagRunEdgeState = "waiting" | "running" | "done" | "failed" | "breakpoint";
 
 export type WorkflowStageRuntimeState = {
   stage: string;
@@ -32,6 +32,7 @@ const PIPELINE_STAGE_ORDER = [
 
 export function dagRunEdgeState(sourceState: DagRunNodeState, targetState: DagRunNodeState): DagRunEdgeState {
   if (sourceState === "failed" || targetState === "failed") return "failed";
+  if (sourceState === "breakpoint" || targetState === "breakpoint") return "breakpoint";
   if (targetState === "running") return "running";
   if (sourceState === "done" && targetState === "done") return "done";
   return "waiting";
@@ -213,6 +214,9 @@ export function workflowNodeRuntimeState(
   }
   if (current.status === "failed" && latestNodeRun?.status === "running") {
     return { state: "failed", stage, meta: "失败", error: current.error_message };
+  }
+  if (current.workflow_breakpoint_node_id === node.node_id) {
+    return { state: "breakpoint", stage, meta: current.status === "assets_review" && current.stage === node.node_id ? "断点暂停" : "已设置断点", error: "" };
   }
   if (latestNodeRun) {
     if (latestNodeRun.status === "ok") {
