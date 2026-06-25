@@ -13,6 +13,7 @@ from . import model_runtime
 
 AGENT_CLI_RUNNER = "agent_cli"
 SUPPORTED_AGENT_CLI_AGENTS = frozenset({"kimi", "claude", "codex", "openclaw", "hermes", "custom"})
+CODEX_FAST_SERVICE_TIER = "priority"
 
 
 class AgentCliSvgError(RuntimeError):
@@ -438,7 +439,7 @@ def _codex_command(
     if "--color" not in command:
         command.extend(["--color", "never"])
     if fast and not _has_codex_service_tier(command):
-        command.extend(["-c", 'service_tier="fast"'])
+        command.extend(["-c", f'service_tier="{CODEX_FAST_SERVICE_TIER}"'])
     for image_path in image_paths:
         command.extend(["-i", str(image_path)])
     if "-" not in command:

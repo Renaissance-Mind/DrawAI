@@ -1048,6 +1048,6 @@ def test_invoke_codex_python_sdk_accepts_configured_reasoning_effort(monkeypatch
     )
 
     assert seen["thread_start_kwargs"]["config"] == {"model_reasoning_effort": "high"}
-    assert seen["thread_start_kwargs"]["service_tier"] == "fast"
+    assert seen["thread_start_kwargs"]["service_tier"] == "priority"
     assert seen["run_kwargs"]["effort"] == "high"
-    assert seen["run_kwargs"]["service_tier"] == "fast"
+    assert seen["run_kwargs"]["service_tier"] == "priority"

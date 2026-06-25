@@ -226,7 +226,7 @@ def test_codex_cli_agent_uses_isolated_codex_home(tmp_path: Path, monkeypatch: p
 
     assert "--ignore-rules" in captured["command"]
     assert "-c" in captured["command"]
-    assert 'service_tier="fast"' in captured["command"]
+    assert 'service_tier="priority"' in captured["command"]
     env_overrides = captured["env_overrides"]
     assert isinstance(env_overrides, dict)
     assert env_overrides["CODEX_HOME"] == str(isolated_home)
@@ -310,8 +310,8 @@ def test_codex_sdk_agent_uses_fast_service_tier(tmp_path: Path, monkeypatch: pyt
     result = _execute_codex_sdk_agent(request, prompt_path=prompt_path)
 
     assert result.provider_id == "codex_sdk"
-    assert seen["thread_start_kwargs"]["service_tier"] == "fast"  # type: ignore[index]
-    assert seen["run_kwargs"]["service_tier"] == "fast"  # type: ignore[index]
+    assert seen["thread_start_kwargs"]["service_tier"] == "priority"  # type: ignore[index]
+    assert seen["run_kwargs"]["service_tier"] == "priority"  # type: ignore[index]
 
 
 def test_codex_session_log_snapshot_copies_live_runtime_files(tmp_path: Path) -> None:

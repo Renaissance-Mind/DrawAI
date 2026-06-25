@@ -42,6 +42,7 @@ CODEX_SESSION_RUNTIME_STATE_FILES = (
     "state_5.sqlite-wal",
 )
 CODEX_RUNTIME_EVENT_TAIL_FILE = "codex_runtime_events.jsonl"
+CODEX_FAST_SERVICE_TIER = "priority"
 
 
 class CodexPythonSdkSvgError(RuntimeError):
@@ -751,7 +752,7 @@ class CodexPythonSdkSvgSession:
         self.reasoning_effort = _normalize_codex_reasoning_effort(
             settings.get("reasoning_effort", settings.get("model_reasoning_effort"))
         )
-        self.service_tier = "fast" if _runtime_fast(settings) else None
+        self.service_tier = CODEX_FAST_SERVICE_TIER if _runtime_fast(settings) else None
         self.timeout_seconds = model_runtime._runtime_timeout_seconds(settings)
         self.run_cwd = (
             Path(isolated_cwd)

@@ -48,6 +48,7 @@ GENERIC_AGENT_CLI_PROVIDERS: dict[str, str] = {
 ACP_AGENT_PROVIDERS: dict[str, str] = {
     provider_id: preset.agent_id for provider_id, preset in ACP_AGENT_BY_PROVIDER_ID.items()
 }
+CODEX_FAST_SERVICE_TIER = "priority"
 
 
 @dataclass(frozen=True)
@@ -971,7 +972,7 @@ def _codex_cli_config_args(options: Mapping[str, Any]) -> list[str]:
     reasoning_effort = _normalize_codex_reasoning_effort(raw_effort)
     overrides = [f'model_reasoning_effort="{reasoning_effort}"']
     if _fast_mode(options):
-        overrides.append('service_tier="fast"')
+        overrides.append(f'service_tier="{CODEX_FAST_SERVICE_TIER}"')
     args: list[str] = []
     for override in controlled_codex_config_overrides(overrides):
         args.extend(["-c", override])
@@ -1024,7 +1025,7 @@ def _codex_sdk_reasoning_effort(value: Any) -> str:
 
 
 def _codex_service_tier(options: Mapping[str, Any]) -> str | None:
-    return "fast" if _fast_mode(options) else None
+    return CODEX_FAST_SERVICE_TIER if _fast_mode(options) else None
 
 
 def _fast_mode(options: Mapping[str, Any]) -> bool:

@@ -196,7 +196,7 @@ def test_agent_cli_svg_runner_builds_codex_preset_with_images(monkeypatch, tmp_p
         "--color",
         "never",
         "-c",
-        'service_tier="fast"',
+        'service_tier="priority"',
         "-i",
         str(image_path),
         "-",
