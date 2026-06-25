@@ -1848,7 +1848,7 @@ function WorkbenchSettingsCenter({
                           >
                             <div className="settings-model-card-head">
                               <span
-                                className={`settings-model-icon${agentIcon ? " settings-agent-logo-mini" : ""}`}
+                                className={`settings-model-icon${agentIcon ? " settings-provider-logo-mini" : ""}`}
                                 style={agentIcon ? ({ "--provider-color": agentIcon.accent_color } as CSSProperties) : undefined}
                                 aria-hidden="true"
                               >

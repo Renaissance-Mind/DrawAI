@@ -97,7 +97,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "kimi-latest",
     api_key_env: "MOONSHOT_API_KEY",
     accent_color: "#0ea5e9",
-    icon_url: "/provider-icons/moonshot.svg",
+    icon_url: "/provider-icons/moonshot.png",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["kimi-latest", "kimi-latest-128k", "moonshot-v1-32k"]

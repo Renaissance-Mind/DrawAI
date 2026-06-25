@@ -19,7 +19,7 @@ test("API preset templates include local provider icons", async () => {
   const { API_PRESET_TEMPLATES } = await loadTemplateModule();
 
   for (const template of API_PRESET_TEMPLATES) {
-    assert.match(template.icon_url, /^\/provider-icons\/.+\.svg$/);
+    assert.match(template.icon_url, /^\/provider-icons\/.+\.(?:svg|png)$/);
     assert.equal(existsSync(new URL(`../public${template.icon_url}`, import.meta.url)), true, template.icon_url);
   }
 });
