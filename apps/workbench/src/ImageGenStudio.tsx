@@ -817,6 +817,12 @@ export default function ImageGenStudio({
             }}
             onRegenerate={regenerateSelectedImages}
             onSubmit={() => setSubmitDialogOpen(true)}
+            onOpenComposer={() => {
+              setComposerOpen(true);
+              setActiveTaskId("");
+              setSelectionMode("off");
+              setSelectedImageIds([]);
+            }}
           />
         )}
       </section>
@@ -940,7 +946,8 @@ function GeneratedThumbnailPanel({
   onToggleSelection,
   onToggleSelectionMode,
   onRegenerate,
-  onSubmit
+  onSubmit,
+  onOpenComposer
 }: {
   activeTask: ImageGenerationTask | null;
   completedCount: number;
@@ -955,6 +962,7 @@ function GeneratedThumbnailPanel({
   onToggleSelectionMode: () => void;
   onRegenerate: () => void;
   onSubmit: () => void;
+  onOpenComposer: () => void;
 }) {
   return (
     <div className="gen-thumb-panel">
@@ -965,7 +973,7 @@ function GeneratedThumbnailPanel({
         </div>
         <em>{hasRunningTasks ? "还有任务生成中" : tiles.length > 0 ? "可提交到可编辑化任务" : "等待生成"}</em>
       </header>
-      <div className="gen-result-grid" aria-label="生成结果缩略图">
+      <div className={`gen-result-grid${tiles.length === 0 ? " empty" : ""}`} aria-label="生成结果缩略图">
         {tiles.length > 0 ? (
           tiles.map((tile, index) => (
             <GeneratedTileCard
@@ -978,7 +986,14 @@ function GeneratedThumbnailPanel({
             />
           ))
         ) : (
-          <div className="gen-result-empty">点击左侧加号添加生成任务</div>
+          <div className="gen-result-empty">
+            <button type="button" className="gen-result-empty-action" onClick={onOpenComposer}>
+              <span className="gen-result-empty-plus" aria-hidden="true">
+                <PlusMiniIcon />
+              </span>
+              <strong>点击添加生成任务</strong>
+            </button>
+          </div>
         )}
       </div>
       <div className={`gen-corner-actions${selectionMode === "selecting" ? " selecting" : ""}`}>

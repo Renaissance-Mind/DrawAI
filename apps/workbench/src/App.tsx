@@ -129,6 +129,9 @@ type TaskContextMenuState = { caseId: string; caseName: string; x: number; y: nu
 type BatchContextMenuState = { batchId: string; batchName: string; caseCount: number; running: boolean; x: number; y: number };
 type TaskDialogTarget = { batchId: string; name: string };
 type WorkbenchSettingsNavItem = { id: WorkbenchSettingsCategory; label: string; icon: WorkbenchSettingsCategory };
+
+const CASE_DETAIL_LAYOUT_MS = 420;
+
 type DragState =
   | { kind: "move"; id: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
   | { kind: "resize"; id: string; handle: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
@@ -1376,8 +1379,41 @@ function BoardWorkspace({
   onOpenWorkflowNodeArtifact: (caseId: string, nodeId: string) => void;
 }) {
   const [detailClosing, setDetailClosing] = useState(false);
+  const boardRef = useRef<HTMLElement | null>(null);
   const detailCloseTimerRef = useRef<number | null>(null);
+  const previousCaseCardRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const detailOpen = Boolean(activeCase);
+
+  useLayoutEffect(() => {
+    const root = boardRef.current;
+    if (!root) return;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-case-card-id]"));
+    const previousRects = previousCaseCardRectsRef.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reducedMotion && previousRects.size > 0) {
+      cards.forEach((card) => {
+        const caseId = card.dataset.caseCardId || "";
+        const previous = previousRects.get(caseId);
+        if (!previous) return;
+        const current = card.getBoundingClientRect();
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return;
+        card.getAnimations().forEach((animation) => animation.cancel());
+        card.animate(
+          [
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: "translate(0, 0)" }
+          ],
+          {
+            duration: CASE_DETAIL_LAYOUT_MS,
+            easing: "cubic-bezier(0.16, 1, 0.3, 1)"
+          }
+        );
+      });
+    }
+    previousCaseCardRectsRef.current = new Map(cards.map((card) => [card.dataset.caseCardId || "", card.getBoundingClientRect()]));
+  });
 
   useEffect(() => {
     setDetailClosing(false);
@@ -1402,11 +1438,11 @@ function BoardWorkspace({
       detailCloseTimerRef.current = null;
       setDetailClosing(false);
       onCloseCaseDetail();
-    }, 260);
+    }, CASE_DETAIL_LAYOUT_MS);
   }
 
   return (
-    <main className={`board-workspace ${detailOpen ? "case-detail-open" : "case-detail-closed"} ${detailClosing ? "case-detail-closing" : ""}`}>
+    <main ref={boardRef} className={`board-workspace ${detailOpen ? "case-detail-open" : "case-detail-closed"} ${detailClosing ? "case-detail-closing" : ""}`}>
       <div className="board-grid">
         <TaskSelectionWorkspace
           batches={batches}
@@ -2941,6 +2977,7 @@ function DagRunPanel({
         <div>
           <span>Workflow run</span>
           <strong>{template?.name || workflowTemplateId || "Default DrawAI DAG"}</strong>
+          <p className="dag-run-file-name" title={currentCase.name}>{currentCase.name}</p>
         </div>
         <em>{dagRunCaseIdentifier(currentCase)}</em>
       </header>
@@ -5145,6 +5182,7 @@ function TaskSelectionWorkspace({
             return (
               <article
                 key={item.case_id}
+                data-case-card-id={item.case_id}
                 className={`task-row ${selected ? "active" : ""} ${item.status === "failed" ? "failed" : ""} ${editorReady ? "editor-ready" : "not-editor-ready"}`}
                 role="button"
                 tabIndex={0}

@@ -828,7 +828,7 @@ select:focus {
 }
 
 .board-workspace.case-detail-open .board-grid {
-  grid-template-columns: minmax(600px, 0.88fr) minmax(620px, 1.12fr);
+  grid-template-columns: minmax(704px, 0.95fr) minmax(620px, 1.05fr);
 }
 
 .task-selection-workspace {
@@ -986,7 +986,7 @@ select:focus {
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
-  align-items: stretch;
+  align-items: flex-start;
   gap: 34px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1324,6 +1324,7 @@ select:focus {
 .task-row {
   position: relative;
   flex: 0 1 360px;
+  width: 360px;
   max-width: min(360px, 100%);
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
@@ -1333,12 +1334,14 @@ select:focus {
   padding: 13px;
   cursor: pointer;
   z-index: 0;
+  will-change: transform;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
 .board-workspace.case-detail-open .task-row {
   flex: 0 0 auto;
-  width: 100%;
-  max-width: none;
+  width: 360px;
+  max-width: min(360px, 100%);
 }
 
 .task-row:hover,
@@ -1389,10 +1392,11 @@ select:focus {
 }
 
 .task-main strong {
+  display: block;
   max-width: 100%;
-  overflow: visible;
-  white-space: normal;
-  text-overflow: clip;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .task-meta {
@@ -1910,15 +1914,13 @@ select:focus {
   gap: 18px;
   overflow: auto;
   padding: clamp(26px, 3vh, 38px) clamp(28px, 3vw, 46px);
-  animation: task-detail-panel-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: task-detail-panel-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
 }
 
 .task-detail-panel.closing {
-  opacity: 0;
+  animation: task-detail-panel-out 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
   pointer-events: none;
-  transform: translateX(56px);
-  transition: transform 220ms cubic-bezier(0.7, 0, 0.84, 0), opacity 180ms ease;
 }
 
 .task-detail-close {
@@ -1963,10 +1965,21 @@ select:focus {
   padding-right: 44px;
 }
 
+.dag-run-file-name {
+  max-width: min(62vw, 680px);
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes task-detail-panel-in {
   from {
     opacity: 0;
-    transform: translateX(56px);
+    transform: translateX(72px);
   }
   to {
     opacity: 1;
@@ -1974,9 +1987,20 @@ select:focus {
   }
 }
 
+@keyframes task-detail-panel-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(72px);
+  }
+}
+
 @media (max-width: 1280px) {
   .board-workspace.case-detail-open .board-grid {
-    grid-template-columns: minmax(520px, 0.86fr) minmax(560px, 1.14fr);
+    grid-template-columns: minmax(680px, 0.94fr) minmax(520px, 1.06fr);
   }
 }
 
@@ -2006,6 +2030,7 @@ select:focus {
   }
 
   .task-detail-panel.closing {
+    opacity: 0;
     transform: none;
   }
 }
