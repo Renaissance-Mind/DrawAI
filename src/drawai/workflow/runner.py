@@ -74,6 +74,7 @@ class WorkflowRunResult:
     final_outputs: tuple[Mapping[str, Any], ...] = ()
     failed_node_ids: tuple[str, ...] = ()
     blocked_node_ids: tuple[str, ...] = ()
+    paused_node_ids: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +85,7 @@ class WorkflowRunResult:
             "final_outputs": [dict(output) for output in self.final_outputs],
             "failed_node_ids": list(self.failed_node_ids),
             "blocked_node_ids": list(self.blocked_node_ids),
+            "paused_node_ids": list(self.paused_node_ids),
         }
 
 
@@ -110,7 +112,13 @@ class WorkflowRunner:
         self.format_registry = format_registry or default_format_registry()
         self.max_workers = max_workers
 
-    def run(self, run_root: str | Path) -> WorkflowRunResult:
+    def run(
+        self,
+        run_root: str | Path,
+        *,
+        break_after_node_ids: Sequence[str] = (),
+        should_pause_after_node: Callable[[str], bool] | None = None,
+    ) -> WorkflowRunResult:
         validation = validate_workflow_template(self.template)
         if not validation.ok:
             codes = ", ".join(error.code for error in validation.errors)
@@ -136,6 +144,8 @@ class WorkflowRunner:
         outputs_by_port: dict[tuple[str, str], tuple[Mapping[str, Any], ...]] = {}
         summaries_by_node: dict[str, NodeRunSummary] = {}
         final_outputs: tuple[Mapping[str, Any], ...] = ()
+        paused_node_ids: set[str] = set()
+        static_breakpoints = frozenset(str(node_id) for node_id in break_after_node_ids if str(node_id))
 
         with ThreadPoolExecutor(
             max_workers=_runner_worker_count(order, self.max_workers)
@@ -180,6 +190,9 @@ class WorkflowRunner:
                             outputs_by_port[(node.node_id, port_id)] = port_outputs
                         if node.node_type == "output":
                             final_outputs = node_result.final_outputs
+                        if node.node_id in static_breakpoints or (should_pause_after_node is not None and should_pause_after_node(node.node_id)):
+                            paused_node_ids.add(node.node_id)
+                            continue
 
                     for edge in sorted(
                         outgoing_edges.get(node.node_id, ()),
@@ -198,7 +211,7 @@ class WorkflowRunner:
         blocked_node_ids = tuple(
             node.node_id for node in order if node_status.get(node.node_id) == "blocked"
         )
-        summaries = tuple(summaries_by_node[node.node_id] for node in order)
+        summaries = tuple(summaries_by_node[node.node_id] for node in order if node.node_id in summaries_by_node)
 
         return WorkflowRunResult(
             ok=not failed_node_ids and not blocked_node_ids,
@@ -208,6 +221,7 @@ class WorkflowRunner:
             final_outputs=final_outputs,
             failed_node_ids=failed_node_ids,
             blocked_node_ids=blocked_node_ids,
+            paused_node_ids=tuple(node.node_id for node in order if node.node_id in paused_node_ids),
         )
 
     def _execute_node_once(

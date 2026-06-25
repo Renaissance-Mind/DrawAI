@@ -228,6 +228,49 @@ def test_workflow_runner_marks_downstream_nodes_blocked(tmp_path: Path) -> None:
     assert output_manifest["error"] == "blocked by upstream node failure"
 
 
+def test_workflow_runner_pauses_after_breakpoint_node(tmp_path: Path) -> None:
+    events: list[str] = []
+
+    def input_handler(
+        context: NodeRunContext,
+        _inputs: tuple[Mapping[str, Any], ...],
+    ) -> tuple[Mapping[str, Any], ...]:
+        events.append(context.node.node_id)
+        source_path = context.output_dir / "source.txt"
+        source_path.write_text("source", encoding="utf-8")
+        return ({"port_id": "source", "path": context.relative_path(source_path), "type": "source"},)
+
+    def agent_handler(
+        context: NodeRunContext,
+        _inputs: tuple[Mapping[str, Any], ...],
+    ) -> tuple[Mapping[str, Any], ...]:
+        events.append(context.node.node_id)
+        svg_path = context.output_dir / "semantic.svg"
+        svg_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
+        return (
+            {
+                "port_id": "semantic_svg",
+                "path": context.relative_path(svg_path),
+                "format_id": "drawai.semantic_svg.v1",
+                "type": "semantic_svg",
+                "deliverable": True,
+            },
+        )
+
+    runner = WorkflowRunner(
+        _tiny_template(),
+        handlers={"input": input_handler, "agent": agent_handler},
+    )
+
+    result = runner.run(tmp_path, break_after_node_ids=("agent",))
+
+    assert result.ok
+    assert result.paused_node_ids == ("agent",)
+    assert events == ["input", "agent"]
+    assert [run.node_id for run in result.node_runs] == ["input", "agent"]
+    assert not (tmp_path / "nodes" / "output" / "runs" / "001" / "node_run.json").exists()
+
+
 def test_workflow_runner_executes_ready_sibling_nodes_concurrently(tmp_path: Path) -> None:
     template = WorkflowTemplate(
         template_id="parallel_siblings",

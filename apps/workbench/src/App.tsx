@@ -34,6 +34,9 @@ import {
   saveProcessorSettings,
   saveWorkbenchAgentSettings,
   setActiveAssetResult,
+  setWorkflowBreakpoint,
+  clearWorkflowBreakpoint,
+  continueWorkflowCase,
   type WorkbenchRerunStage,
 } from "./api";
 import ImageGenStudio, { type ImageGenConnectionSettings } from "./ImageGenStudio";
@@ -138,6 +141,28 @@ type TaskContextMenuState = { caseId: string; caseName: string; x: number; y: nu
 type BatchContextMenuState = { batchId: string; batchName: string; caseCount: number; running: boolean; x: number; y: number };
 type TaskDialogTarget = { batchId: string; name: string };
 type WorkbenchSettingsNavItem = { id: WorkbenchSettingsCategory; label: string; icon: WorkbenchSettingsCategory };
+
+const CASE_DETAIL_LAYOUT_MS = 420;
+const CASE_CARD_LAYOUT_MS = 560;
+const CASE_CARD_LAYOUT_ANIMATION_ID = "case-card-layout";
+
+type TaskDetailExitSnapshot = {
+  caseDetail: CaseDetail;
+  progress: CaseProgress | null;
+  workflowTemplateId: string;
+  runCompatibility: RunCompatibilityMode;
+  runPackage: V2RunPackage | null;
+  v2Elements: V2ElementPlan[];
+  selectedV2ElementId: string;
+  selectedAssetPackage: V2AssetPackage | null;
+  v2PackageError: string;
+  v2AssetLoadingElementId: string;
+  v2ActionPending: string;
+  runInProgress: boolean;
+  canRunFromAssets: boolean;
+  caseActionPendingId: string;
+};
+
 type DragState =
   | { kind: "move"; id: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
   | { kind: "resize"; id: string; handle: string; startX: number; startY: number; bbox: [number, number, number, number]; geometry?: AssetGeometry }
@@ -328,8 +353,11 @@ export default function App() {
   async function selectBatch(batchId: string): Promise<BatchDetail> {
     const detail = await getBatch(batchId);
     setActiveBatch(detail);
-    if (detail.cases.length > 0 && !detail.cases.some((item) => item.case_id === activeCase?.case.case_id)) {
-      await selectCase(detail.cases[0].case_id);
+    if (activeCase && !detail.cases.some((item) => item.case_id === activeCase.case.case_id)) {
+      setActiveCase(null);
+      setCaseProgress(null);
+      setNodeArtifactViewer(null);
+      clearAssetEditingState();
     }
     return detail;
   }
@@ -493,6 +521,13 @@ export default function App() {
       setAssetPlan(null);
       return { detail, hasAssetPlan: false, compatibility: "none" };
     }
+  }
+
+  function closeCaseDetailPanel() {
+    setActiveCase(null);
+    setCaseProgress(null);
+    setNodeArtifactViewer(null);
+    clearAssetEditingState();
   }
 
   useEffect(() => {
@@ -845,9 +880,7 @@ export default function App() {
       return;
     }
     setActiveBatch(null);
-    setActiveCase(null);
-    setCaseProgress(null);
-    clearAssetEditingState();
+    closeCaseDetailPanel();
   }
 
   async function runTaskBatch(batchId: string) {
@@ -901,6 +934,104 @@ export default function App() {
       setActiveView("board");
     } finally {
       setAssetsRunPendingCaseId((current) => (current === target.case_id ? "" : current));
+    }
+  }
+
+  async function rerunAnalysisForCases(items: Array<Pick<CaseRecord, "case_id" | "batch_id">>) {
+    const seen = new Set<string>();
+    const targets = items.filter((item) => {
+      if (!item || seen.has(item.case_id)) return false;
+      seen.add(item.case_id);
+      return true;
+    });
+    if (targets.length === 0 || assetsRunPendingCaseId) return;
+    const activeCaseId = activeCase?.case.case_id || "";
+    const refreshActiveCase = Boolean(activeCaseId && targets.some((item) => item.case_id === activeCaseId));
+    let latestBatchId = targets[0].batch_id;
+    try {
+      for (const target of targets) {
+        latestBatchId = target.batch_id;
+        setAssetsRunPendingCaseId(target.case_id);
+        const optimisticCase = currentCaseForOptimisticUpdate(target);
+        if (optimisticCase) {
+          mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, "analysis"));
+        }
+        const response = await runCaseStage(target.case_id, "analysis");
+        latestBatchId = response.case.batch_id;
+        mergeCaseStatus(response.case);
+      }
+      await selectBatch(latestBatchId);
+      if (refreshActiveCase) {
+        await selectCase(activeCaseId);
+      }
+      await refreshBatches();
+      setActiveView("board");
+    } finally {
+      setAssetsRunPendingCaseId("");
+    }
+  }
+
+  async function rerunStageForCase(item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    const optimisticCase = currentCaseForOptimisticUpdate(item);
+    if (optimisticCase) {
+      mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, stage));
+    }
+    try {
+      const response = await runCaseStage(item.case_id, stage);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+      await refreshBatches();
+      setActiveView("board");
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
+  async function setBreakpointForCase(item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    try {
+      const response = await setWorkflowBreakpoint(item.case_id, nodeId);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
+  async function clearBreakpointForCase(item: Pick<CaseRecord, "case_id" | "batch_id">) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    try {
+      const response = await clearWorkflowBreakpoint(item.case_id);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
+    }
+  }
+
+  async function continueWorkflowForCase(item: Pick<CaseRecord, "case_id" | "batch_id">) {
+    if (!item || assetsRunPendingCaseId) return;
+    setAssetsRunPendingCaseId(item.case_id);
+    const optimisticCase = currentCaseForOptimisticUpdate(item);
+    if (optimisticCase) {
+      mergeCaseStatus(optimisticRunCaseStatus(optimisticCase, "prepare"));
+    }
+    try {
+      const response = await continueWorkflowCase(item.case_id);
+      mergeCaseStatus(response.case);
+      await selectBatch(item.batch_id);
+      await selectCase(item.case_id);
+      await refreshBatches();
+      setActiveView("board");
+    } finally {
+      setAssetsRunPendingCaseId((current) => (current === item.case_id ? "" : current));
     }
   }
 
@@ -981,14 +1112,7 @@ export default function App() {
     autoSelectedBatchId.current = detail.batch.batch_id;
     setBatches((items) => [detail.batch, ...items.filter((item) => item.batch_id !== detail.batch.batch_id)]);
     setActiveBatch(detail);
-    const firstCase = detail.cases[0];
-    if (firstCase) {
-      await selectCase(firstCase.case_id);
-    } else {
-      setActiveCase(null);
-      setCaseProgress(null);
-      clearAssetEditingState();
-    }
+    closeCaseDetailPanel();
   }
 
   return (
@@ -1059,8 +1183,8 @@ export default function App() {
       )}
 
       {activeView === "board" ? (
-        boardMode === "generate" ? (
-          <main className="board-workspace board-generate-workspace">
+        <div className="board-mode-panels">
+          <main className="board-workspace board-generate-workspace" hidden={boardMode !== "generate"}>
             <ImageGenStudio
               connection={imageGenConnection}
               onConnectionChange={(nextConnection) => {
@@ -1071,53 +1195,61 @@ export default function App() {
               onError={setError}
             />
           </main>
-        ) : boardMode === "workflow" ? (
-          <WorkflowWorkspace onError={setError} />
-        ) : (
-        <BoardWorkspace
-          batches={batches}
-          activeBatch={activeBatch}
-          activeCase={activeCase}
-          caseProgress={caseProgress}
-          assetsReady={assetsReady}
-          canvasReady={canvasReady}
-          runInProgress={activeCaseRunning}
-          canRunFromAssets={canRunFromAssets}
-          runCompatibility={runCompatibility}
-          runPackage={activeRunPackage}
-          v2Elements={v2Elements}
-          selectedV2ElementId={selectedV2ElementId}
-          selectedAssetPackage={selectedAssetPackage}
-          v2PackageError={v2PackageError}
-          v2AssetLoadingElementId={v2AssetLoadingElementId}
-          v2ActionPending={v2ActionPending}
-          canForkV2FromSource={canForkV2FromSource}
-          caseActionPendingId={assetsRunPendingCaseId}
-          pptxExportPendingCaseId={pptxExportPendingCaseId}
-          batchPptxDownloadPendingId={batchPptxDownloadPendingId}
-          batchRunPendingId={batchRunPendingId}
-          onOpenSubmit={() => setSubmitOpen(true)}
-          onOpenCaseAssets={(caseId) => openAssetsEditorForCase(caseId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onOpenSvgEditor={() => setActiveView("svg")}
-          onRenameBatch={(batch) => setTaskRenameTarget({ batchId: batch.batch_id, name: batch.name })}
-          onDeleteBatch={(batch) => setTaskDeleteTarget({ batchId: batch.batch_id, name: batch.name })}
-          onRunBatch={(batchId) => runTaskBatch(batchId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onSelectBatch={(batchId) => selectBatch(batchId).catch((err) => setError(err.message))}
-          onFocusCase={(caseId) => selectCase(caseId).then(() => undefined).catch((err) => setError(err.message))}
-          onSelectCase={(caseId) => openCaseFromTask(caseId).catch((err) => setError(err.message))}
-          onRunFromAssets={() => runFromAssets().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onRetryCase={(item) => retryFailedCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onRerunAnalysis={(item) => rerunAnalysisForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onExportPptx={(caseId) => exportPptxForCase(caseId)}
-          onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
-          onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-          onOpenWorkflowNodeArtifact={(caseId, nodeId) => openWorkflowNodeArtifactCanvas(caseId, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
-        />
-        )
+          <div className="board-mode-panel" hidden={boardMode !== "workflow"}>
+            <WorkflowWorkspace onError={setError} />
+          </div>
+          <div className="board-mode-panel" hidden={boardMode !== "process"}>
+            <BoardWorkspace
+              batches={batches}
+              activeBatch={activeBatch}
+              activeCase={activeCase}
+              caseProgress={caseProgress}
+              assetsReady={assetsReady}
+              canvasReady={canvasReady}
+              runInProgress={activeCaseRunning}
+              canRunFromAssets={canRunFromAssets}
+              runCompatibility={runCompatibility}
+              runPackage={activeRunPackage}
+              v2Elements={v2Elements}
+              selectedV2ElementId={selectedV2ElementId}
+              selectedAssetPackage={selectedAssetPackage}
+              v2PackageError={v2PackageError}
+              v2AssetLoadingElementId={v2AssetLoadingElementId}
+              v2ActionPending={v2ActionPending}
+              canForkV2FromSource={canForkV2FromSource}
+              caseActionPendingId={assetsRunPendingCaseId}
+              pptxExportPendingCaseId={pptxExportPendingCaseId}
+              batchPptxDownloadPendingId={batchPptxDownloadPendingId}
+              batchRunPendingId={batchRunPendingId}
+              onOpenSubmit={() => setSubmitOpen(true)}
+              onOpenCaseAssets={(caseId) => openAssetsEditorForCase(caseId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onOpenSvgEditor={() => setActiveView("svg")}
+              onRenameBatch={(batch) => setTaskRenameTarget({ batchId: batch.batch_id, name: batch.name })}
+              onDeleteBatch={(batch) => setTaskDeleteTarget({ batchId: batch.batch_id, name: batch.name })}
+              onRunBatch={(batchId) => runTaskBatch(batchId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSelectBatch={(batchId) => selectBatch(batchId).catch((err) => setError(err.message))}
+              onFocusCase={(caseId) => selectCase(caseId).then(() => undefined).catch((err) => setError(err.message))}
+              onSelectCase={(caseId) => openCaseFromTask(caseId).catch((err) => setError(err.message))}
+              onCloseCaseDetail={closeCaseDetailPanel}
+              onRunFromAssets={() => runFromAssets().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRetryCase={(item) => retryFailedCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRerunAnalysis={(item) => rerunAnalysisForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRerunCases={(items) => rerunAnalysisForCases(items).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onRerunStage={(item, stage) => rerunStageForCase(item, stage).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSetWorkflowBreakpoint={(item, nodeId) => setBreakpointForCase(item, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onClearWorkflowBreakpoint={(item) => clearBreakpointForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onContinueWorkflow={(item) => continueWorkflowForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onExportPptx={(caseId) => exportPptxForCase(caseId)}
+              onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
+              onSelectV2Element={(elementId) => selectV2Element(elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onProcessV2Asset={(processor, elementId) => processSelectedV2Asset(processor, elementId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onSetActiveV2Result={(resultId) => activateV2AssetResult(resultId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onForkV2FromSource={() => forkActiveCaseToV2().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onOpenWorkflowNodeArtifact={(caseId, nodeId) => openWorkflowNodeArtifactCanvas(caseId, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+            />
+          </div>
+        </div>
       ) : activeView === "editor" && runCompatibility === "v2" ? (
         <V2AssetsWorkspace
           activeCase={activeCase}
@@ -1248,9 +1380,15 @@ function BoardWorkspace({
   onSelectBatch,
   onFocusCase,
   onSelectCase,
+  onCloseCaseDetail,
   onRunFromAssets,
   onRetryCase,
   onRerunAnalysis,
+  onRerunCases,
+  onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx,
@@ -1290,9 +1428,15 @@ function BoardWorkspace({
   onSelectBatch: (batchId: string) => void;
   onFocusCase: (caseId: string) => void | Promise<void>;
   onSelectCase: (caseId: string) => void;
+  onCloseCaseDetail: () => void;
   onRunFromAssets: () => void;
   onRetryCase: (item: CaseRecord) => void;
   onRerunAnalysis: (item: CaseRecord) => void;
+  onRerunCases: (items: CaseRecord[]) => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -1302,8 +1446,134 @@ function BoardWorkspace({
   onForkV2FromSource: () => void;
   onOpenWorkflowNodeArtifact: (caseId: string, nodeId: string) => void;
 }) {
+  const [detailClosing, setDetailClosing] = useState(false);
+  const [detailExitSnapshot, setDetailExitSnapshot] = useState<TaskDetailExitSnapshot | null>(null);
+  const boardRef = useRef<HTMLElement | null>(null);
+  const detailCloseTimerRef = useRef<number | null>(null);
+  const previousCaseCardRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const previousCaseLayoutKeyRef = useRef("");
+  const closedTaskListScrollTopRef = useRef(0);
+  const detailOpen = Boolean(activeCase);
+  const caseLayoutKey = detailOpen ? `open:${activeCase?.case.case_id || ""}` : "closed";
+  const activeDetailSnapshot = activeCase
+    ? {
+        caseDetail: activeCase,
+        progress: caseProgress,
+        workflowTemplateId: activeBatch?.batch.workflow_template_id || "",
+        runCompatibility,
+        runPackage,
+        v2Elements,
+        selectedV2ElementId,
+        selectedAssetPackage,
+        v2PackageError,
+        v2AssetLoadingElementId,
+        v2ActionPending,
+        runInProgress,
+        canRunFromAssets,
+        caseActionPendingId
+      }
+    : null;
+  const renderedDetailSnapshot = activeDetailSnapshot || detailExitSnapshot;
+
+  useLayoutEffect(() => {
+    const root = boardRef.current;
+    if (!root) return;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-case-card-id]"));
+    const taskList = root.querySelector<HTMLElement>(".case-lane .task-list");
+    const previousRects = previousCaseCardRectsRef.current;
+    const previousLayoutKey = previousCaseLayoutKeyRef.current;
+    const layoutChanged = previousLayoutKey !== "" && previousLayoutKey !== caseLayoutKey;
+    const activeLayoutAnimations = caseCardLayoutAnimations(cards);
+
+    if (layoutChanged && taskList) {
+      if (detailOpen) {
+        if (previousLayoutKey === "closed") {
+          closedTaskListScrollTopRef.current = taskList.scrollTop;
+        }
+        centerCaseCardInTaskList(taskList, activeCase?.case.case_id || "");
+      } else if (previousLayoutKey.startsWith("open:")) {
+        taskList.scrollTop = closedTaskListScrollTopRef.current;
+      }
+    } else if (previousLayoutKey === "" && detailOpen && taskList) {
+      centerCaseCardInTaskList(taskList, activeCase?.case.case_id || "");
+    }
+
+    const currentRects = measureCaseCardRects(cards);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (layoutChanged && !reducedMotion && previousRects.size > 0) {
+      activeLayoutAnimations.forEach((animation) => animation.cancel());
+      const animations = cards.flatMap((card) => {
+        const caseId = card.dataset.caseCardId || "";
+        const previous = previousRects.get(caseId);
+        const current = currentRects.get(caseId);
+        if (!previous || !current) return [];
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return [];
+        const distance = Math.hypot(deltaX, deltaY);
+        const animation = card.animate(
+          [
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: "translate(0, 0)" }
+          ],
+          {
+            duration: CASE_CARD_LAYOUT_MS + Math.min(160, distance * 0.08),
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)"
+          }
+        );
+        animation.id = CASE_CARD_LAYOUT_ANIMATION_ID;
+        animation.finished
+          .then(() => {
+            if (previousCaseLayoutKeyRef.current !== caseLayoutKey) return;
+            previousCaseCardRectsRef.current = measureCaseCardRects(Array.from(root.querySelectorAll<HTMLElement>("[data-case-card-id]")));
+          })
+          .catch(() => undefined);
+        return [animation];
+      });
+      previousCaseCardRectsRef.current = currentRects;
+    } else if (activeLayoutAnimations.some(isActiveAnimation)) {
+      previousCaseLayoutKeyRef.current = caseLayoutKey;
+      return;
+    } else {
+      previousCaseCardRectsRef.current = currentRects;
+    }
+
+    previousCaseLayoutKeyRef.current = caseLayoutKey;
+  });
+
+  useEffect(() => {
+    if (!activeCase) return;
+    setDetailClosing(false);
+    setDetailExitSnapshot(null);
+    if (detailCloseTimerRef.current !== null) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+  }, [activeCase?.case.case_id]);
+
+  useEffect(() => {
+    return () => {
+      if (detailCloseTimerRef.current !== null) {
+        window.clearTimeout(detailCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  function closeDetailPanel() {
+    if (!activeDetailSnapshot || detailClosing) return;
+    setDetailExitSnapshot(activeDetailSnapshot);
+    setDetailClosing(true);
+    onCloseCaseDetail();
+    detailCloseTimerRef.current = window.setTimeout(() => {
+      detailCloseTimerRef.current = null;
+      setDetailClosing(false);
+      setDetailExitSnapshot(null);
+    }, CASE_DETAIL_LAYOUT_MS);
+  }
+
   return (
-    <main className="board-workspace">
+    <main ref={boardRef} className={`board-workspace ${detailOpen ? "case-detail-open" : "case-detail-closed"} ${detailClosing ? "case-detail-closing" : ""}`}>
       <div className="board-grid">
         <TaskSelectionWorkspace
           batches={batches}
@@ -1330,28 +1600,65 @@ function BoardWorkspace({
           onRunFromAssets={onRunFromAssets}
           onRetryCase={onRetryCase}
           onRerunAnalysis={onRerunAnalysis}
+          onRerunCases={onRerunCases}
+          onContinueWorkflow={onContinueWorkflow}
           onExportPptx={onExportPptx}
           onDownloadPptx={onDownloadPptx}
           onDownloadBatchPptx={onDownloadBatchPptx}
         />
-        <TaskDetailPanel
-          caseDetail={activeCase}
-          progress={caseProgress}
-          workflowTemplateId={activeBatch?.batch.workflow_template_id || ""}
-          runCompatibility={runCompatibility}
-          runPackage={runPackage}
-          v2Elements={v2Elements}
-          selectedV2ElementId={selectedV2ElementId}
-          selectedAssetPackage={selectedAssetPackage}
-          v2PackageError={v2PackageError}
-          v2AssetLoadingElementId={v2AssetLoadingElementId}
-          v2ActionPending={v2ActionPending}
-          onOpenCaseAssets={onOpenCaseAssets}
-          onOpenWorkflowNodeArtifact={onOpenWorkflowNodeArtifact}
-        />
+        {renderedDetailSnapshot && (
+          <TaskDetailPanel
+            caseDetail={renderedDetailSnapshot.caseDetail}
+            progress={renderedDetailSnapshot.progress}
+            workflowTemplateId={renderedDetailSnapshot.workflowTemplateId}
+            runCompatibility={renderedDetailSnapshot.runCompatibility}
+            runPackage={renderedDetailSnapshot.runPackage}
+            v2Elements={renderedDetailSnapshot.v2Elements}
+            selectedV2ElementId={renderedDetailSnapshot.selectedV2ElementId}
+            selectedAssetPackage={renderedDetailSnapshot.selectedAssetPackage}
+            v2PackageError={renderedDetailSnapshot.v2PackageError}
+            v2AssetLoadingElementId={renderedDetailSnapshot.v2AssetLoadingElementId}
+            v2ActionPending={renderedDetailSnapshot.v2ActionPending}
+            closing={detailClosing && !activeCase}
+            onClose={closeDetailPanel}
+            onOpenCaseAssets={onOpenCaseAssets}
+            onOpenWorkflowNodeArtifact={onOpenWorkflowNodeArtifact}
+            runInProgress={renderedDetailSnapshot.runInProgress}
+            canRunFromAssets={renderedDetailSnapshot.canRunFromAssets}
+            caseActionPendingId={renderedDetailSnapshot.caseActionPendingId}
+            onRunFromAssets={onRunFromAssets}
+            onRerunStage={onRerunStage}
+            onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
+            onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
+            onContinueWorkflow={onContinueWorkflow}
+          />
+        )}
       </div>
     </main>
   );
+}
+
+function measureCaseCardRects(cards: HTMLElement[]): Map<string, DOMRect> {
+  return new Map(cards.map((card) => [card.dataset.caseCardId || "", card.getBoundingClientRect()]));
+}
+
+function caseCardLayoutAnimations(cards: HTMLElement[]): Animation[] {
+  return cards.flatMap((card) => card.getAnimations().filter((animation) => animation.id === CASE_CARD_LAYOUT_ANIMATION_ID));
+}
+
+function isActiveAnimation(animation: Animation): boolean {
+  return animation.playState === "running";
+}
+
+function centerCaseCardInTaskList(taskList: HTMLElement, caseId: string) {
+  if (!caseId) return;
+  const card = Array.from(taskList.querySelectorAll<HTMLElement>("[data-case-card-id]")).find((item) => item.dataset.caseCardId === caseId);
+  if (!card) return;
+  const listRect = taskList.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  const cardCenter = taskList.scrollTop + cardRect.top - listRect.top + cardRect.height / 2;
+  const maxScrollTop = Math.max(0, taskList.scrollHeight - taskList.clientHeight);
+  taskList.scrollTop = clamp(cardCenter - taskList.clientHeight / 2, 0, maxScrollTop);
 }
 
 function SubmitDialog({
@@ -2721,8 +3028,18 @@ function TaskDetailPanel({
   v2PackageError,
   v2AssetLoadingElementId,
   v2ActionPending,
+  closing,
+  onClose,
   onOpenCaseAssets,
-  onOpenWorkflowNodeArtifact
+  onOpenWorkflowNodeArtifact,
+  runInProgress,
+  canRunFromAssets,
+  caseActionPendingId,
+  onRunFromAssets,
+  onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow
 }: {
   caseDetail: CaseDetail | null;
   progress: CaseProgress | null;
@@ -2735,12 +3052,22 @@ function TaskDetailPanel({
   v2PackageError: string;
   v2AssetLoadingElementId: string;
   v2ActionPending: string;
+  closing: boolean;
+  onClose: () => void;
   onOpenCaseAssets: (caseId: string) => void;
   onOpenWorkflowNodeArtifact: (caseId: string, nodeId: string) => void;
+  runInProgress: boolean;
+  canRunFromAssets: boolean;
+  caseActionPendingId: string;
+  onRunFromAssets: () => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
 }) {
   if (!caseDetail) {
     return (
-      <aside className="task-detail-panel">
+      <aside className={`task-detail-panel${closing ? " closing" : ""}`}>
         <EmptyState label="从任务里选择一张图" />
       </aside>
     );
@@ -2748,13 +3075,22 @@ function TaskDetailPanel({
   const currentCase = currentCaseRecord(caseDetail.case, progress?.case);
   const currentDetail = { ...caseDetail, case: currentCase };
   return (
-    <aside className="task-detail-panel">
+    <aside className={`task-detail-panel${closing ? " closing" : ""}`} aria-live="polite">
       <DagRunPanel
         caseDetail={currentDetail}
         progress={progress}
         workflowTemplateId={workflowTemplateId}
+        onClose={onClose}
         onOpenAssetsReview={() => onOpenCaseAssets(currentCase.case_id)}
         onOpenNodeArtifact={(nodeId) => onOpenWorkflowNodeArtifact(currentCase.case_id, nodeId)}
+        runInProgress={runInProgress}
+        canRunFromAssets={canRunFromAssets}
+        caseActionPendingId={caseActionPendingId}
+        onContinueFromReview={onRunFromAssets}
+        onRerunStage={onRerunStage}
+        onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
+        onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
+        onContinueWorkflow={onContinueWorkflow}
       />
       {runCompatibility === "v2" && v2PackageError && <ErrorDetail message={v2PackageError} />}
       {currentCase.error_message && <ErrorDetail message={currentCase.error_message} />}
@@ -2780,14 +3116,32 @@ function DagRunPanel({
   caseDetail,
   progress,
   workflowTemplateId,
+  onClose,
   onOpenAssetsReview,
-  onOpenNodeArtifact
+  onOpenNodeArtifact,
+  runInProgress,
+  canRunFromAssets,
+  caseActionPendingId,
+  onContinueFromReview,
+  onRerunStage,
+  onSetWorkflowBreakpoint,
+  onClearWorkflowBreakpoint,
+  onContinueWorkflow
 }: {
   caseDetail: CaseDetail;
   progress: CaseProgress | null;
   workflowTemplateId: string;
+  onClose: () => void;
   onOpenAssetsReview: () => void;
   onOpenNodeArtifact: (nodeId: string) => void | Promise<void>;
+  runInProgress: boolean;
+  canRunFromAssets: boolean;
+  caseActionPendingId: string;
+  onContinueFromReview: () => void;
+  onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
+  onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
+  onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
 }) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -2823,6 +3177,16 @@ function DagRunPanel({
   const views = useMemo(() => buildDagNodeViews(template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files), [template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files]);
   const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
+  const selectedRerunStage = workflowStageRerunStage(selectedView?.stage || "");
+  const actionPending = runInProgress || caseActionPendingId === currentCase.case_id;
+  const breakpointMutationPending = caseActionPendingId === currentCase.case_id;
+  const rerunDisabled = !selectedRerunStage || actionPending;
+  const breakpointNodeId = currentCase.workflow_breakpoint_node_id || "";
+  const casePausedAtBreakpoint = Boolean(breakpointNodeId && currentCase.status === "assets_review" && currentCase.stage === breakpointNodeId);
+  const needsReviewContinue = currentCase.status === "assets_review" && !casePausedAtBreakpoint && canRunFromAssets;
+  const continueEnabled = (casePausedAtBreakpoint || needsReviewContinue) && !actionPending;
+  const breakpointSupported = Boolean(selectedView);
+  const breakpointActive = Boolean(selectedView && breakpointNodeId === selectedView.node.node_id);
   useEffect(() => {
     setSelectedNodeId("");
     setViewerError("");
@@ -2846,12 +3210,39 @@ function DagRunPanel({
     }
   }
 
+  function rerunSelectedStage() {
+    if (!selectedRerunStage || actionPending) return;
+    void onRerunStage(currentCase, selectedRerunStage);
+  }
+
+  function toggleBreakpoint() {
+    if (!selectedView || !breakpointSupported || breakpointMutationPending) return;
+    if (breakpointActive) {
+      void onClearWorkflowBreakpoint(currentCase);
+      return;
+    }
+    void onSetWorkflowBreakpoint(currentCase, selectedView.node.node_id);
+  }
+
+  function continueRun() {
+    if (!continueEnabled) return;
+    if (casePausedAtBreakpoint) {
+      void onContinueWorkflow(currentCase);
+      return;
+    }
+    onContinueFromReview();
+  }
+
   return (
     <section className="dag-run-card">
       <header className="dag-run-head">
-        <div>
+        <button type="button" className="task-detail-collapse" aria-label="向右收起 DAG 面板" title="收起 DAG 面板" onClick={onClose}>
+          <CollapsePanelRightIcon />
+        </button>
+        <div className="dag-run-title">
           <span>Workflow run</span>
           <strong>{template?.name || workflowTemplateId || "Default DrawAI DAG"}</strong>
+          <p className="dag-run-file-name" title={currentCase.name}>{currentCase.name}</p>
         </div>
         <em>{dagRunCaseIdentifier(currentCase)}</em>
       </header>
@@ -2937,6 +3328,55 @@ function DagRunPanel({
             <EmptyState label="还没有 Workflow 节点" />
           )}
         </div>
+        <div className="dag-run-action-strip" aria-label="DAG 节点操作">
+          <button
+            type="button"
+            className="dag-action-button"
+            disabled={!selectedView || viewerLoadingNodeId === selectedView?.node.node_id}
+            onClick={() => {
+              if (!selectedView) return;
+              void openNodeViewer(selectedView.node.node_id);
+            }}
+          >
+            <ViewResultIcon />
+            <span>{viewerLoadingNodeId === selectedView?.node.node_id ? "加载中" : "查看结果"}</span>
+          </button>
+          <div className="dag-action-dropdown">
+            <button type="button" className="dag-action-button" disabled={rerunDisabled}>
+              {actionPending ? <ButtonSpinner /> : <RetryIcon />}
+              <span>重新运行</span>
+            </button>
+            <div className="dag-action-menu" role="menu">
+              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
+                <span>重跑当前阶段</span>
+                <em>{selectedRerunStage ? `仅从 ${humanize(selectedRerunStage)} 发起` : "当前节点暂无可重跑阶段"}</em>
+              </button>
+              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
+                <span>从此阶段运行到结束</span>
+                <em>{selectedRerunStage ? "清理后续过期结果并恢复流水线" : "当前节点暂无可恢复阶段"}</em>
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`dag-action-button${breakpointActive ? " active" : ""}`}
+            disabled={!breakpointSupported || breakpointMutationPending}
+            title={breakpointActive ? "取消这个节点的断点" : "运行到这个节点后暂停并等待继续"}
+            onClick={toggleBreakpoint}
+          >
+            <BreakpointIcon />
+            <span>{breakpointActive ? "断点已设" : "设置断点"}</span>
+          </button>
+          <button
+            type="button"
+            className="dag-action-button primary"
+            disabled={!continueEnabled}
+            onClick={continueRun}
+          >
+            <PlayIcon />
+            <span>继续</span>
+          </button>
+        </div>
         <aside className="dag-node-detail">
           {selectedView ? (
             <>
@@ -2960,25 +3400,6 @@ function DagRunPanel({
                 <div><dt>Outputs</dt><dd>{selectedView.node.outputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
               </dl>
               {selectedView.error && <ErrorDetail message={selectedView.error} />}
-              <div className="dag-node-actions">
-                <button
-                  type="button"
-                  onClick={() => openNodeViewer(selectedView.node.node_id)}
-                  disabled={viewerLoadingNodeId === selectedView.node.node_id}
-                >
-                  {viewerLoadingNodeId === selectedView.node.node_id ? "加载中" : "查看产物"}
-                </button>
-                {selectedView.node.node_type === "human_review" && String(selectedView.node.config.review_surface || "assets") === "assets" && (
-                  <button type="button" className="primary" onClick={onOpenAssetsReview}>
-                    Open assets review
-                  </button>
-                )}
-                {selectedView.node.node_type === "output" && caseDetail.artifacts.length > 0 && (
-                  <a href={caseDetail.artifacts[0].url} target="_blank" rel="noreferrer">
-                    Open output
-                  </a>
-                )}
-              </div>
               {viewerError && <ErrorDetail message={viewerError} />}
             </>
           ) : (
@@ -4779,6 +5200,8 @@ function TaskSelectionWorkspace({
   onRunFromAssets,
   onRetryCase,
   onRerunAnalysis,
+  onRerunCases,
+  onContinueWorkflow,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx
@@ -4807,6 +5230,8 @@ function TaskSelectionWorkspace({
   onRunFromAssets: () => void;
   onRetryCase: (item: CaseRecord) => void;
   onRerunAnalysis: (item: CaseRecord) => void;
+  onRerunCases: (items: CaseRecord[]) => void | Promise<void>;
+  onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -4816,6 +5241,8 @@ function TaskSelectionWorkspace({
   const [batchContextMenu, setBatchContextMenu] = useState<BatchContextMenuState | null>(null);
   const [caseArtifacts, setCaseArtifacts] = useState<Record<string, ArtifactRecord[]>>({});
   const [artifactLoading, setArtifactLoading] = useState<Record<string, boolean>>({});
+  const [caseSelectionMode, setCaseSelectionMode] = useState(false);
+  const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
   const contextCase = contextMenu ? cases.find((item) => item.case_id === contextMenu.caseId) || null : null;
   const contextSelected = Boolean(contextCase && activeCase?.case.case_id === contextCase.case_id);
   const contextCompatibility = contextSelected ? runCompatibility : contextCase?.compatibility_mode || "none";
@@ -4834,6 +5261,36 @@ function TaskSelectionWorkspace({
   const batchContextBusy = Boolean(batchContextMenu && (batchContextMenu.running || batchRunPendingId === batchContextMenu.batchId));
   const batchDownloadReady = Boolean(activeBatch && cases.length > 0 && cases.every((item) => item.status === "completed"));
   const batchDownloadPending = Boolean(activeBatch && batchPptxDownloadPendingId === activeBatch.batch.batch_id);
+  const selectedCaseIdSet = useMemo(() => new Set(selectedCaseIds), [selectedCaseIds]);
+  const selectedCases = useMemo(() => cases.filter((item) => selectedCaseIdSet.has(item.case_id)), [cases, selectedCaseIdSet]);
+  const pausedBreakpointCases = useMemo(() => cases.filter((item) => isCasePausedAtWorkflowBreakpoint(item)), [cases]);
+  const continueTarget =
+    pausedBreakpointCases.find((item) => item.case_id === activeCase?.case.case_id) ||
+    pausedBreakpointCases[0] ||
+    null;
+  const continuePending = Boolean(continueTarget && caseActionPendingId === continueTarget.case_id);
+  const batchActionBusy = Boolean(
+    caseActionPendingId ||
+      (activeBatch && (batchRunPendingId === activeBatch.batch.batch_id || activeBatch.batch.status === "running"))
+  );
+  const rerunTargets = caseSelectionMode ? selectedCases : cases;
+  const rerunDisabled = !activeBatch || rerunTargets.length === 0 || batchActionBusy;
+  const continueDisabled = !continueTarget || batchActionBusy;
+  const selectionCount = selectedCaseIds.length;
+  const statusSummary = activeBatch ? batchStatusSummary(activeBatch.batch, cases) : "";
+
+  useEffect(() => {
+    setCaseSelectionMode(false);
+    setSelectedCaseIds([]);
+  }, [activeBatch?.batch.batch_id]);
+
+  useEffect(() => {
+    const caseIds = new Set(cases.map((item) => item.case_id));
+    setSelectedCaseIds((current) => {
+      const next = current.filter((caseId) => caseIds.has(caseId));
+      return next.length === current.length ? current : next;
+    });
+  }, [cases]);
 
   useEffect(() => {
     if (!contextMenu && !batchContextMenu) return;
@@ -4952,6 +5409,34 @@ function TaskSelectionWorkspace({
     onRunBatch(batch.batch_id);
   }
 
+  function toggleCaseSelection(caseId: string) {
+    setSelectedCaseIds((current) => (current.includes(caseId) ? current.filter((item) => item !== caseId) : [...current, caseId]));
+  }
+
+  function toggleSelectionMode() {
+    setCaseSelectionMode((current) => {
+      if (current) {
+        setSelectedCaseIds([]);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async function regenerateRerunTargets() {
+    if (rerunDisabled) return;
+    await onRerunCases(rerunTargets);
+    if (caseSelectionMode) {
+      setSelectedCaseIds([]);
+      setCaseSelectionMode(false);
+    }
+  }
+
+  function continueBreakpointTarget() {
+    if (continueDisabled || !continueTarget) return;
+    onContinueWorkflow(continueTarget);
+  }
+
   return (
     <main className="task-selection-workspace">
       <section className="batch-rail">
@@ -5000,9 +5485,73 @@ function TaskSelectionWorkspace({
       </section>
 
       <section className="case-lane">
+        {activeBatch && (
+          <div className={`task-batch-status-shell${caseSelectionMode ? " selecting" : ""}`}>
+            <div className={`task-batch-status-bar status-${activeBatch.batch.status}`}>
+              <div className="task-batch-file">
+                <span className="task-batch-status-dot" aria-hidden="true" />
+                <div>
+                  <span>文件名</span>
+                  <strong title={activeBatch.batch.name}>{activeBatch.batch.name}</strong>
+                </div>
+              </div>
+              <div className="task-batch-overview">
+                <span className={`status-pill status-${activeBatch.batch.status}`}>{humanize(activeBatch.batch.status)}</span>
+                <em>{statusSummary}</em>
+              </div>
+              <div className="task-batch-actions" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="task-batch-action"
+                  disabled={continueDisabled}
+                  title={continueTarget ? `继续 ${continueTarget.name}` : "没有等待断点的卡片"}
+                  onClick={continueBreakpointTarget}
+                >
+                  {continuePending ? <ButtonSpinner /> : <PlayIcon />}
+                  <span>继续</span>
+                </button>
+                <button
+                  type="button"
+                  className="task-batch-action primary"
+                  disabled={rerunDisabled}
+                  title={caseSelectionMode ? (selectionCount > 0 ? `重新生成选中的 ${selectionCount} 张` : "先选择要重新生成的卡片") : "重新生成全部卡片"}
+                  onClick={() => {
+                    void regenerateRerunTargets();
+                  }}
+                >
+                  {caseActionPendingId ? <ButtonSpinner /> : <RetryIcon />}
+                  <span>{caseSelectionMode && selectionCount > 0 ? `重新生成 ${selectionCount}` : "重新生成"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="task-batch-action dark"
+                  disabled={!batchDownloadReady || batchDownloadPending}
+                  title={batchDownloadReady ? "下载合并 PPTX" : "全部完成后可下载合并 PPTX"}
+                  onClick={() => {
+                    void onDownloadBatchPptx(activeBatch.batch.batch_id);
+                  }}
+                >
+                  {batchDownloadPending ? <ButtonSpinner /> : <DownloadIcon />}
+                  <span>下载</span>
+                </button>
+                <button
+                  type="button"
+                  className={`task-batch-action select-toggle${caseSelectionMode ? " active" : ""}`}
+                  title={caseSelectionMode ? "退出多选" : "选择要重新生成的卡片"}
+                  aria-pressed={caseSelectionMode}
+                  onClick={toggleSelectionMode}
+                >
+                  {caseSelectionMode ? <ClosePanelIcon /> : <SelectCardsIcon />}
+                  <span>{caseSelectionMode ? "退出" : "多选"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="task-list">
           {cases.map((item) => {
             const selected = activeCase?.case.case_id === item.case_id;
+            const multiSelected = selectedCaseIdSet.has(item.case_id);
             const rowPreviewUrl = item.preview_url || "";
             const editorReady = Boolean(item.editor_ready);
             const actionsEnabled = selected;
@@ -5026,10 +5575,18 @@ function TaskSelectionWorkspace({
             return (
               <article
                 key={item.case_id}
-                className={`task-row ${selected ? "active" : ""} ${item.status === "failed" ? "failed" : ""} ${editorReady ? "editor-ready" : "not-editor-ready"}`}
+                data-case-card-id={item.case_id}
+                className={`task-row ${selected ? "active" : ""} ${multiSelected ? "multi-selected" : ""} ${caseSelectionMode ? "selecting" : ""} ${item.status === "failed" ? "failed" : ""} ${editorReady ? "editor-ready" : "not-editor-ready"}`}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelectCase(item.case_id)}
+                aria-pressed={caseSelectionMode ? multiSelected : selected}
+                onClick={() => {
+                  if (caseSelectionMode) {
+                    toggleCaseSelection(item.case_id);
+                    return;
+                  }
+                  onSelectCase(item.case_id);
+                }}
                 onContextMenu={(event) => {
                   void openTaskContextMenu(event, item);
                 }}
@@ -5037,10 +5594,19 @@ function TaskSelectionWorkspace({
                   if (event.target !== event.currentTarget) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
+                    if (caseSelectionMode) {
+                      toggleCaseSelection(item.case_id);
+                      return;
+                    }
                     onSelectCase(item.case_id);
                   }
                 }}
               >
+                {caseSelectionMode && (
+                  <span className={`task-select-mark${multiSelected ? " checked" : ""}`} aria-hidden="true">
+                    <SelectionCheckIcon />
+                  </span>
+                )}
                 <div className="task-row-top">
                   <span className={`status-pill status-${item.status}`}>{humanize(item.status)}</span>
                   <em>{humanize(item.stage || item.phase)}</em>
@@ -5134,19 +5700,6 @@ function TaskSelectionWorkspace({
           {!activeBatch && <EmptyState label="选择一个任务" />}
           {activeBatch && cases.length === 0 && <EmptyState label="这个任务里还没有图片" />}
         </div>
-        <button
-          type="button"
-          className={`batch-download-floating${batchDownloadReady ? " ready" : ""}${batchDownloadPending ? " running" : ""}`}
-          title={batchDownloadReady ? "下载合并 PPTX" : "全部完成后可批量下载 PPTX"}
-          aria-label={batchDownloadReady ? "下载合并 PPTX" : "全部完成后可批量下载 PPTX"}
-          disabled={!activeBatch || !batchDownloadReady || batchDownloadPending}
-          onClick={() => {
-            if (!activeBatch) return;
-            void onDownloadBatchPptx(activeBatch.batch.batch_id);
-          }}
-        >
-          {batchDownloadPending ? <ButtonSpinner /> : <DownloadIcon />}
-        </button>
       </section>
       {batchContextMenu && (
         <div
@@ -6704,6 +7257,24 @@ function BackIcon() {
   );
 }
 
+function ClosePanelIcon() {
+  return (
+    <svg className="panel-close-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m5.4 5.4 9.2 9.2M14.6 5.4l-9.2 9.2" />
+    </svg>
+  );
+}
+
+function CollapsePanelRightIcon() {
+  return (
+    <svg className="panel-collapse-right-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4.2 4.2h11.6v11.6H4.2Z" />
+      <path d="M12.5 4.2v11.6" />
+      <path d="m7.4 7.1 2.9 2.9-2.9 2.9" />
+    </svg>
+  );
+}
+
 function PlayIcon() {
   return (
     <svg className="play-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -6721,12 +7292,48 @@ function RetryIcon() {
   );
 }
 
+function ViewResultIcon() {
+  return (
+    <svg className="view-result-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.6 10s2.6-4.7 7.4-4.7 7.4 4.7 7.4 4.7-2.6 4.7-7.4 4.7S2.6 10 2.6 10Z" />
+      <path d="M8.1 10a1.9 1.9 0 1 0 3.8 0 1.9 1.9 0 0 0-3.8 0Z" />
+    </svg>
+  );
+}
+
+function BreakpointIcon() {
+  return (
+    <svg className="breakpoint-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5.2 4.6h5.4l4.2 5.4-4.2 5.4H5.2Z" />
+      <path d="M8.1 7.8h2.6v4.4H8.1Z" />
+    </svg>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg className="download-icon" viewBox="0 0 20 20" aria-hidden="true">
       <path d="M10 3.8v7.3" />
       <path d="M6.8 8.3 10 11.5l3.2-3.2" />
       <path d="M4.6 15.8h10.8" />
+    </svg>
+  );
+}
+
+function SelectCardsIcon() {
+  return (
+    <svg className="select-cards-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5.1 6.2h8.7a1.3 1.3 0 0 1 1.3 1.3v7.1a1.3 1.3 0 0 1-1.3 1.3H5.1a1.3 1.3 0 0 1-1.3-1.3V7.5a1.3 1.3 0 0 1 1.3-1.3Z" />
+      <path d="M6.4 3.9h8.1a1.7 1.7 0 0 1 1.7 1.7v6.5" />
+      <path d="m6.8 11.1 1.8 1.8 3.8-4" />
+    </svg>
+  );
+}
+
+function SelectionCheckIcon() {
+  return (
+    <svg className="selection-check-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m5.3 10.2 3 3.1 6.4-6.7" />
     </svg>
   );
 }
@@ -6893,7 +7500,8 @@ function stateLabel(state: PipelineNodeState): string {
     done: "完成",
     failed: "失败",
     review: "待确认",
-    stale: "需更新"
+    stale: "需更新",
+    breakpoint: "断点"
   };
   return labels[state];
 }
@@ -7142,6 +7750,29 @@ function caseInitials(value: string): string {
 
 function caseCountTotal(counts: Record<string, number>): number {
   return Object.values(counts || {}).reduce((total, value) => total + value, 0);
+}
+
+function batchStatusSummary(batch: BatchRecord, cases: CaseRecord[]): string {
+  const counts = cases.length > 0
+    ? cases.reduce<Record<string, number>>((next, item) => {
+        next[item.status] = (next[item.status] || 0) + 1;
+        return next;
+      }, {})
+    : batch.case_counts || {};
+  const total = cases.length || caseCountTotal(counts);
+  const completed = counts.completed || 0;
+  const failed = counts.failed || 0;
+  const running = (counts.analysis_running || 0) + (counts.svg_running || 0);
+  const waitingBreakpoint = cases.filter((item) => isCasePausedAtWorkflowBreakpoint(item)).length;
+  if (waitingBreakpoint > 0) return `${waitingBreakpoint} 张等待断点继续`;
+  if (failed > 0) return `${failed} 张失败 / ${total} 张`;
+  if (running > 0) return `${running} 张运行中 / ${total} 张`;
+  if (total > 0) return `${completed} / ${total} 张完成`;
+  return "暂无图片";
+}
+
+function isCasePausedAtWorkflowBreakpoint(item: Pick<CaseRecord, "status" | "stage" | "workflow_breakpoint_node_id">): boolean {
+  return Boolean(item.workflow_breakpoint_node_id && item.status === "assets_review" && item.stage === item.workflow_breakpoint_node_id);
 }
 
 function loadImageGenConnectionSettings(): ImageGenConnectionSettings {
@@ -7772,6 +8403,13 @@ function retryStageForCase(item: Pick<CaseRecord, "phase" | "stage" | "stale_fro
   const canonical = canonicalPipelineStage(stage);
   if (canonical) return canonical;
   return "analysis";
+}
+
+function workflowStageRerunStage(stage: string): WorkbenchRerunStage | "" {
+  const canonical = canonicalPipelineStage(stage.toLowerCase());
+  if (!canonical) return "";
+  if (canonical === "package_run") return "package_run";
+  return canonical;
 }
 
 function latestProgressFile(progress: CaseProgress | null, label: string) {

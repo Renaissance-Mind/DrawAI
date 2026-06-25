@@ -233,6 +233,25 @@ export function runCaseStage(caseId: string, stage: WorkbenchRerunStage): Promis
   });
 }
 
+export function setWorkflowBreakpoint(caseId: string, nodeId: string): Promise<{ case: CaseDetail["case"] }> {
+  return requestJson<{ case: CaseDetail["case"] }>(`/api/cases/${caseId}/workflow/breakpoint`, {
+    method: "POST",
+    body: JSON.stringify({ node_id: nodeId })
+  });
+}
+
+export function clearWorkflowBreakpoint(caseId: string): Promise<{ case: CaseDetail["case"] }> {
+  return requestJson<{ case: CaseDetail["case"] }>(`/api/cases/${caseId}/workflow/breakpoint`, {
+    method: "DELETE"
+  });
+}
+
+export function continueWorkflowCase(caseId: string): Promise<{ case: CaseDetail["case"] }> {
+  return requestJson<{ case: CaseDetail["case"] }>(`/api/cases/${caseId}/workflow/continue`, {
+    method: "POST"
+  });
+}
+
 export function getCase(caseId: string): Promise<CaseDetail> {
   return requestJson<CaseDetail>(`/api/cases/${caseId}`);
 }

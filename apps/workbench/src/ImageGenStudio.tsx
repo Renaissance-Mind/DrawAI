@@ -1,13 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createUploadBatch, generateImages, listSlideTemplateCards, listSlideTemplateGallery } from "./api";
+import {
+  imageGenPanelActions,
+  imageGenVisibleTiles,
+  type ImageGenerationTask,
+  type ImageGenerationTaskImage,
+  type ImageGenSelectionMode,
+  type ImageGenTile
+} from "./imageGenState";
 import type {
   BatchDetail,
+  BatchExecutionMode,
   ImageGenerationProvider,
   ImageGenerationRequest,
   ImageGenerationResponse,
   SlideTemplateCard,
   SlideTemplateGalleryItem
 } from "./types";
+import { listWorkflowTemplates } from "./workflowApi";
+import type { WorkflowTemplate } from "./workflowTypes";
 
 /**
  * Generation studio for OpenAI-compatible Images API and Codex built-in image generation.
@@ -29,7 +40,6 @@ type Resolution = "1k" | "2k" | "4k";
 type Quality = "auto" | "low" | "medium" | "high";
 type Background = "auto" | "opaque" | "transparent";
 type OutputFormat = "png";
-type RightMode = "stage" | "grid";
 type GalleryLightbox = {
   item: SlideTemplateGalleryItem;
   imageUrl: string;
@@ -245,16 +255,13 @@ const TEMPLATE_STRATEGY_CARD_LINKS: Record<string, string> = {
   comic_manga_classroom: "manga_safe_learning"
 };
 
-interface GeneratedImage {
-  id: string;
-  url: string;
+interface GeneratedImage extends ImageGenerationTaskImage {
   size: string;
   resolution: Resolution;
   quality: Quality;
   format: OutputFormat;
   transparent: boolean;
   provider: ImageGenerationProvider;
-  prompt: string;
 }
 
 export interface ImageGenConnectionSettings {
@@ -296,17 +303,15 @@ export default function ImageGenStudio({
   const [templateLibraryFocusId, setTemplateLibraryFocusId] = useState("");
   const [referenceImagePathInput, setReferenceImagePathInput] = useState("");
 
-  const [images, setImages] = useState<GeneratedImage[]>([]);
-  const [selected, setSelected] = useState(0);
-  const [rightMode, setRightMode] = useState<RightMode>("stage");
-  const [generating, setGenerating] = useState(false);
+  const [tasks, setTasks] = useState<ImageGenerationTask[]>([]);
+  const [activeTaskId, setActiveTaskId] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
   const [generationError, setGenerationError] = useState("");
-  const [multiSelect, setMultiSelect] = useState(false);
-  const [selectedForSubmit, setSelectedForSubmit] = useState<number[]>([]);
-  const [submittingSelection, setSubmittingSelection] = useState(false);
-  const [submitError, setSubmitError] = useState("");
+  const [selectionMode, setSelectionMode] = useState<ImageGenSelectionMode>("off");
+  const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
 
-  const stripRef = useRef<HTMLDivElement>(null);
+  const taskCounterRef = useRef(0);
 
   const effectiveSize = openAiSizeFromPreset(size, resolution);
 
@@ -486,381 +491,355 @@ export default function ImageGenStudio({
     onConnectionChange?.({ ...connection, provider: nextProvider });
   }, [connection, onConnectionChange]);
 
-  // Keep the selected thumbnail centered in the filmstrip. Clamping to the
-  // scroll bounds means the first image rests at the left edge and the last at
-  // the right edge automatically.
-  useEffect(() => {
-    if (rightMode !== "stage") return;
-    const strip = stripRef.current;
-    if (!strip) return;
-    const thumb = strip.querySelector<HTMLElement>(`[data-thumb="${selected}"]`);
-    if (!thumb) return;
-    const target = thumb.offsetLeft - (strip.clientWidth - thumb.clientWidth) / 2;
-    const max = strip.scrollWidth - strip.clientWidth;
-    strip.scrollTo({ left: Math.max(0, Math.min(target, max)), behavior: "smooth" });
-  }, [selected, rightMode, images.length]);
-
-  // Arrow keys move the selection while in stage mode.
-  useEffect(() => {
-    if (rightMode !== "stage") return;
-    function onKey(event: KeyboardEvent) {
-      const tag = (event.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (event.key === "ArrowRight") setSelected((i) => Math.min(i + 1, images.length - 1));
-      if (event.key === "ArrowLeft") setSelected((i) => Math.max(i - 1, 0));
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [rightMode, images.length]);
+  const visibleTasks = useMemo(
+    () => (activeTaskId ? tasks.filter((task) => task.id === activeTaskId) : tasks),
+    [activeTaskId, tasks]
+  );
+  const visibleTiles = useMemo(() => imageGenVisibleTiles(visibleTasks), [visibleTasks]);
+  const actionState = useMemo(
+    () => imageGenPanelActions(visibleTasks, selectionMode, selectedImageIds),
+    [selectionMode, selectedImageIds, visibleTasks]
+  );
+  const hasAnyRunningTask = tasks.some((task) => task.status === "running");
+  const selectedImageIdsSet = useMemo(() => new Set(selectedImageIds), [selectedImageIds]);
+  const imageById = useMemo(() => {
+    const entries = imageGenVisibleTiles(tasks)
+      .filter((tile) => tile.status === "completed")
+      .map((tile) => [tile.id, tile as GeneratedImage] as const);
+    return new Map(entries);
+  }, [tasks]);
+  const selectedImagesForSubmit = useMemo(
+    () => actionState.submitImageIds.map((id) => imageById.get(id)).filter((image): image is GeneratedImage => Boolean(image)),
+    [actionState.submitImageIds, imageById]
+  );
+  const completedVisibleCount = visibleTiles.filter((tile) => tile.status === "completed").length;
+  const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) || null : null;
+  const canSubmitVisibleImages = actionState.canSubmit && !hasAnyRunningTask;
 
   useEffect(() => {
-    setSelectedForSubmit((items) => items.filter((index) => index >= 0 && index < images.length));
-  }, [images.length]);
+    const completedIds = new Set(imageGenVisibleTiles(tasks).filter((tile) => tile.status === "completed").map((tile) => tile.id));
+    setSelectedImageIds((items) => items.filter((id) => completedIds.has(id)));
+  }, [tasks]);
 
-  const generate = useCallback(async () => {
-    if (!prompt.trim()) return;
-    setGenerating(true);
+  const startGeneration = useCallback((
+    submittedRequest: ImageGenerationRequest,
+    submittedResolution: Resolution,
+    titleSeed: string,
+    expectedCount: number
+  ) => {
+    const taskIndex = taskCounterRef.current + 1;
+    taskCounterRef.current = taskIndex;
+    const taskId = `gen-${Date.now()}-${taskIndex}`;
+    const task: ImageGenerationTask = {
+      id: taskId,
+      status: "running",
+      title: generationTaskTitle(titleSeed, taskIndex),
+      prompt: submittedRequest.prompt,
+      expectedCount,
+      images: [],
+      error: "",
+      createdAt: new Date().toISOString()
+    };
+    setTasks((items) => [task, ...items]);
+    setActiveTaskId(taskId);
+    setComposerOpen(false);
     setGenerationError("");
-    try {
-      const payload = await generateImages(request);
-      const next = imagesFromResponse(payload, request, resolution);
-      if (next.length === 0) {
-        throw new Error(imageGenerationEmptyMessage(payload));
-      }
-      setImages(next);
-      setSelected(0);
-      setRightMode("stage");
-      setMultiSelect(false);
-      setSelectedForSubmit([]);
-      setSubmitError("");
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setGenerating(false);
-    }
-  }, [prompt, request, resolution]);
+    setSelectionMode("off");
+    setSelectedImageIds([]);
 
-  const selectFromGrid = useCallback((index: number) => {
-    setSelected(index);
-    setRightMode("stage");
+    void generateImages(submittedRequest)
+      .then((payload) => {
+        const next = imagesFromResponse(payload, submittedRequest, submittedResolution, taskId);
+        if (next.length === 0) {
+          throw new Error(imageGenerationEmptyMessage(payload));
+        }
+        setTasks((items) => items.map((item) => (
+          item.id === taskId
+            ? { ...item, status: "completed", images: next, error: "" }
+            : item
+        )));
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setGenerationError(message);
+        setTasks((items) => items.map((item) => (
+          item.id === taskId
+            ? { ...item, status: "failed", error: message }
+            : item
+        )));
+      });
   }, []);
 
-  const selectedForSubmitSet = useMemo(() => new Set(selectedForSubmit), [selectedForSubmit]);
-  const selectedImagesForSubmit = useMemo(
-    () => selectedForSubmit.map((index) => images[index]).filter((image): image is GeneratedImage => Boolean(image)),
-    [images, selectedForSubmit]
-  );
+  const generate = useCallback(() => {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt) return;
+    startGeneration({ ...request, prompt: cleanPrompt }, resolution, cleanPrompt, count);
+  }, [count, prompt, request, resolution, startGeneration]);
 
-  const toggleGridSelection = useCallback((index: number) => {
-    setSelectedForSubmit((items) => (
-      items.includes(index)
-        ? items.filter((item) => item !== index)
-        : [...items, index].sort((a, b) => a - b)
+  const toggleTileSelection = useCallback((imageId: string) => {
+    setSelectedImageIds((items) => (
+      items.includes(imageId)
+        ? items.filter((item) => item !== imageId)
+        : [...items, imageId]
     ));
   }, []);
 
-  const submitSelectedImages = useCallback(async () => {
-    if (selectedImagesForSubmit.length === 0 || submittingSelection) return;
-    setSubmittingSelection(true);
-    setSubmitError("");
-    try {
-      const form = new FormData();
-      form.set("name", generatedBatchTitle(selectedImagesForSubmit));
-      form.set("input_mode", "upload");
-      form.set("max_concurrent_cases", "10");
-      form.set("auto_run_svg_after_analysis", "false");
-      for (const [index, image] of selectedImagesForSubmit.entries()) {
-        await appendGeneratedImageToForm(form, image, index);
-      }
-      const detail = await createUploadBatch(form);
-      setMultiSelect(false);
-      setSelectedForSubmit([]);
-      await onCreated(detail);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setSubmitError(message);
-      onError(message);
-    } finally {
-      setSubmittingSelection(false);
-    }
-  }, [onCreated, onError, selectedImagesForSubmit, submittingSelection]);
-
-  const current = images[selected];
+  const regenerateSelectedImages = useCallback(() => {
+    if (!actionState.canRegenerate || selectedImagesForSubmit.length === 0) return;
+    const regeneratePrompt = selectedImagesForSubmit[0]?.prompt || prompt.trim();
+    if (!regeneratePrompt) return;
+    startGeneration(
+      { ...request, prompt: regeneratePrompt, n: selectedImagesForSubmit.length },
+      resolution,
+      `重新生成 ${selectedImagesForSubmit.length} 张`,
+      selectedImagesForSubmit.length
+    );
+  }, [actionState.canRegenerate, prompt, request, resolution, selectedImagesForSubmit, startGeneration]);
 
   return (
-    <div className="gen-root">
-      <aside className="gen-controls">
-        <div className="gen-form">
-          <div className="gen-prompt-block">
-            <textarea
-              className="gen-prompt"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="描述你想要生成的画面，例如：赛博朋克风格的城市夜景，霓虹灯倒映在湿润的街道上…"
-              rows={5}
-            />
+    <div className="gen-root gen-task-root">
+      <aside className="gen-task-rail">
+        <div className="gen-task-head">
+          <div>
+            <span>生成任务</span>
+            <strong>{tasks.length} 个任务</strong>
           </div>
-
-          <Field label="生成方式" hint={provider === "codex" ? "Codex SDK" : "Images API"}>
-            <Segmented
-              options={PROVIDERS}
-              value={provider}
-              onChange={(v) => changeProvider(v as ImageGenerationProvider)}
-            />
-          </Field>
-
-          {provider === "codex" && (
-            <>
-              <Field label="模板选择" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "可选"}>
-                <div className="gen-template-picker-summary">
-                  <div className="gen-template-picker-current">
-                    <span className="gen-template-picker-kicker">
-                      {templateId === "auto" ? "OPTIONAL" : selectedGalleryItem?.category || selectedTemplateOption?.group || "TEMPLATE"}
-                    </span>
-                    <strong>
-                      {templateId === "auto"
-                        ? "不选择模板"
-                        : selectedGalleryItem?.template_name || selectedTemplateOption?.label || templateId}
-                    </strong>
-                    <p>
-                      {templateId === "auto"
-                        ? "不套用模板；只按主提示词生成。"
-                        : selectedGalleryItem?.reason || selectedTemplateOption?.sub || "使用选中的模板作为普通视觉参考。"}
-                    </p>
-                  </div>
-                  <div className="gen-template-picker-actions">
-                    <button type="button" className="gen-template-library-open" onClick={openTemplateLibrary}>
-                      打开模板库
-                    </button>
-                    {templateId !== "auto" && (
-                      <button type="button" className="gen-template-auto" onClick={selectAutoTemplate}>
-                        自动
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
-                {activeTemplateCard && (
-                  <div className="gen-template-card-preview">
-                    <div className="gen-template-card-title">
-                      <span>{activeTemplateCard.name}</span>
-                      <em>{activeTemplateCard.category}</em>
-                    </div>
-                    <p>{activeTemplateCard.prompt_recipe}</p>
-                    <div className="gen-template-card-tags">
-                      {activeTemplateCard.visual_tags.slice(0, 5).map((tag) => (
-                        <span key={tag}>{tag}</span>
-                      ))}
-                    </div>
-                    <div className="gen-template-card-meta">
-                      <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
-                      <span>{provenanceLabel(activeTemplateCard)}</span>
-                    </div>
-                  </div>
-                )}
-              </Field>
-
-              <Field label="输出语言" hint="默认自动">
-                <select className="gen-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label} - {option.sub}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="参考图路径" hint="Image as context">
-                <input
-                  className="gen-input"
-                  value={referenceImagePathInput}
-                  onChange={(e) => setReferenceImagePathInput(e.target.value)}
-                  placeholder="C:\\Users\\...\\reference.png；填写后 Codex 会把图片作为视觉上下文"
-                />
-              </Field>
-            </>
-          )}
-
-          <Field label="尺寸 / 比例" hint={effectiveSize}>
-            <div className="gen-ratio-grid">
-              {SIZE_PRESETS.map((preset) => {
-                const active = size === preset;
-                return (
-                  <button
-                    key={preset}
-                    type="button"
-                    className={`gen-ratio${active ? " active" : ""}`}
-                    onClick={() => setSize(preset)}
-                  >
-                    <RatioGlyph ratio={preset} />
-                    <span className="gen-ratio-label">{sizePresetLabel(preset)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          <Field label="质量" hint="生成质量">
-            <Segmented
-              options={QUALITIES.map((q) => ({ value: q.value, label: q.label }))}
-              value={quality}
-              onChange={(v) => setQuality(v as Quality)}
-            />
-          </Field>
-
-          <Field label="背景" hint="背景模式">
-            <Segmented
-              options={BACKGROUNDS.map((b) => ({ value: b.value, label: b.label }))}
-              value={background}
-              onChange={(v) => setBackground(v as Background)}
-            />
-          </Field>
+          <button
+            type="button"
+            className="gen-task-add"
+            title="添加生成任务"
+            aria-label="添加生成任务"
+            onClick={() => {
+              setComposerOpen(true);
+              setActiveTaskId("");
+              setSelectionMode("off");
+              setSelectedImageIds([]);
+            }}
+          >
+            <PlusMiniIcon />
+          </button>
         </div>
-
-        <footer className="gen-controls-foot">
-          <div className="gen-generate-row">
-            <div className="gen-resolution-compact">
-              <span className="gen-field-label">像素等级</span>
-              <Segmented
-                options={RESOLUTIONS.map((r) => ({ value: r.value, label: r.label }))}
-                value={resolution}
-                onChange={(v) => setResolution(v as Resolution)}
-              />
-            </div>
-            <div className="gen-count-compact" aria-label="生成数量">
-              <Stepper value={count} min={1} max={10} onChange={setCount} />
-            </div>
+        <div className="gen-task-list" role="list">
+          {tasks.map((task) => (
             <button
               type="button"
-              className={`primary gen-generate${generating ? " running" : ""}`}
-              onClick={generate}
-              disabled={generating || !prompt.trim()}
+              role="listitem"
+              key={task.id}
+              className={`gen-task-item ${task.status}${activeTaskId === task.id && !composerOpen ? " active" : ""}`}
+              onClick={() => {
+                setComposerOpen(false);
+                setActiveTaskId(task.id);
+                setSelectionMode("off");
+                setSelectedImageIds([]);
+              }}
             >
-              {generating ? <span className="button-spinner" /> : null}
-              {generating ? "生成中…" : "生成"}
+              <span>{task.title}</span>
+              <strong>{task.status === "running" ? "生成中" : task.status === "failed" ? "失败" : `${task.images.length} 张`}</strong>
+              <em>{task.prompt}</em>
             </button>
-          </div>
-          {generationError && <p className="gen-error">{generationError}</p>}
-        </footer>
+          ))}
+        </div>
       </aside>
 
-      <section className={`gen-display ${rightMode}`}>
-        {rightMode === "stage" ? (
-          <>
-            <div className="gen-stage">
-              {current ? (
-                <figure className={`gen-stage-figure${current.transparent ? " checker" : ""}`}>
-                  <img src={current.url} alt={current.prompt || "生成图"} />
-                </figure>
-              ) : (
-                <div className="gen-empty">还没有图片，填写提示词后点击生成</div>
+      <section className={`gen-panel ${composerOpen ? "composer" : "thumbnails"}`}>
+        {composerOpen ? (
+          <div className="gen-settings-panel">
+            <div className="gen-form gen-settings-form">
+              <div className="gen-prompt-block gen-prompt-wide">
+                <span className="gen-field-label">提示词</span>
+                <textarea
+                  className="gen-prompt"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="描述你想要生成的画面，例如：赛博朋克风格的城市夜景，霓虹灯倒映在湿润的街道上…"
+                  rows={7}
+                />
+              </div>
+
+              <Field label="生成方式" hint={provider === "codex" ? "Codex SDK" : "Images API"}>
+                <Segmented
+                  options={PROVIDERS}
+                  value={provider}
+                  onChange={(v) => changeProvider(v as ImageGenerationProvider)}
+                />
+              </Field>
+
+              {provider === "codex" && (
+                <>
+                  <Field label="模板选择" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "可选"}>
+                    <div className="gen-template-picker-summary">
+                      <div className="gen-template-picker-current">
+                        <span className="gen-template-picker-kicker">
+                          {templateId === "auto" ? "OPTIONAL" : selectedGalleryItem?.category || selectedTemplateOption?.group || "TEMPLATE"}
+                        </span>
+                        <strong>
+                          {templateId === "auto"
+                            ? "不选择模板"
+                            : selectedGalleryItem?.template_name || selectedTemplateOption?.label || templateId}
+                        </strong>
+                        <p>
+                          {templateId === "auto"
+                            ? "不套用模板；只按主提示词生成。"
+                            : selectedGalleryItem?.reason || selectedTemplateOption?.sub || "使用选中的模板作为普通视觉参考。"}
+                        </p>
+                      </div>
+                      <div className="gen-template-picker-actions">
+                        <button type="button" className="gen-template-library-open" onClick={openTemplateLibrary}>
+                          打开模板库
+                        </button>
+                        {templateId !== "auto" && (
+                          <button type="button" className="gen-template-auto" onClick={selectAutoTemplate}>
+                            自动
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
+                    {activeTemplateCard && (
+                      <div className="gen-template-card-preview">
+                        <div className="gen-template-card-title">
+                          <span>{activeTemplateCard.name}</span>
+                          <em>{activeTemplateCard.category}</em>
+                        </div>
+                        <p>{activeTemplateCard.prompt_recipe}</p>
+                        <div className="gen-template-card-tags">
+                          {activeTemplateCard.visual_tags.slice(0, 5).map((tag) => (
+                            <span key={tag}>{tag}</span>
+                          ))}
+                        </div>
+                        <div className="gen-template-card-meta">
+                          <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
+                          <span>{provenanceLabel(activeTemplateCard)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </Field>
+
+                  <Field label="输出语言" hint="默认自动">
+                    <select className="gen-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                      {LANGUAGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label} - {option.sub}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="参考图路径" hint="Image as context">
+                    <input
+                      className="gen-input"
+                      value={referenceImagePathInput}
+                      onChange={(e) => setReferenceImagePathInput(e.target.value)}
+                      placeholder="C:\\Users\\...\\reference.png；填写后 Codex 会把图片作为视觉上下文"
+                    />
+                  </Field>
+                </>
               )}
-              {current && (
-                <div className="gen-stage-meta">
-                  <span className="gen-meta-chip">{current.size}</span>
-                  <span className="gen-meta-chip">{current.resolution.toUpperCase()}</span>
-                  <span className="gen-meta-chip">{current.format.toUpperCase()}</span>
-                  <span className="gen-meta-chip">{current.provider === "codex" ? "Codex" : "API"}</span>
-                  <span className="gen-meta-chip">质量 {optionLabel(QUALITIES, current.quality)}</span>
-                  <span className="gen-meta-index">
-                    {selected + 1} / {images.length}
-                  </span>
-                  <a className="gen-meta-download" href={current.url} download={`${current.id}.${current.format}`}>
-                    下载
-                  </a>
+
+              <Field label="尺寸 / 比例" hint={effectiveSize}>
+                <div className="gen-ratio-grid">
+                  {SIZE_PRESETS.map((preset) => {
+                    const active = size === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={`gen-ratio${active ? " active" : ""}`}
+                        onClick={() => setSize(preset)}
+                      >
+                        <RatioGlyph ratio={preset} />
+                        <span className="gen-ratio-label">{sizePresetLabel(preset)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+              </Field>
+
+              <div className="gen-settings-inline">
+                <Field label="像素等级" hint="输出尺寸">
+                  <Segmented
+                    options={RESOLUTIONS.map((r) => ({ value: r.value, label: r.label, sub: r.hint }))}
+                    value={resolution}
+                    onChange={(v) => setResolution(v as Resolution)}
+                  />
+                </Field>
+                <Field label="生成数量" hint="1-10">
+                  <Stepper value={count} min={1} max={10} onChange={setCount} />
+                </Field>
+              </div>
+
+              <div className="gen-settings-inline">
+                <Field label="质量" hint="生成质量">
+                  <Segmented
+                    options={QUALITIES.map((q) => ({ value: q.value, label: q.label }))}
+                    value={quality}
+                    onChange={(v) => setQuality(v as Quality)}
+                  />
+                </Field>
+
+                <Field label="背景" hint="背景模式">
+                  <Segmented
+                    options={BACKGROUNDS.map((b) => ({ value: b.value, label: b.label }))}
+                    value={background}
+                    onChange={(v) => setBackground(v as Background)}
+                  />
+                </Field>
+              </div>
             </div>
 
-            <div className="gen-filmstrip-wrap">
-              <div className="gen-filmstrip" ref={stripRef}>
-                {images.map((img, i) => (
-                  <button
-                    key={img.id}
-                    type="button"
-                    data-thumb={i}
-                    className={`gen-thumb${i === selected ? " active" : ""}${
-                      img.transparent ? " checker" : ""
-                    }`}
-                    onClick={() => setSelected(i)}
-                  >
-                    <img src={img.url} alt="" />
-                  </button>
-                ))}
-              </div>
+            <footer className="gen-settings-footer">
+              {generationError && <p className="gen-error">{generationError}</p>}
               <button
                 type="button"
-                className="gen-expand"
-                title="全屏缩略图预览"
-                onClick={() => setRightMode("grid")}
+                className="primary gen-generate"
+                onClick={generate}
+                disabled={!prompt.trim()}
               >
-                <ExpandIcon />
+                生成
               </button>
-            </div>
-          </>
-        ) : (
-          <div className="gen-grid-mode">
-            <div className="gen-grid-head">
-              <div className="gen-grid-title">
-                <span className="gen-grid-count">{images.length} 张图片</span>
-                {multiSelect && <span className="gen-grid-selected">{selectedForSubmit.length} 张已选</span>}
-              </div>
-              <div className="gen-grid-actions">
-                <button
-                  type="button"
-                  className={`gen-multi-toggle${multiSelect ? " active" : ""}`}
-                  onClick={() => {
-                    setMultiSelect((value) => !value);
-                    setSelectedForSubmit([]);
-                    setSubmitError("");
-                  }}
-                >
-                  {multiSelect ? "取消多选" : "多选"}
-                </button>
-                <button
-                  type="button"
-                  className={`gen-submit-selection${submittingSelection ? " running" : ""}`}
-                  disabled={!multiSelect || selectedImagesForSubmit.length === 0 || submittingSelection}
-                  onClick={() => void submitSelectedImages()}
-                >
-                  {submittingSelection ? <span className="button-spinner" /> : null}
-                  {submittingSelection ? "提交中" : "提交"}
-                </button>
-                <button type="button" className="gen-collapse" onClick={() => setRightMode("stage")}>
-                  <CollapseIcon />
-                  <span>退出</span>
-                </button>
-              </div>
-            </div>
-            {submitError && <p className="gen-submit-error">{submitError}</p>}
-            <div className="gen-grid">
-              {images.map((img, i) => (
-                <button
-                  key={img.id}
-                  type="button"
-                  className={`gen-grid-cell${i === selected ? " active" : ""}${selectedForSubmitSet.has(i) ? " selected" : ""}${
-                    img.transparent ? " checker" : ""
-                  }`}
-                  onClick={() => {
-                    if (multiSelect) {
-                      toggleGridSelection(i);
-                      return;
-                    }
-                    selectFromGrid(i);
-                  }}
-                  aria-pressed={multiSelect ? selectedForSubmitSet.has(i) : undefined}
-                >
-                  <img src={img.url} alt="" />
-                  <span className="gen-grid-index">{i + 1}</span>
-                  {multiSelect && (
-                    <span className="gen-grid-check" aria-hidden="true" />
-                  )}
-                </button>
-              ))}
-            </div>
+            </footer>
           </div>
+        ) : (
+          <GeneratedThumbnailPanel
+            activeTask={activeTask}
+            completedCount={completedVisibleCount}
+            tiles={visibleTiles}
+            selectedIds={selectedImageIdsSet}
+            selectionMode={selectionMode}
+            canSubmit={canSubmitVisibleImages}
+            canRegenerate={actionState.canRegenerate}
+            selectedCount={selectedImagesForSubmit.length}
+            hasRunningTasks={hasAnyRunningTask}
+            onToggleSelection={toggleTileSelection}
+            onToggleSelectionMode={() => {
+              setSelectionMode((mode) => (mode === "selecting" ? "off" : "selecting"));
+              setSelectedImageIds([]);
+            }}
+            onRegenerate={regenerateSelectedImages}
+            onSubmit={() => setSubmitDialogOpen(true)}
+            onOpenComposer={() => {
+              setComposerOpen(true);
+              setActiveTaskId("");
+              setSelectionMode("off");
+              setSelectedImageIds([]);
+            }}
+          />
         )}
       </section>
+      {submitDialogOpen && (
+        <GeneratedBatchSubmitDialog
+          images={selectedImagesForSubmit}
+          defaultName={generatedBatchTitle(selectedImagesForSubmit)}
+          onClose={() => setSubmitDialogOpen(false)}
+          onCreated={async (detail) => {
+            setSubmitDialogOpen(false);
+            setSelectionMode("off");
+            setSelectedImageIds([]);
+            await onCreated(detail);
+          }}
+          onError={onError}
+        />
+      )}
       {templateLibraryOpen && (
         <TemplateLibraryOverlay
           items={templateGallery}
@@ -951,6 +930,297 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       </span>
       {children}
     </label>
+  );
+}
+
+function GeneratedThumbnailPanel({
+  activeTask,
+  completedCount,
+  tiles,
+  selectedIds,
+  selectionMode,
+  canSubmit,
+  canRegenerate,
+  selectedCount,
+  hasRunningTasks,
+  onToggleSelection,
+  onToggleSelectionMode,
+  onRegenerate,
+  onSubmit,
+  onOpenComposer
+}: {
+  activeTask: ImageGenerationTask | null;
+  completedCount: number;
+  tiles: ImageGenTile[];
+  selectedIds: Set<string>;
+  selectionMode: ImageGenSelectionMode;
+  canSubmit: boolean;
+  canRegenerate: boolean;
+  selectedCount: number;
+  hasRunningTasks: boolean;
+  onToggleSelection: (imageId: string) => void;
+  onToggleSelectionMode: () => void;
+  onRegenerate: () => void;
+  onSubmit: () => void;
+  onOpenComposer: () => void;
+}) {
+  return (
+    <div className="gen-thumb-panel">
+      <header className="gen-thumb-panel-head">
+        <div>
+          <span>{activeTask ? activeTask.title : "生成结果"}</span>
+          <strong>{completedCount} 张图片</strong>
+        </div>
+        <em>{hasRunningTasks ? "还有任务生成中" : tiles.length > 0 ? "可提交到可编辑化任务" : "等待生成"}</em>
+      </header>
+      <div className={`gen-result-grid${tiles.length === 0 ? " empty" : ""}`} aria-label="生成结果缩略图">
+        {tiles.length > 0 ? (
+          tiles.map((tile, index) => (
+            <GeneratedTileCard
+              key={tile.id}
+              tile={tile}
+              index={index}
+              selected={selectedIds.has(tile.id)}
+              selectionMode={selectionMode}
+              onToggleSelection={onToggleSelection}
+            />
+          ))
+        ) : (
+          <div className="gen-result-empty">
+            <button type="button" className="gen-result-empty-action" onClick={onOpenComposer}>
+              <span className="gen-result-empty-plus" aria-hidden="true">
+                <PlusMiniIcon />
+              </span>
+              <strong>点击添加生成任务</strong>
+            </button>
+          </div>
+        )}
+      </div>
+      <div className={`gen-corner-actions${selectionMode === "selecting" ? " selecting" : ""}`}>
+        {selectionMode === "selecting" && (
+          <button
+            type="button"
+            className="gen-corner-action regenerate"
+            title={canRegenerate ? `重新生成 ${selectedCount} 张` : "选择图片后可重新生成"}
+            aria-label={canRegenerate ? `重新生成 ${selectedCount} 张` : "选择图片后可重新生成"}
+            disabled={!canRegenerate}
+            onClick={onRegenerate}
+          >
+            <RegenerateIcon />
+          </button>
+        )}
+        <button
+          type="button"
+          className="gen-corner-action select"
+          title={selectionMode === "selecting" ? "退出多选" : "多选图片"}
+          aria-label={selectionMode === "selecting" ? "退出多选" : "多选图片"}
+          onClick={onToggleSelectionMode}
+        >
+          {selectionMode === "selecting" ? <CloseMiniIcon /> : <SelectManyIcon />}
+        </button>
+        <button
+          type="button"
+          className="gen-corner-action submit"
+          title={canSubmit ? `提交 ${selectedCount} 张到可编辑化任务` : "生成完成并选择图片后可提交"}
+          aria-label={canSubmit ? `提交 ${selectedCount} 张到可编辑化任务` : "生成完成并选择图片后可提交"}
+          disabled={!canSubmit}
+          onClick={onSubmit}
+        >
+          <RunMiniIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GeneratedTileCard({
+  tile,
+  index,
+  selected,
+  selectionMode,
+  onToggleSelection
+}: {
+  tile: ImageGenTile;
+  index: number;
+  selected: boolean;
+  selectionMode: ImageGenSelectionMode;
+  onToggleSelection: (imageId: string) => void;
+}) {
+  const completed = tile.status === "completed";
+  return (
+    <button
+      type="button"
+      className={`gen-result-card ${tile.status}${tile.transparent ? " checker" : ""}${selected ? " selected" : ""}`}
+      disabled={!completed && selectionMode === "selecting"}
+      onClick={() => {
+        if (selectionMode === "selecting" && completed) onToggleSelection(tile.id);
+      }}
+      aria-pressed={selectionMode === "selecting" ? selected : undefined}
+    >
+      {completed ? (
+        <img src={tile.url} alt={tile.prompt || "生成图"} loading={index < 6 ? "eager" : "lazy"} />
+      ) : tile.status === "running" ? (
+        <span className="gen-result-placeholder"><span className="button-spinner" /></span>
+      ) : (
+        <span className="gen-result-failed">{tile.error || "生成失败"}</span>
+      )}
+      <span className="gen-result-index">{index + 1}</span>
+      {selectionMode === "selecting" && completed && <span className="gen-result-check" aria-hidden="true" />}
+    </button>
+  );
+}
+
+function GeneratedBatchSubmitDialog({
+  images,
+  defaultName,
+  onClose,
+  onCreated,
+  onError
+}: {
+  images: GeneratedImage[];
+  defaultName: string;
+  onClose: () => void;
+  onCreated: (detail: BatchDetail) => void | Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [manualAssetReview, setManualAssetReview] = useState(false);
+  const [workflowTemplates, setWorkflowTemplates] = useState<WorkflowTemplate[]>([]);
+  const [selectedWorkflowTemplateId, setSelectedWorkflowTemplateId] = useState("default_drawai_dag");
+  const [selectedExecutionMode, setSelectedExecutionMode] = useState<BatchExecutionMode>("default");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  useEffect(() => {
+    let canceled = false;
+    listWorkflowTemplates()
+      .then((response) => {
+        if (canceled) return;
+        setWorkflowTemplates(response.templates);
+        if (!response.templates.some((template) => template.template_id === selectedWorkflowTemplateId)) {
+          setSelectedWorkflowTemplateId(response.templates[0]?.template_id || "default_drawai_dag");
+        }
+      })
+      .catch((error) => {
+        if (canceled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setSubmitError(message);
+        onError(message);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  async function submit() {
+    if (submitting || images.length === 0) return;
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const executionMode: BatchExecutionMode = selectedExecutionMode === "llm" ? "default" : selectedExecutionMode;
+      const form = new FormData();
+      form.set("name", name.trim() || defaultName || "生成图");
+      form.set("input_mode", "upload");
+      form.set("max_concurrent_cases", "10");
+      form.set("auto_run_svg_after_analysis", manualAssetReview ? "false" : "true");
+      form.set("workflow_template_id", selectedWorkflowTemplateId);
+      form.set("execution_mode", executionMode);
+      for (const [index, image] of images.entries()) {
+        await appendGeneratedImageToForm(form, image, index);
+      }
+      const detail = await createUploadBatch(form);
+      await onCreated(detail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSubmitError(message);
+      onError(message);
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="gen-submit-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="gen-submit-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="提交到可编辑化任务"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="gen-submit-dialog-head">
+          <div>
+            <span>可编辑化任务</span>
+            <strong>提交 {images.length} 张生成图</strong>
+          </div>
+          <button type="button" aria-label="关闭" onClick={onClose} disabled={submitting}>
+            <CloseMiniIcon />
+          </button>
+        </header>
+        <div className="gen-submit-dialog-body">
+          <label className="gen-submit-field">
+            <span>任务名称</span>
+            <input value={name} disabled={submitting} onChange={(event) => setName(event.currentTarget.value)} />
+          </label>
+          <label className="gen-submit-field">
+            <span>Workflow</span>
+            <select
+              value={selectedWorkflowTemplateId}
+              disabled={submitting || workflowTemplates.length === 0}
+              onChange={(event) => setSelectedWorkflowTemplateId(event.currentTarget.value)}
+            >
+              {workflowTemplates.map((template) => (
+                <option value={template.template_id} key={template.template_id}>{template.name}</option>
+              ))}
+            </select>
+          </label>
+          <div className="gen-submit-field">
+            <span>运行方式</span>
+            <div className="gen-submit-segmented" role="radiogroup" aria-label="运行方式">
+              {(["default", "agent"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedExecutionMode === mode}
+                  className={selectedExecutionMode === mode ? "active" : ""}
+                  disabled={submitting}
+                  onClick={() => setSelectedExecutionMode(mode)}
+                >
+                  {mode === "default" ? "默认" : "Agent"}
+                </button>
+              ))}
+              <button type="button" role="radio" aria-checked={false} disabled>LLM</button>
+            </div>
+          </div>
+          <label className="gen-submit-review-toggle">
+            <input
+              type="checkbox"
+              checked={manualAssetReview}
+              disabled={submitting}
+              onChange={(event) => setManualAssetReview(event.currentTarget.checked)}
+            />
+            <span>
+              <strong>手动确认素材</strong>
+              <em>{manualAssetReview ? "预处理后停在素材确认环节。" : "系统会从预处理一直执行到最终导出。"}</em>
+            </span>
+          </label>
+          <div className="gen-submit-preview-strip" aria-label="将提交的生成图">
+            {images.slice(0, 8).map((image) => (
+              <img key={image.id} src={image.url} alt="" />
+            ))}
+            {images.length > 8 && <span>+{images.length - 8}</span>}
+          </div>
+          {submitError && <p className="gen-submit-error">{submitError}</p>}
+        </div>
+        <footer className="gen-submit-dialog-actions">
+          <button type="button" disabled={submitting} onClick={onClose}>取消</button>
+          <button type="button" className="primary" disabled={submitting || images.length === 0} onClick={() => void submit()}>
+            {submitting && <span className="button-spinner" />}
+            {submitting ? "提交中" : manualAssetReview ? "提交并手动确认" : "提交并自动运行"}
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -1232,18 +1502,47 @@ function RatioGlyph({ ratio }: { ratio: string }) {
   );
 }
 
-function ExpandIcon() {
+function PlusMiniIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
     </svg>
   );
 }
 
-function CollapseIcon() {
+function RunMiniIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M4 10h6V4M20 10h-6V4M4 14h6v6M20 14h-6v6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.4v13.2c0 .7.78 1.12 1.36.73l9.7-6.6a.88.88 0 0 0 0-1.46l-9.7-6.6A.88.88 0 0 0 8 5.4Z" />
+    </svg>
+  );
+}
+
+function SelectManyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="4" width="7" height="7" rx="1.5" />
+      <rect x="13" y="4" width="7" height="7" rx="1.5" />
+      <rect x="4" y="13" width="7" height="7" rx="1.5" />
+      <path d="m14 16 2 2 4-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function RegenerateIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M20 12a8 8 0 0 1-13.3 6" strokeLinecap="round" />
+      <path d="M4 12A8 8 0 0 1 17.3 6" strokeLinecap="round" />
+      <path d="M17 2v4h4M7 22v-4H3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CloseMiniIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1274,6 +1573,12 @@ function imageModelForProvider(provider: ImageGenerationProvider, configuredMode
   return model || DEFAULT_MODEL;
 }
 
+function generationTaskTitle(seed: string, index: number): string {
+  const clean = seed.trim().replace(/\s+/g, " ");
+  if (clean.startsWith("重新生成")) return clean;
+  return clean ? `生成 ${index} · ${clean.slice(0, 18)}` : `生成 ${index}`;
+}
+
 function generatedBatchTitle(images: GeneratedImage[]): string {
   const prompt = images[0]?.prompt.trim().replace(/\s+/g, " ") || "";
   const prefix = prompt ? `生成图 - ${prompt.slice(0, 24)}` : "生成图";
@@ -1300,7 +1605,8 @@ function extensionFromGeneratedImage(image: GeneratedImage): string {
 function imagesFromResponse(
   payload: ImageGenerationResponse,
   request: ImageGenerationRequest,
-  resolution: Resolution
+  resolution: Resolution,
+  taskId: string
 ): GeneratedImage[] {
   const candidates = imageCandidates(payload);
   const responseProvider = imageGenerationProviderFromResponse(payload, request.provider);
@@ -1310,6 +1616,8 @@ function imagesFromResponse(
     const record = objectRecord(item);
     return urls.map((url, urlIndex) => ({
       id: String(record.id || record.image_id || record.created || `image-${Date.now()}-${index + 1}-${urlIndex + 1}`),
+      taskId,
+      status: "completed",
       url,
       size: String(record.size || request.size),
       resolution,

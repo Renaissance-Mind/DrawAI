@@ -227,6 +227,30 @@ class WorkbenchRunner:
     def submit_rerun(self, case_id: str, stage: RerunStage) -> None:
         self._submit_case(self._rerun_case, case_id, stage)
 
+    def set_workflow_breakpoint(self, case_id: str, node_id: str) -> str:
+        clean_node_id = node_id.strip()
+        if not clean_node_id:
+            raise ValueError("workflow breakpoint node_id cannot be empty")
+        case = self.store.get_case(case_id)
+        batch = self.store.get_batch(case.batch_id)
+        template = load_workflow_template_by_id(self.store.workspace, batch.workflow_template_id)
+        if clean_node_id not in {node.node_id for node in template.nodes}:
+            raise ValueError(f"unknown workflow node_id: {clean_node_id}")
+        _write_workflow_breakpoint_node_id(case.run_root, clean_node_id)
+        return clean_node_id
+
+    def clear_workflow_breakpoint(self, case_id: str) -> None:
+        case = self.store.get_case(case_id)
+        _clear_workflow_breakpoint_node_id(case.run_root)
+
+    def continue_workflow_case(self, case_id: str) -> None:
+        if self._case_has_active_job(case_id):
+            raise RuntimeError(f"case already has an active background job: {case_id}")
+        case = self.store.get_case(case_id)
+        _clear_workflow_breakpoint_node_id(case.run_root)
+        self.store.update_case_status(case_id, status="analysis_running", phase="analysis", stage="prepare")
+        self._submit_case(self._run_workflow_case, case_id)
+
     def approve_case(self, case_id: str, *, run_svg: bool) -> dict[str, Any]:
         if run_svg and self._case_has_active_job(case_id):
             raise RuntimeError(f"case already has an active background job: {case_id}")
@@ -426,13 +450,24 @@ class WorkbenchRunner:
                     ),
                 },
             )
-            result = runner.run(case.run_root)
+            result = runner.run(case.run_root, should_pause_after_node=lambda node_id: _workflow_breakpoint_node_id(case.run_root) == node_id)
             if not result.ok:
                 failed = ", ".join(result.failed_node_ids or result.blocked_node_ids)
                 detail = _workflow_failure_detail(result)
                 raise RuntimeError(f"Workflow DAG failed: {failed}{': ' + detail if detail else ''}")
             self._register_standard_artifacts(case_id)
             updated = self.store.get_case(case_id)
+            if result.paused_node_ids:
+                paused_node_id = result.paused_node_ids[0]
+                self.store.update_case_status(
+                    case_id,
+                    status="assets_review",
+                    phase=updated.phase or "workflow",
+                    stage=paused_node_id,
+                    stale_from_stage="",
+                )
+                self._refresh_batch_status(case.batch_id)
+                return
             if batch.auto_run_svg_after_analysis or review_template is None:
                 self.store.update_case_status(case_id, status="completed", phase="reconstruction", stage="completed")
             else:
@@ -1517,6 +1552,48 @@ def _workflow_parser_resources(parser_ids: frozenset[str]) -> tuple[str, ...]:
     if "ocr_text_parser" in parser_ids:
         resources.append("ocr")
     return tuple(resources)
+
+
+def workflow_breakpoint_node_id(run_root: str | Path) -> str:
+    return _workflow_breakpoint_node_id(run_root)
+
+
+def _workflow_breakpoint_node_id(run_root: str | Path) -> str:
+    path = _workflow_breakpoint_path(run_root)
+    if not path.is_file():
+        return ""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"workflow breakpoint file must be a mapping: {path}")
+    return str(payload.get("node_id") or "")
+
+
+def _write_workflow_breakpoint_node_id(run_root: str | Path, node_id: str) -> Path:
+    path = _workflow_breakpoint_path(run_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "drawai.workflow_breakpoint.v1",
+                "node_id": node_id,
+                "updated_at": utc_now(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _clear_workflow_breakpoint_node_id(run_root: str | Path) -> None:
+    path = _workflow_breakpoint_path(run_root)
+    if path.exists():
+        path.unlink()
+
+
+def _workflow_breakpoint_path(run_root: str | Path) -> Path:
+    return Path(run_root) / "reports" / "workbench" / "workflow_breakpoint.json"
 
 
 def _upstream_node_ids(template: WorkflowTemplate, node_id: str) -> set[str]:

@@ -177,6 +177,7 @@ export interface CaseRecord {
   stale_from_stage: string;
   compatibility_mode?: RunCompatibilityMode;
   can_fork_from_source?: boolean;
+  workflow_breakpoint_node_id?: string;
 }
 
 export interface V2ProcessingIntent {
