@@ -986,7 +986,7 @@ select:focus {
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
-  align-items: flex-start;
+  align-items: center;
   gap: 34px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1558,6 +1558,7 @@ select:focus {
   flex: 0 0 auto;
   width: 360px;
   max-width: min(360px, 100%);
+  align-self: center;
 }
 
 .task-row:hover,
@@ -2198,11 +2199,8 @@ select:focus {
   pointer-events: none;
 }
 
-.task-detail-close {
-  position: absolute;
-  top: 18px;
-  right: 22px;
-  z-index: 20;
+.task-detail-collapse {
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
   display: inline-grid;
@@ -2215,29 +2213,31 @@ select:focus {
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
-.task-detail-close:hover {
+.task-detail-collapse:hover {
   border-color: rgba(49, 104, 245, 0.26);
   background: #ffffff;
   color: var(--blue);
   transform: translateY(-1px);
 }
 
-.task-detail-close:focus-visible {
+.task-detail-collapse:focus-visible {
   outline: 2px solid rgba(49, 104, 245, 0.28);
   outline-offset: 2px;
 }
 
-.panel-close-icon {
+.panel-close-icon,
+.panel-collapse-right-icon {
   width: 18px;
   height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.task-detail-panel .dag-run-head {
-  padding-right: 44px;
+.panel-collapse-right-icon {
+  stroke-width: 1.85;
 }
 
 .dag-run-file-name {
@@ -2805,15 +2805,15 @@ select:focus {
 }
 
 .dag-run-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 12px;
 }
 
-.dag-run-head div {
+.dag-run-title {
   min-width: 0;
   display: grid;
   gap: 3px;

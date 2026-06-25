@@ -2958,13 +2958,11 @@ function TaskDetailPanel({
   const currentDetail = { ...caseDetail, case: currentCase };
   return (
     <aside className={`task-detail-panel${closing ? " closing" : ""}`} aria-live="polite">
-      <button type="button" className="task-detail-close" aria-label="关闭 DAG 面板" onClick={onClose}>
-        <ClosePanelIcon />
-      </button>
       <DagRunPanel
         caseDetail={currentDetail}
         progress={progress}
         workflowTemplateId={workflowTemplateId}
+        onClose={onClose}
         onOpenAssetsReview={() => onOpenCaseAssets(currentCase.case_id)}
         onOpenNodeArtifact={(nodeId) => onOpenWorkflowNodeArtifact(currentCase.case_id, nodeId)}
         runInProgress={runInProgress}
@@ -3000,6 +2998,7 @@ function DagRunPanel({
   caseDetail,
   progress,
   workflowTemplateId,
+  onClose,
   onOpenAssetsReview,
   onOpenNodeArtifact,
   runInProgress,
@@ -3014,6 +3013,7 @@ function DagRunPanel({
   caseDetail: CaseDetail;
   progress: CaseProgress | null;
   workflowTemplateId: string;
+  onClose: () => void;
   onOpenAssetsReview: () => void;
   onOpenNodeArtifact: (nodeId: string) => void | Promise<void>;
   runInProgress: boolean;
@@ -3118,7 +3118,10 @@ function DagRunPanel({
   return (
     <section className="dag-run-card">
       <header className="dag-run-head">
-        <div>
+        <button type="button" className="task-detail-collapse" aria-label="向右收起 DAG 面板" title="收起 DAG 面板" onClick={onClose}>
+          <CollapsePanelRightIcon />
+        </button>
+        <div className="dag-run-title">
           <span>Workflow run</span>
           <strong>{template?.name || workflowTemplateId || "Default DrawAI DAG"}</strong>
           <p className="dag-run-file-name" title={currentCase.name}>{currentCase.name}</p>
@@ -7131,6 +7134,16 @@ function ClosePanelIcon() {
   return (
     <svg className="panel-close-icon" viewBox="0 0 20 20" aria-hidden="true">
       <path d="m5.4 5.4 9.2 9.2M14.6 5.4l-9.2 9.2" />
+    </svg>
+  );
+}
+
+function CollapsePanelRightIcon() {
+  return (
+    <svg className="panel-collapse-right-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4.2 4.2h11.6v11.6H4.2Z" />
+      <path d="M12.5 4.2v11.6" />
+      <path d="m7.4 7.1 2.9 2.9-2.9 2.9" />
     </svg>
   );
 }
