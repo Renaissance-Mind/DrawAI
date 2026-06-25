@@ -961,29 +961,36 @@ select:focus {
 .batch-list-modern,
 .task-list {
   min-height: 0;
-  display: grid;
-  align-content: start;
   gap: 14px;
   overflow: auto;
   padding: 16px;
 }
 
+.batch-list-modern {
+  display: grid;
+  align-content: start;
+}
+
 .task-list {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 360px));
-  grid-auto-rows: auto;
-  justify-content: start;
-  gap: 24px;
+  display: flex;
+  align-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 28px;
   overflow: auto;
   scroll-snap-type: none;
   padding: 24px 24px 132px;
 }
 
 .board-workspace.case-detail-open .task-list {
-  grid-template-columns: minmax(0, 1fr);
-  justify-content: stretch;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 34px;
   overflow-x: hidden;
   overflow-y: auto;
-  scroll-snap-type: y mandatory;
+  scroll-snap-type: none;
 }
 
 .batch-download-floating {
@@ -1316,16 +1323,22 @@ select:focus {
 
 .task-row {
   position: relative;
+  flex: 0 1 360px;
+  max-width: min(360px, 100%);
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 12px;
-  min-height: 312px;
+  min-height: 0;
   align-self: start;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
   padding: 13px;
   cursor: pointer;
   z-index: 0;
+}
+
+.board-workspace.case-detail-open .task-row {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: none;
 }
 
 .task-row:hover,
@@ -1887,7 +1900,8 @@ select:focus {
 }
 
 .task-list .empty-state {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
+  width: 100%;
 }
 
 .task-detail-panel {
@@ -2757,12 +2771,14 @@ button.dag-run-node.running.active {
 .dag-run-action-strip {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 9px;
-  padding: 0 4px 2px;
+  gap: 14px;
+  padding: 2px 8px 8px;
 }
 
 .dag-action-button {
+  min-width: 106px;
   min-height: 36px;
   display: inline-flex;
   align-items: center;
@@ -2772,7 +2788,7 @@ button.dag-run-node.running.active {
   border-radius: 7px;
   background: #ffffff;
   color: var(--ink);
-  padding: 0 12px;
+  padding: 0 16px;
   font-size: 12px;
   font-weight: 760;
   box-shadow: none;
