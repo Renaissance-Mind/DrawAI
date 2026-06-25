@@ -52,6 +52,7 @@ import {
   type ApiPresetTemplate
 } from "./apiPresetTemplates";
 import { agentProviderIconForId, sortWorkbenchAgentsForDisplay } from "./agentProviderPresentation";
+import { selectedWorkbenchAgent, workbenchAgentPickerChoices } from "./settingsAgentSelection";
 import { buildWorkflowPreviewLayout, type WorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
 import {
@@ -1800,6 +1801,8 @@ function WorkbenchSettingsCenter({
   const [apiTemplateSearch, setApiTemplateSearch] = useState("");
   const [selectedLlmPresetId, setSelectedLlmPresetId] = useState("");
   const [selectedProcessorId, setSelectedProcessorId] = useState("");
+  const [selectedAgentConfigProviderId, setSelectedAgentConfigProviderId] = useState("");
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -1827,6 +1830,7 @@ function WorkbenchSettingsCenter({
       setSelectedApiPresetIndex(0);
       setSelectedLlmPresetId(matchingLlmPresetId(nextApiDrafts, normalizedSettings));
       setSelectedProcessorId(Object.keys(nextProcessorResponse.definitions.processors || {})[0] || "");
+      setSelectedAgentConfigProviderId((current) => current || normalizedSettings.selected_provider_id);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setLocalError(message);
@@ -1876,7 +1880,13 @@ function WorkbenchSettingsCenter({
   const selectedProcessor = selectedProcessorId && processorDefinitions[selectedProcessorId] ? processorDefinitions[selectedProcessorId] : null;
   const selectedProcessorSetting = selectedProcessor ? processorDrafts[selectedProcessor.processing_type] : null;
   const selectedProcessorValidation = selectedProcessor ? processorResponse?.validation.processors[selectedProcessor.processing_type] : null;
-  const selectedAgent = sortedAgents.find((agent) => agent.provider_id === draft.selected_provider_id) || sortedAgents[0] || null;
+  const currentAgent = selectedWorkbenchAgent(sortedAgents, draft.selected_provider_id);
+  const selectedAgent =
+    (selectedAgentConfigProviderId ? selectedWorkbenchAgent(sortedAgents, selectedAgentConfigProviderId) : null) ||
+    currentAgent ||
+    sortedAgents[0] ||
+    null;
+  const agentPickerChoices = workbenchAgentPickerChoices(sortedAgents, draft.selected_provider_id);
   const selectAgentProvider = (providerId: string) => {
     setDraft((current) => ({ ...current, selected_provider_id: providerId }));
   };
@@ -1963,7 +1973,7 @@ function WorkbenchSettingsCenter({
 
   const openAgentSettings = (providerId: string) => {
     setSettingsCategory("agent");
-    selectAgentProvider(providerId);
+    setSelectedAgentConfigProviderId(providerId);
     setSettingsDetailTarget("agent");
   };
 
@@ -2182,6 +2192,10 @@ function WorkbenchSettingsCenter({
                       overview={overviewResponse}
                       loading={loading}
                       error={overviewError}
+                      selectedProviderId={draft.selected_provider_id}
+                      selectedAgent={currentAgent}
+                      availableAgentCount={agentPickerChoices.length}
+                      onChooseAgent={() => setAgentPickerOpen(true)}
                       onAction={openSettingsOverviewAction}
                     />
                   )}
@@ -2245,7 +2259,7 @@ function WorkbenchSettingsCenter({
                         return (
                           <article
                             key={agent.provider_id}
-                            className={`settings-model-card${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
+                            className={`settings-model-card${selectedAgent?.provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
                           >
                             <div className="settings-model-card-head">
                               <span
@@ -2359,6 +2373,61 @@ function WorkbenchSettingsCenter({
                     </div>
                   )}
                 </div>
+                {agentPickerOpen && (
+                  <div className="settings-detail-backdrop settings-agent-picker" role="presentation" onMouseDown={() => setAgentPickerOpen(false)}>
+                    <section
+                      className="settings-detail-modal settings-agent-picker-modal"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="选择当前 Agent"
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <header className="settings-detail-modal-head">
+                        <div className="settings-detail-title-row">
+                          <div>
+                            <span>总览</span>
+                            <strong>选择当前 Agent</strong>
+                          </div>
+                        </div>
+                        <button type="button" className="settings-detail-close" aria-label="关闭选择 Agent" onClick={() => setAgentPickerOpen(false)}>
+                          ×
+                        </button>
+                      </header>
+                      <div className="settings-provider-picker choose">
+                        <div className="settings-provider-option-grid choose settings-agent-picker-grid">
+                          {agentPickerChoices.map((agent) => {
+                            const agentIcon = agentProviderIconForId(agent.provider_id);
+                            return (
+                              <button
+                                type="button"
+                                key={agent.provider_id}
+                                className={`settings-provider-option${agent.selected ? " active" : ""}`}
+                                onClick={() => {
+                                  selectAgentProvider(agent.provider_id);
+                                  setAgentPickerOpen(false);
+                                }}
+                              >
+                                <span
+                                  className={`settings-provider-logo${agentIcon ? "" : " settings-provider-logo-custom"}`}
+                                  style={agentIcon ? ({ "--provider-color": agentIcon.accent_color } as CSSProperties) : undefined}
+                                  aria-hidden="true"
+                                >
+                                  {agentIcon ? <img src={agentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
+                                </span>
+                                <span className="settings-provider-option-copy">
+                                  <strong>{agent.label}</strong>
+                                  <span>{agent.kind.toUpperCase()} · {agent.command.length ? agent.command.join(" ") : "SDK"}</span>
+                                </span>
+                                {agent.selected && <em className="settings-agent-picker-current">当前</em>}
+                              </button>
+                            );
+                          })}
+                          {agentPickerChoices.length === 0 && <div className="settings-provider-option-empty">暂无可用 Agent</div>}
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                )}
                 {settingsDetailTarget && (
                   <div className="settings-detail-backdrop" role="presentation" onMouseDown={closeSettingsDetail}>
                     <section
@@ -2548,21 +2617,11 @@ function WorkbenchSettingsCenter({
                   <div className="agent-settings-section-title">
                     <span>Agent</span>
                   </div>
-                  <label className="settings-field">
-                    <span>全局 Agent</span>
-                    <select
-                      value={draft.selected_provider_id}
-                      onChange={(event) => selectAgentProvider(event.target.value)}
-                      disabled={loading || agentsLoading}
-                    >
-                      {sortedAgents.map((agent) => (
-                        <option key={agent.provider_id} value={agent.provider_id}>
-                          {agent.label}
-                        </option>
-                      ))}
-                      {sortedAgents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
-                    </select>
-                  </label>
+                  <div className="settings-summary-row">
+                    <span>配置目标</span>
+                    <strong>{selectedAgent?.label || draft.selected_provider_id}</strong>
+                    <em>{selectedAgent?.provider_id || draft.selected_provider_id}</em>
+                  </div>
                   <label className="settings-field">
                     <span>模型</span>
                     <input
@@ -2806,11 +2865,19 @@ function SettingsOverviewPage({
   overview,
   loading,
   error,
+  selectedProviderId,
+  selectedAgent,
+  availableAgentCount,
+  onChooseAgent,
   onAction
 }: {
   overview: WorkbenchStatusOverviewResponse | null;
   loading: boolean;
   error: string;
+  selectedProviderId: string;
+  selectedAgent: WorkbenchAgentDiscovery | null;
+  availableAgentCount: number;
+  onChooseAgent: () => void;
   onAction: (action?: WorkbenchStatusOverviewAction) => void;
 }) {
   if (loading) return <div className="agent-settings-empty">加载中</div>;
@@ -2834,6 +2901,33 @@ function SettingsOverviewPage({
             <dd>{overview.overall.warning_count}</dd>
           </div>
         </dl>
+      </section>
+      <section className={`settings-overview-agent ${selectedAgent?.available ? "ok" : "warning"}`}>
+        <header>
+          <span>Agent</span>
+          <strong>当前 Agent</strong>
+        </header>
+        <div className="settings-overview-agent-row">
+          <div>
+            <strong>{selectedAgent?.label || selectedProviderId}</strong>
+            <span>
+              {selectedAgent
+                ? selectedAgent.available
+                  ? `${selectedAgent.kind.toUpperCase()} · 可用`
+                  : `${selectedAgent.kind.toUpperCase()} · 未通过`
+                : "未发现"}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="settings-model-action"
+            aria-label="选择当前 Agent"
+            onClick={onChooseAgent}
+            disabled={availableAgentCount === 0}
+          >
+            选择
+          </button>
+        </div>
       </section>
       <div className="settings-overview-groups">
         {overview.groups.map((group) => (

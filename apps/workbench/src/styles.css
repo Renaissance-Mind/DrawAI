@@ -7667,6 +7667,25 @@ button.asset-status-unsupported {
     #ffffff;
 }
 
+.settings-agent-picker-modal {
+  width: min(680px, calc(100vw - 48px));
+}
+
+.settings-agent-picker-grid .settings-provider-option {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.settings-agent-picker-current {
+  align-self: center;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #067647;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
 .settings-provider-option:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--provider-color) 24%, transparent);
   outline-offset: 2px;
@@ -8001,6 +8020,63 @@ button.asset-status-unsupported {
   color: #172033;
   font-size: 18px;
   font-weight: 800;
+}
+
+.settings-overview-agent {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 15px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.settings-overview-agent.ok {
+  border-color: rgba(15, 118, 110, 0.22);
+}
+
+.settings-overview-agent.warning {
+  border-color: rgba(197, 106, 8, 0.25);
+}
+
+.settings-overview-agent header,
+.settings-overview-agent-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-overview-agent header span,
+.settings-overview-agent-row span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.settings-overview-agent header strong {
+  color: #263244;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.settings-overview-agent-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-overview-agent-row strong {
+  min-width: 0;
+  color: #172033;
+  font-size: 17px;
+  font-weight: 780;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-overview-groups {
