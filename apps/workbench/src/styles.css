@@ -6974,6 +6974,20 @@ button.asset-status-unsupported {
   color: #172033;
 }
 
+.settings-agent-logo-mini {
+  border: 1px solid color-mix(in srgb, var(--provider-color) 20%, #dbe4ef);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--provider-color) 7%, #ffffff), #ffffff 68%);
+  color: #172033;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.settings-agent-logo-mini img {
+  width: 22px;
+  height: 22px;
+  display: block;
+  object-fit: contain;
+}
+
 .settings-provider-logo-custom {
   border-color: rgba(49, 104, 245, 0.28);
   background: linear-gradient(135deg, rgba(49, 104, 245, 0.12), #ffffff 66%);

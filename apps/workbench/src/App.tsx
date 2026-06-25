@@ -47,6 +47,7 @@ import {
   uniqueApiPresetId,
   type ApiPresetTemplate
 } from "./apiPresetTemplates";
+import { agentProviderIconForId, sortWorkbenchAgentsForDisplay } from "./agentProviderPresentation";
 import { buildWorkflowPreviewLayout, type WorkflowPreviewLayout } from "./workflowPreviewLayout";
 import { WorkflowNodeIcon } from "./workflowNodeIcons";
 import {
@@ -1553,6 +1554,7 @@ function WorkbenchSettingsCenter({
   }, [apiDrafts.length, selectedApiPresetIndex]);
 
   const agents = response?.agents || [];
+  const sortedAgents = sortWorkbenchAgentsForDisplay(agents);
   const presetTypes = apiResponse?.preset_types || ["images_api", "llm_chat_completions", "llm_responses"];
   const selectedApiPreset = apiDrafts[selectedApiPresetIndex] || null;
   const llmPresets = apiDrafts.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
@@ -1563,7 +1565,7 @@ function WorkbenchSettingsCenter({
   const selectedProcessor = selectedProcessorId && processorDefinitions[selectedProcessorId] ? processorDefinitions[selectedProcessorId] : null;
   const selectedProcessorSetting = selectedProcessor ? processorDrafts[selectedProcessor.processing_type] : null;
   const selectedProcessorValidation = selectedProcessor ? processorResponse?.validation.processors[selectedProcessor.processing_type] : null;
-  const selectedAgent = agents.find((agent) => agent.provider_id === draft.selected_provider_id) || agents[0] || null;
+  const selectedAgent = sortedAgents.find((agent) => agent.provider_id === draft.selected_provider_id) || sortedAgents[0] || null;
   const selectAgentProvider = (providerId: string) => {
     setDraft((current) => ({ ...current, selected_provider_id: providerId }));
   };
@@ -1837,40 +1839,47 @@ function WorkbenchSettingsCenter({
                     <div className="settings-model-grid" aria-label="本地 Agent">
                       {(loading || agentsLoading) && <div className="agent-settings-empty">加载中</div>}
                       {!loading && !agentsLoading && agentsLoaded && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
-                      {agents.map((agent) => (
-                        <article
-                          key={agent.provider_id}
-                          className={`settings-model-card${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
-                        >
-                          <div className="settings-model-card-head">
-                            <span className="settings-model-icon" aria-hidden="true">
-                              <SettingsNavIcon icon="agent" />
-                            </span>
-                            <div>
-                              <strong>{agent.label}</strong>
-                              <span>{agent.kind.toUpperCase()}</span>
-                            </div>
-                            <em className={`settings-card-status ${agent.available ? "ok" : "missing"}`}>
-                              {agent.available ? "可用" : "未通过"}
-                            </em>
-                          </div>
-                          <dl className="settings-model-meta">
-                            <div>
-                              <dt>命令</dt>
-                              <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
-                            </div>
-                            {agent.version && (
+                      {sortedAgents.map((agent) => {
+                        const agentIcon = agentProviderIconForId(agent.provider_id);
+                        return (
+                          <article
+                            key={agent.provider_id}
+                            className={`settings-model-card${draft.selected_provider_id === agent.provider_id ? " active" : ""}${agent.available ? "" : " missing"}`}
+                          >
+                            <div className="settings-model-card-head">
+                              <span
+                                className={`settings-model-icon${agentIcon ? " settings-agent-logo-mini" : ""}`}
+                                style={agentIcon ? ({ "--provider-color": agentIcon.accent_color } as CSSProperties) : undefined}
+                                aria-hidden="true"
+                              >
+                                {agentIcon ? <img src={agentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
+                              </span>
                               <div>
-                                <dt>版本</dt>
-                                <dd>{agent.version}</dd>
+                                <strong>{agent.label}</strong>
+                                <span>{agent.kind.toUpperCase()}</span>
                               </div>
-                            )}
-                          </dl>
-                          <button type="button" className="settings-model-action" onClick={() => openAgentSettings(agent.provider_id)}>
-                            设置
-                          </button>
-                        </article>
-                      ))}
+                              <em className={`settings-card-status ${agent.available ? "ok" : "missing"}`}>
+                                {agent.available ? "可用" : "未通过"}
+                              </em>
+                            </div>
+                            <dl className="settings-model-meta">
+                              <div>
+                                <dt>命令</dt>
+                                <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
+                              </div>
+                              {agent.version && (
+                                <div>
+                                  <dt>版本</dt>
+                                  <dd>{agent.version}</dd>
+                                </div>
+                              )}
+                            </dl>
+                            <button type="button" className="settings-model-action" onClick={() => openAgentSettings(agent.provider_id)}>
+                              设置
+                            </button>
+                          </article>
+                        );
+                      })}
                     </div>
                   )}
                   {settingsCategory === "llm" && (
@@ -2145,12 +2154,12 @@ function WorkbenchSettingsCenter({
                       onChange={(event) => selectAgentProvider(event.target.value)}
                       disabled={loading || agentsLoading}
                     >
-                      {agents.map((agent) => (
+                      {sortedAgents.map((agent) => (
                         <option key={agent.provider_id} value={agent.provider_id}>
                           {agent.label}
                         </option>
                       ))}
-                      {agents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
+                      {sortedAgents.length === 0 && <option value={draft.selected_provider_id}>{draft.selected_provider_id}</option>}
                     </select>
                   </label>
                   <label className="settings-field">
