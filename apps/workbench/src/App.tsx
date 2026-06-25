@@ -41,6 +41,8 @@ import WorkflowWorkspace from "./WorkflowWorkspace";
 import {
   API_PRESET_TEMPLATES,
   apiPresetDraftFromTemplate,
+  apiPresetTemplateForPreset,
+  apiPresetTemplateSearchText,
   blankApiPresetDraft,
   uniqueApiPresetId,
   type ApiPresetTemplate
@@ -1477,6 +1479,7 @@ function WorkbenchSettingsCenter({
   const [settingsCategory, setSettingsCategory] = useState<WorkbenchSettingsCategory>("api");
   const [settingsDetailTarget, setSettingsDetailTarget] = useState<WorkbenchSettingsCategory | null>(null);
   const [selectedApiPresetIndex, setSelectedApiPresetIndex] = useState(0);
+  const [apiTemplateSearch, setApiTemplateSearch] = useState("");
   const [selectedLlmPresetId, setSelectedLlmPresetId] = useState("");
   const [selectedProcessorId, setSelectedProcessorId] = useState("");
 
@@ -1562,13 +1565,31 @@ function WorkbenchSettingsCenter({
     setDraft((current) => ({ ...current, selected_provider_id: providerId }));
   };
 
-  const createApiPresetDraft = (template?: ApiPresetTemplate) => {
-    const nextPreset = template ? apiPresetDraftFromTemplate(template, apiDrafts) : blankApiPresetDraft(apiDrafts);
+  const createApiPresetDraft = () => {
+    const nextPreset = blankApiPresetDraft(apiDrafts);
     const nextIndex = apiDrafts.length;
     setApiDrafts((current) => [...current, nextPreset]);
     setSelectedApiPresetIndex(nextIndex);
+    setApiTemplateSearch("");
     return nextIndex;
   };
+
+  const applyApiPresetTemplate = (template: ApiPresetTemplate) => {
+    if (!selectedApiPreset) return;
+    const previousId = selectedApiPreset.id;
+    const nextPreset = apiPresetDraftFromTemplate(
+      template,
+      apiDrafts.filter((_, presetIndex) => presetIndex !== selectedApiPresetIndex)
+    );
+    setApiDrafts((current) => current.map((preset, presetIndex) => (presetIndex === selectedApiPresetIndex ? nextPreset : preset)));
+    setSelectedLlmPresetId((current) => (current === previousId ? nextPreset.id : current));
+    setProcessorDrafts((current) => retargetProcessorApiPresetDrafts(current, previousId, nextPreset.id));
+  };
+
+  const normalizedApiTemplateSearch = apiTemplateSearch.trim().toLowerCase();
+  const filteredApiPresetTemplates = normalizedApiTemplateSearch
+    ? API_PRESET_TEMPLATES.filter((template) => apiPresetTemplateSearchText(template).includes(normalizedApiTemplateSearch))
+    : API_PRESET_TEMPLATES;
 
   const currentSettingsItem =
     WORKBENCH_SETTINGS_NAV_SECTIONS.flatMap((section) => section.items).find((item) => item.id === settingsCategory) ||
@@ -1585,6 +1606,7 @@ function WorkbenchSettingsCenter({
   const openApiPresetSettings = (presetIndex: number) => {
     setSettingsCategory("api");
     setSelectedApiPresetIndex(presetIndex);
+    setApiTemplateSearch("");
     setSettingsDetailTarget("api");
   };
 
@@ -1718,7 +1740,7 @@ function WorkbenchSettingsCenter({
                     </strong>
                     <p>
                       {settingsCategory === "api"
-                        ? `${apiDrafts.length} 个 API 预设 · ${API_PRESET_TEMPLATES.length} 个内置模板`
+                        ? `${apiDrafts.length} 个 API 预设`
                         : settingsCategory === "agent"
                           ? `${agents.length} 个 Agent 供应方`
                           : settingsCategory === "llm"
@@ -1727,69 +1749,21 @@ function WorkbenchSettingsCenter({
                     </p>
                   </div>
                   {settingsCategory === "api" && (
-                    <>
-                      <section className="settings-template-section" aria-label="内置模型供应商模板">
-                        <div className="settings-template-heading">
-                          <span>内置模板</span>
-                          <strong>模型供应商</strong>
-                        </div>
-                        <div className="settings-provider-template-grid">
-                          {API_PRESET_TEMPLATES.map((template) => (
-                            <button
-                              type="button"
-                              key={template.id}
-                              className="settings-provider-template-card"
-                              onClick={() => {
-                                const nextIndex = createApiPresetDraft(template);
-                                openApiPresetSettings(nextIndex);
-                              }}
-                            >
-                              <div className="settings-provider-template-head">
-                                <span
-                                  className="settings-provider-logo"
-                                  style={{ "--provider-color": template.accent_color } as CSSProperties}
-                                  aria-hidden="true"
-                                >
-                                  {template.icon_text}
-                                </span>
-                                <div>
-                                  <strong>{template.label}</strong>
-                                  <span>{template.type === "images_api" ? "Images API" : template.type === "llm_responses" ? "Responses" : "Chat Completions"}</span>
-                                </div>
-                              </div>
-                              <p>{template.description}</p>
-                              <dl className="settings-provider-template-meta">
-                                <div>
-                                  <dt>模型</dt>
-                                  <dd>{template.model}</dd>
-                                </div>
-                                <div>
-                                  <dt>Base URL</dt>
-                                  <dd>{template.base_url}</dd>
-                                </div>
-                              </dl>
-                              <div className="settings-provider-template-foot">
-                                <span>{template.badge_label}</span>
-                                <span>{template.api_key_env || "本地免 Key"}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                      <section className="settings-template-section" aria-label="API 预设">
-                        <div className="settings-template-heading">
-                          <span>当前配置</span>
-                          <strong>API 预设</strong>
-                        </div>
-                        <div className="settings-model-grid">
-                          {apiDrafts.map((preset, presetIndex) => (
+                    <div className="settings-model-grid" aria-label="API 预设">
+                      {apiDrafts.map((preset, presetIndex) => {
+                        const presetTemplate = apiPresetTemplateForPreset(preset);
+                        return (
                             <article
                               key={`${presetIndex}:${preset.id}`}
                               className={`settings-model-card${selectedApiPresetIndex === presetIndex ? " active" : ""}`}
                             >
                               <div className="settings-model-card-head">
-                                <span className="settings-model-icon" aria-hidden="true">
-                                  <SettingsNavIcon icon="api" />
+                                <span
+                                  className={`settings-model-icon${presetTemplate ? " settings-provider-logo-mini" : ""}`}
+                                  style={presetTemplate ? ({ "--provider-color": presetTemplate.accent_color } as CSSProperties) : undefined}
+                                  aria-hidden="true"
+                                >
+                                  {presetTemplate ? <img src={presetTemplate.icon_url} alt="" /> : <SettingsNavIcon icon="api" />}
                                 </span>
                                 <div>
                                   <strong>{preset.label || preset.id}</strong>
@@ -1810,24 +1784,23 @@ function WorkbenchSettingsCenter({
                                 设置
                               </button>
                             </article>
-                          ))}
-                          <button
-                            type="button"
-                            className="settings-model-card settings-model-card-add"
-                            onClick={() => {
-                              const nextIndex = createApiPresetDraft();
-                              openApiPresetSettings(nextIndex);
-                            }}
-                          >
-                            <span className="settings-add-icon" aria-hidden="true">
-                              <PlusIcon />
-                            </span>
-                            <strong>{apiDrafts.length === 0 ? "添加第一个 API 预设" : "新建空白预设"}</strong>
-                            <span>API 预设</span>
-                          </button>
-                        </div>
-                      </section>
-                    </>
+                          );
+                      })}
+                      <button
+                        type="button"
+                        className="settings-model-card settings-model-card-add"
+                        onClick={() => {
+                          const nextIndex = createApiPresetDraft();
+                          openApiPresetSettings(nextIndex);
+                        }}
+                      >
+                        <span className="settings-add-icon" aria-hidden="true">
+                          <PlusIcon />
+                        </span>
+                        <strong>{apiDrafts.length === 0 ? "添加第一个 API 预设" : "新建空白预设"}</strong>
+                        <span>API 预设</span>
+                      </button>
+                    </div>
                   )}
                   {settingsCategory === "agent" && (
                     <div className="settings-model-grid" aria-label="本地 Agent">
@@ -1988,6 +1961,47 @@ function WorkbenchSettingsCenter({
                   </div>
                   {selectedApiPreset ? (
                     <>
+                      <div className="settings-provider-picker" aria-label="选择供应商模板">
+                        <div className="settings-provider-picker-head">
+                          <div>
+                            <span>供应商模板</span>
+                            <strong>{API_PRESET_TEMPLATES.length} 个内置供应商</strong>
+                          </div>
+                          <input
+                            className="settings-provider-search"
+                            value={apiTemplateSearch}
+                            onChange={(event) => setApiTemplateSearch(event.target.value)}
+                            placeholder="搜索供应商、模型或 endpoint"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div className="settings-provider-option-grid">
+                          {filteredApiPresetTemplates.map((template) => {
+                            const activeTemplate = apiPresetTemplateForPreset(selectedApiPreset)?.id === template.id;
+                            return (
+                              <button
+                                type="button"
+                                key={template.id}
+                                className={`settings-provider-option${activeTemplate ? " active" : ""}`}
+                                onClick={() => applyApiPresetTemplate(template)}
+                              >
+                                <span
+                                  className="settings-provider-logo"
+                                  style={{ "--provider-color": template.accent_color } as CSSProperties}
+                                  aria-hidden="true"
+                                >
+                                  <img src={template.icon_url} alt="" />
+                                </span>
+                                <span className="settings-provider-option-copy">
+                                  <strong>{template.label}</strong>
+                                  <span>{template.badge_label} · {template.api_key_env || "本地免 Key"}</span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {filteredApiPresetTemplates.length === 0 && <div className="settings-provider-option-empty">无匹配供应商</div>}
+                        </div>
+                      </div>
                       <div className="settings-form-row">
                         <label className="settings-field">
                           <span>ID</span>

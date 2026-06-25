@@ -9,7 +9,7 @@ export interface ApiPresetTemplate {
   model: string;
   api_key_env: string;
   accent_color: string;
-  icon_text: string;
+  icon_url: string;
   model_fetch: "openai_compatible" | "openrouter" | "ollama" | "none";
   badge_label: string;
   suggested_models: string[];
@@ -27,7 +27,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "gpt-4o",
     api_key_env: "OPENAI_API_KEY",
     accent_color: "#111827",
-    icon_text: "AI",
+    icon_url: "/provider-icons/openai.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["gpt-4o", "gpt-4o-mini", "gpt-4.1"]
@@ -41,7 +41,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "gpt-image-2",
     api_key_env: "OPENAI_API_KEY",
     accent_color: "#0f766e",
-    icon_text: "IMG",
+    icon_url: "/provider-icons/openai-images.svg",
     model_fetch: "none",
     badge_label: "Images API",
     suggested_models: ["gpt-image-2", "gpt-image-1.5", "dall-e-3"]
@@ -55,7 +55,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "deepseek-chat",
     api_key_env: "DEEPSEEK_API_KEY",
     accent_color: "#4d6bfe",
-    icon_text: "DS",
+    icon_url: "/provider-icons/deepseek.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["deepseek-chat", "deepseek-reasoner"]
@@ -69,7 +69,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "openai/gpt-4o-mini",
     api_key_env: "OPENROUTER_API_KEY",
     accent_color: "#111111",
-    icon_text: "OR",
+    icon_url: "/provider-icons/openrouter.svg",
     model_fetch: "openrouter",
     badge_label: "OpenAI 兼容",
     suggested_models: ["openai/gpt-4o-mini", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-flash"]
@@ -83,7 +83,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "qwen-plus",
     api_key_env: "DASHSCOPE_API_KEY",
     accent_color: "#615ced",
-    icon_text: "QW",
+    icon_url: "/provider-icons/qwen.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["qwen-plus", "qwen-turbo", "qwen-max"]
@@ -97,7 +97,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "kimi-latest",
     api_key_env: "MOONSHOT_API_KEY",
     accent_color: "#0ea5e9",
-    icon_text: "KM",
+    icon_url: "/provider-icons/moonshot.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["kimi-latest", "kimi-latest-128k", "moonshot-v1-32k"]
@@ -111,7 +111,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "glm-4.6",
     api_key_env: "ZAI_API_KEY",
     accent_color: "#6d5dfc",
-    icon_text: "GLM",
+    icon_url: "/provider-icons/zai.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["glm-4.6", "glm-4.5", "glm-4.5-flash"]
@@ -125,7 +125,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "llama-3.3-70b-versatile",
     api_key_env: "GROQ_API_KEY",
     accent_color: "#f55036",
-    icon_text: "GR",
+    icon_url: "/provider-icons/groq.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"]
@@ -139,7 +139,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "mistral-large-latest",
     api_key_env: "MISTRAL_API_KEY",
     accent_color: "#ff7000",
-    icon_text: "MI",
+    icon_url: "/provider-icons/mistral.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"]
@@ -153,7 +153,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "grok-4-latest",
     api_key_env: "XAI_API_KEY",
     accent_color: "#202124",
-    icon_text: "xAI",
+    icon_url: "/provider-icons/xai.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["grok-4-latest", "grok-3-latest", "grok-code-fast-1"]
@@ -167,7 +167,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "gpt-4o-mini",
     api_key_env: "AIHUBMIX_API_KEY",
     accent_color: "#2563eb",
-    icon_text: "AH",
+    icon_url: "/provider-icons/aihubmix.svg",
     model_fetch: "openai_compatible",
     badge_label: "OpenAI 兼容",
     suggested_models: ["gpt-4o-mini", "deepseek-chat", "claude-3-5-sonnet-20241022"]
@@ -181,7 +181,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "local-model",
     api_key_env: "",
     accent_color: "#0f9f6e",
-    icon_text: "LM",
+    icon_url: "/provider-icons/lmstudio.svg",
     model_fetch: "openai_compatible",
     badge_label: "本地服务",
     suggested_models: ["local-model"]
@@ -195,7 +195,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     model: "llama3.1",
     api_key_env: "",
     accent_color: "#111827",
-    icon_text: "OL",
+    icon_url: "/provider-icons/ollama.svg",
     model_fetch: "ollama",
     badge_label: "本地服务",
     suggested_models: ["llama3.1", "qwen2.5", "deepseek-r1"]
@@ -212,6 +212,34 @@ export function apiPresetDraftFromTemplate(template: ApiPresetTemplate, existing
     api_key_env: template.api_key_env,
     api_key: ""
   };
+}
+
+export function apiPresetTemplateForPreset(preset: ApiPreset): ApiPresetTemplate | null {
+  const normalizedPresetId = preset.id.replace(/_\d+$/, "");
+  return (
+    API_PRESET_TEMPLATES.find(
+      (template) =>
+        template.id === preset.id ||
+        template.id === normalizedPresetId ||
+        (template.base_url === preset.base_url && template.model === preset.model)
+    ) || null
+  );
+}
+
+export function apiPresetTemplateSearchText(template: ApiPresetTemplate): string {
+  return [
+    template.id,
+    template.label,
+    template.description,
+    template.type,
+    template.base_url,
+    template.model,
+    template.api_key_env,
+    template.badge_label,
+    ...template.suggested_models
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 export function blankApiPresetDraft(existing: ApiPreset[]): ApiPreset {
