@@ -655,6 +655,58 @@ def test_runner_rejects_duplicate_case_jobs(tmp_path: Path) -> None:
     runner.wait_for_idle(timeout=5)
 
 
+def test_runner_cancel_case_stops_after_current_stage(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    batch = store.create_batch(
+        name="batch",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=create_case_config(
+            base_config_path=base_config,
+            source_image=source,
+            output_dir=store.runs_root / batch.batch_id / "case_seed",
+            target_path=store.runs_root / batch.batch_id / "case_seed" / "drawai.config.yaml",
+        ),
+    )
+    started = threading.Event()
+    release = threading.Event()
+    executed_stages: list[str] = []
+
+    def blocking_stage_executor(case_record, stage: str) -> None:
+        executed_stages.append(stage)
+        if stage == "compose_svg":
+            started.set()
+            release.wait(timeout=5)
+        _deterministic_stage_executor(case_record, stage)
+
+    runner = WorkbenchRunner(store, _settings(tmp_path, base_config), stage_executor=blocking_stage_executor)
+    runner.submit_rerun(case.case_id, "svg")
+    assert started.wait(timeout=5)
+
+    canceled = runner.cancel_case(case.case_id)
+    assert canceled.status == "canceled"
+
+    release.set()
+    runner.wait_for_idle(timeout=5)
+
+    updated = store.get_case(case.case_id)
+    stage_runs = {item.stage_name: item.status for item in store.list_stage_runs(case.case_id)}
+    assert updated.status == "canceled"
+    assert store.get_batch(batch.batch_id).status == "canceled"
+    assert stage_runs["compose_svg"] == "canceled"
+    assert "export" not in executed_stages
+
+
 def test_runner_reports_resource_queue_activity(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)

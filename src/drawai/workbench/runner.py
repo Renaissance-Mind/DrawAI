@@ -132,6 +132,10 @@ WORKBENCH_DEFAULT_AGENT_PROVIDER_ID = "default"
 _WORKBENCH_AGENT_SETTINGS_APPLIED = "_workbench_agent_settings_applied"
 
 
+class WorkbenchCaseCanceled(RuntimeError):
+    pass
+
+
 def _uses_workbench_default_agent_settings(node_config: Mapping[str, Any]) -> bool:
     provider_id = str(node_config.get("provider_id") or "").strip()
     return provider_id in {"", WORKBENCH_DEFAULT_AGENT_PROVIDER_ID}
@@ -170,6 +174,8 @@ class WorkbenchRunner:
         self._futures: set[Future[Any]] = set()
         self._futures_lock = threading.Lock()
         self._case_jobs: set[str] = set()
+        self._case_futures: dict[str, Future[Any]] = {}
+        self._case_cancel_events: dict[str, threading.Event] = {}
         self._case_jobs_lock = threading.Lock()
         self._resource_activity_lock = threading.Lock()
         self._resource_activity = {
@@ -235,6 +241,19 @@ class WorkbenchRunner:
     def submit_rerun(self, case_id: str, stage: RerunStage) -> None:
         self._submit_case(self._rerun_case, case_id, stage)
 
+    def cancel_case(self, case_id: str) -> CaseRecord:
+        case = self.store.get_case(case_id)
+        self._request_case_cancel(case_id)
+        current = self.store.get_case(case_id)
+        self.store.update_case_status(
+            case_id,
+            status="canceled",
+            phase=current.phase,
+            stage=current.stage,
+        )
+        self._refresh_batch_status(case.batch_id)
+        return self.store.get_case(case_id)
+
     def set_workflow_breakpoint(self, case_id: str, node_id: str) -> str:
         clean_node_id = node_id.strip()
         if not clean_node_id:
@@ -295,14 +314,45 @@ class WorkbenchRunner:
             if case_id in self._case_jobs:
                 raise RuntimeError(f"case already has an active background job: {case_id}")
             self._case_jobs.add(case_id)
+            self._case_cancel_events[case_id] = threading.Event()
         future = self.executor.submit(fn, case_id, *args)
         with self._futures_lock:
             self._futures.add(future)
+        with self._case_jobs_lock:
+            self._case_futures[case_id] = future
         future.add_done_callback(lambda completed: self._discard_case_future(completed, case_id))
 
     def _case_has_active_job(self, case_id: str) -> bool:
         with self._case_jobs_lock:
             return case_id in self._case_jobs
+
+    def _request_case_cancel(self, case_id: str) -> None:
+        with self._case_jobs_lock:
+            cancel_event = self._case_cancel_events.get(case_id)
+            future = self._case_futures.get(case_id)
+        if cancel_event is not None:
+            cancel_event.set()
+        if future is not None:
+            future.cancel()
+
+    def _case_cancel_requested(self, case_id: str) -> bool:
+        with self._case_jobs_lock:
+            cancel_event = self._case_cancel_events.get(case_id)
+        return bool(cancel_event and cancel_event.is_set())
+
+    def _raise_if_case_canceled(self, case_id: str) -> None:
+        if self._case_cancel_requested(case_id):
+            raise WorkbenchCaseCanceled("case run was canceled")
+
+    def _mark_case_canceled(self, case_id: str) -> None:
+        current = self.store.get_case(case_id)
+        self.store.update_case_status(
+            case_id,
+            status="canceled",
+            phase=current.phase,
+            stage=current.stage,
+        )
+        self._refresh_batch_status(current.batch_id)
 
     @contextmanager
     def _resource_slot(self, resource: str) -> Iterator[None]:
@@ -333,6 +383,8 @@ class WorkbenchRunner:
     def _discard_case_future(self, future: Future[Any], case_id: str) -> None:
         with self._case_jobs_lock:
             self._case_jobs.discard(case_id)
+            self._case_futures.pop(case_id, None)
+            self._case_cancel_events.pop(case_id, None)
         self._discard_future(future)
 
     def _mark_interrupted_running_cases(self) -> None:
@@ -362,8 +414,12 @@ class WorkbenchRunner:
             self._refresh_batch_status(batch_id)
 
     def _run_case_with_limit(self, case_id: str, batch_limit: threading.Semaphore) -> None:
-        with batch_limit:
-            self._run_workflow_case(case_id)
+        try:
+            with batch_limit:
+                self._raise_if_case_canceled(case_id)
+                self._run_workflow_case(case_id)
+        except WorkbenchCaseCanceled:
+            self._mark_case_canceled(case_id)
 
     def _refresh_case_runtime_config(self, case: CaseRecord) -> CaseRecord:
         batch = self.store.get_batch(case.batch_id)
@@ -383,9 +439,11 @@ class WorkbenchRunner:
         return self.store.get_case(case.case_id)
 
     def _run_workflow_case(self, case_id: str) -> None:
-        case = self._refresh_case_runtime_config(self.store.get_case(case_id))
-        batch = self.store.get_batch(case.batch_id)
+        case = self.store.get_case(case_id)
         try:
+            self._raise_if_case_canceled(case_id)
+            case = self._refresh_case_runtime_config(case)
+            batch = self.store.get_batch(case.batch_id)
             agent_settings = read_workbench_agent_settings(self.store.workspace)
             template = load_workflow_template_by_id(self.store.workspace, batch.workflow_template_id)
             template = _workflow_template_with_agent_settings(
@@ -459,6 +517,7 @@ class WorkbenchRunner:
                 },
             )
             result = runner.run(case.run_root, should_pause_after_node=lambda node_id: _workflow_breakpoint_node_id(case.run_root) == node_id)
+            self._raise_if_case_canceled(case_id)
             if not result.ok:
                 failed = ", ".join(result.failed_node_ids or result.blocked_node_ids)
                 detail = _workflow_failure_detail(result)
@@ -487,7 +546,12 @@ class WorkbenchRunner:
                     stale_from_stage="compose_svg",
                 )
             self._refresh_batch_status(case.batch_id)
+        except WorkbenchCaseCanceled:
+            self._mark_case_canceled(case_id)
         except Exception as exc:  # noqa: BLE001 - background job boundary records failures.
+            if self._case_cancel_requested(case_id):
+                self._mark_case_canceled(case_id)
+                return
             current = self.store.get_case(case_id)
             self.store.update_case_status(
                 case_id,
@@ -506,6 +570,7 @@ class WorkbenchRunner:
         stage_state: dict[str, bool],
         stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         self._ensure_workflow_stage(
             case,
             "prepare",
@@ -515,6 +580,7 @@ class WorkbenchRunner:
         paths = prepare_artifact_paths(case.run_root)
         source = paths.figure_image if paths.figure_image.exists() else Path(case.source_image_path)
         output_path = _copy_workflow_file(source, context.output_dir / f"image{source.suffix or '.png'}")
+        self._raise_if_case_canceled(case.case_id)
         return (_workflow_output(context, "image", output_path, "image", "drawai.image.v1"),)
 
     def _run_workflow_parser_node(
@@ -527,6 +593,7 @@ class WorkbenchRunner:
         *,
         parser_ids: frozenset[str],
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         with stage_state_lock:
             self._ensure_workflow_stage_unlocked(case, "prepare", stage_state)
             if not stage_state.get("parse_elements"):
@@ -543,6 +610,7 @@ class WorkbenchRunner:
         if not source.exists():
             source = paths.v2_parser_outputs_dir / "element_candidates.json"
         output_path = _copy_workflow_json(source, context.output_dir / "candidates.json")
+        self._raise_if_case_canceled(case.case_id)
         return (_workflow_output(context, "candidates", output_path, "element_candidates", "drawai.element_candidates.v1"),)
 
     def _run_workflow_parse_elements(
@@ -550,6 +618,7 @@ class WorkbenchRunner:
         case: CaseRecord,
         parser_ids: frozenset[str],
     ) -> None:
+        self._raise_if_case_canceled(case.case_id)
         sam3_enabled = "sam3_structure_parser" in parser_ids
         ocr_enabled = "ocr_text_parser" in parser_ids
         if not sam3_enabled and not ocr_enabled:
@@ -580,8 +649,15 @@ class WorkbenchRunner:
                         message = _pipeline_failure_message(summary)
                         failed_stage = summary.get("failed_stage") or "parse_elements"
                         raise RuntimeError(f"DrawAI stage {failed_stage} failed: {message or summary.get('status')}")
+            self._raise_if_case_canceled(case.case_id)
             self.store.finish_stage_run(stage_run.stage_run_id, status="ok")
+        except WorkbenchCaseCanceled:
+            self.store.finish_stage_run(stage_run.stage_run_id, status="canceled", error_message="case run was canceled")
+            raise
         except Exception as exc:
+            if self._case_cancel_requested(case.case_id):
+                self.store.finish_stage_run(stage_run.stage_run_id, status="canceled", error_message="case run was canceled")
+                raise WorkbenchCaseCanceled("case run was canceled") from exc
             self.store.finish_stage_run(stage_run.stage_run_id, status="failed", error_message=f"{type(exc).__name__}: {exc}")
             raise
 
@@ -593,6 +669,7 @@ class WorkbenchRunner:
         stage_state: dict[str, bool],
         stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         self._ensure_workflow_stage(
             case,
             "fuse_elements",
@@ -601,6 +678,7 @@ class WorkbenchRunner:
         )
         paths = prepare_artifact_paths(case.run_root)
         output_path = _copy_workflow_json(paths.run_package_json, context.output_dir / "elements.json")
+        self._raise_if_case_canceled(case.case_id)
         return (_workflow_output(context, "elements", output_path, "element_plans", "drawai.element_plans.v1"),)
 
     def _run_workflow_agent_node(
@@ -612,6 +690,7 @@ class WorkbenchRunner:
         *,
         agent_settings: WorkbenchAgentSettings,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         preset_id = str(context.node.config.get("preset_id") or "custom_agent")
         node_config = {**dict(context.node.config), "node_id": context.node.node_id}
         use_workbench_settings = bool(
@@ -653,6 +732,7 @@ class WorkbenchRunner:
                     runtime_config=runtime_config,
                 )
             )
+        self._raise_if_case_canceled(case.case_id)
         outputs: list[dict[str, Any]] = []
         for declared in prompt.outputs:
             output_path = context.record.workdir / str(declared["path"])
@@ -681,6 +761,7 @@ class WorkbenchRunner:
         context: NodeRunContext,
         inputs: tuple[Mapping[str, Any], ...],
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         preset_id = str(context.node.config.get("preset_id") or "custom_agent")
         node_config = {**dict(context.node.config), "node_id": context.node.node_id}
         prompt = render_llm_prompt(
@@ -708,6 +789,7 @@ class WorkbenchRunner:
                     runtime_config=runtime_config,
                 )
             )
+        self._raise_if_case_canceled(case.case_id)
         outputs: list[dict[str, Any]] = []
         for declared in prompt.outputs:
             output_path = context.record.workdir / str(declared["path"])
@@ -736,6 +818,7 @@ class WorkbenchRunner:
         stage_state: dict[str, bool],
         stage_state_lock: threading.Lock,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         processor_id = str(context.node.config.get("processor_id") or "")
         paths = prepare_artifact_paths(case.run_root)
         if processor_id == "sam_parse":
@@ -862,10 +945,12 @@ class WorkbenchRunner:
         raise ValueError(f"unsupported processor node: {processor_id or context.node.node_id}")
 
     def _run_sam_parse_page_spec(self, case: CaseRecord) -> dict[str, Any]:
+        self._raise_if_case_canceled(case.case_id)
         paths = prepare_artifact_paths(case.run_root)
         if self.stage_executor is not None:
             with self._resource_slot("sam3"):
                 self.stage_executor(case, "sam_parse")
+            self._raise_if_case_canceled(case.case_id)
             payload = _read_json_object(paths.v2_parser_outputs_dir / "sam3_candidates.json")
             raw_candidates = payload.get("candidates")
             if not isinstance(raw_candidates, list):
@@ -883,6 +968,7 @@ class WorkbenchRunner:
         else:
             with self._resource_slot("sam3"):
                 sam3_result = run_sam3_prompt_plan(cfg.sam3, paths.figure_image, paths)
+            self._raise_if_case_canceled(case.case_id)
             from drawai.pipeline import _sam_boxes_by_prompt
 
             write_json(paths.sam_boxes_by_prompt_json, _sam_boxes_by_prompt(sam3_result))
@@ -911,10 +997,12 @@ class WorkbenchRunner:
         )
 
     def _run_ocr_parse_page_spec(self, case: CaseRecord) -> dict[str, Any]:
+        self._raise_if_case_canceled(case.case_id)
         paths = prepare_artifact_paths(case.run_root)
         if self.stage_executor is not None:
             with self._resource_slot("ocr"):
                 self.stage_executor(case, "ocr_parse")
+            self._raise_if_case_canceled(case.case_id)
             payload = _read_json_object(paths.v2_parser_outputs_dir / "ocr_candidates.json")
             raw_candidates = payload.get("candidates")
             if not isinstance(raw_candidates, list):
@@ -934,6 +1022,7 @@ class WorkbenchRunner:
 
             with self._resource_slot("ocr"):
                 ocr_payload = _extract_ocr_boxes(cfg, paths.figure_image, None)
+            self._raise_if_case_canceled(case.case_id)
             canvas_width, canvas_height = _source_metadata_canvas_size(
                 _read_json_object(paths.source_metadata)
             )
@@ -964,6 +1053,7 @@ class WorkbenchRunner:
         *,
         auto_approve: bool,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         source = _first_input_path(case.run_root, inputs)
         input_type = str(inputs[0].get("type") or "") if inputs else ""
         if input_type == "page_spec":
@@ -972,6 +1062,7 @@ class WorkbenchRunner:
         if auto_approve:
             approve_asset_plan(case.run_root, read_asset_draft(case.run_root))
         output_path = _copy_workflow_json(source, context.output_dir / "confirmed_asset_packages.json")
+        self._raise_if_case_canceled(case.case_id)
         return (_workflow_output(context, "asset_packages", output_path, "asset_packages", "drawai.asset_packages.v1"),)
 
     def _run_workflow_export_node(
@@ -982,6 +1073,7 @@ class WorkbenchRunner:
         stage_state: dict[str, bool],
         stage_state_lock: threading.Lock | None = None,
     ) -> tuple[Mapping[str, Any], ...]:
+        self._raise_if_case_canceled(case.case_id)
         exporter_id = str(context.node.config.get("exporter_id") or "")
         if exporter_id != "svg_to_ppt":
             raise ValueError(f"unsupported export node: {exporter_id or context.node.node_id}")
@@ -991,6 +1083,7 @@ class WorkbenchRunner:
 
         def run_export_once() -> None:
             nonlocal canonical_svg
+            self._raise_if_case_canceled(case.case_id)
             if not stage_state.get("export"):
                 self.store.update_case_status(
                     case.case_id,
@@ -1022,6 +1115,7 @@ class WorkbenchRunner:
                 write_json(paths.svg_to_ppt_export_report_json, report)
                 if report.get("status") != "ok":
                     raise RuntimeError(_svg_to_ppt_report_error(report))
+                self._raise_if_case_canceled(case.case_id)
                 stage_state["export"] = True
 
         if stage_state_lock is None:
@@ -1031,6 +1125,7 @@ class WorkbenchRunner:
                 run_export_once()
         pptx_path = paths.root / "svg_to_ppt" / "semantic.svg_to_ppt.pptx"
         output_path = _copy_workflow_file(pptx_path, context.output_dir / "semantic.svg_to_ppt.pptx")
+        self._raise_if_case_canceled(case.case_id)
         return (_workflow_output(context, "pptx", output_path, "pptx", "drawai.pptx.v1", deliverable=True),)
 
     def _ensure_workflow_stage(
@@ -1054,17 +1149,22 @@ class WorkbenchRunner:
         stage_state: dict[str, bool],
     ) -> None:
         for required in _workflow_stage_chain(stage):
+            self._raise_if_case_canceled(case.case_id)
             if stage_state.get(required):
                 continue
             self._run_stage(case.case_id, required)
             stage_state[required] = True
 
     def _run_analysis(self, case_id: str) -> None:
-        case = self._refresh_case_runtime_config(self.store.get_case(case_id))
-        self.store.update_case_status(case_id, status="analysis_running", phase="analysis", stage="prepare")
+        case = self.store.get_case(case_id)
         try:
+            self._raise_if_case_canceled(case_id)
+            case = self._refresh_case_runtime_config(case)
+            self.store.update_case_status(case_id, status="analysis_running", phase="analysis", stage="prepare")
             for stage in ANALYSIS_STAGES:
+                self._raise_if_case_canceled(case_id)
                 self._run_stage(case_id, stage)
+            self._raise_if_case_canceled(case_id)
             draft = draft_from_run0_analysis(case.run_root, case_id=case_id)
             write_asset_draft(case.run_root, draft)
             self._register_standard_artifacts(case_id)
@@ -1087,13 +1187,20 @@ class WorkbenchRunner:
                     stale_from_stage="compose_svg",
                 )
                 self._run_stage(case_id, "process_assets")
+                self._raise_if_case_canceled(case_id)
                 self._register_standard_artifacts(case_id)
                 self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="compose_svg")
                 self._run_svg_generation(case_id)
             else:
+                self._raise_if_case_canceled(case_id)
                 self.store.update_case_status(case_id, status="assets_review", phase="analysis", stage="plan_assets")
             self._refresh_batch_status(case.batch_id)
+        except WorkbenchCaseCanceled:
+            self._mark_case_canceled(case_id)
         except Exception as exc:  # noqa: BLE001 - background job boundary records failures.
+            if self._case_cancel_requested(case_id):
+                self._mark_case_canceled(case_id)
+                return
             self.store.update_case_status(
                 case_id,
                 status="failed",
@@ -1104,8 +1211,10 @@ class WorkbenchRunner:
             self._refresh_batch_status(case.batch_id)
 
     def _rerun_case(self, case_id: str, stage: RerunStage) -> None:
-        case = self._refresh_case_runtime_config(self.store.get_case(case_id))
+        case = self.store.get_case(case_id)
         try:
+            self._raise_if_case_canceled(case_id)
+            case = self._refresh_case_runtime_config(case)
             canonical_stage = _canonical_rerun_stage(stage)
             if canonical_stage in {"analysis", "parse_elements", "fuse_elements", "refine_elements", "plan_assets"}:
                 self._invalidate_from(case_id, "plan_assets")
@@ -1126,7 +1235,12 @@ class WorkbenchRunner:
                 self._invalidate_from(case_id, "export")
                 self._run_export(case_id)
             self._refresh_batch_status(case.batch_id)
+        except WorkbenchCaseCanceled:
+            self._mark_case_canceled(case_id)
         except Exception as exc:  # noqa: BLE001 - background job boundary records failures.
+            if self._case_cancel_requested(case_id):
+                self._mark_case_canceled(case_id)
+                return
             current = self.store.get_case(case_id)
             self.store.update_case_status(
                 case_id,
@@ -1138,14 +1252,22 @@ class WorkbenchRunner:
             self._refresh_batch_status(case.batch_id)
 
     def _materialize_and_run_svg(self, case_id: str) -> None:
-        case = self._refresh_case_runtime_config(self.store.get_case(case_id))
+        case = self.store.get_case(case_id)
         try:
+            self._raise_if_case_canceled(case_id)
+            case = self._refresh_case_runtime_config(case)
             self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="process_assets")
             self._run_stage(case_id, "process_assets")
+            self._raise_if_case_canceled(case_id)
             self._register_standard_artifacts(case_id)
             self._run_svg_generation(case_id)
             self._refresh_batch_status(case.batch_id)
+        except WorkbenchCaseCanceled:
+            self._mark_case_canceled(case_id)
         except Exception as exc:  # noqa: BLE001 - background job boundary records failures.
+            if self._case_cancel_requested(case_id):
+                self._mark_case_canceled(case_id)
+                return
             current = self.store.get_case(case_id)
             self.store.update_case_status(
                 case_id,
@@ -1157,20 +1279,25 @@ class WorkbenchRunner:
             self._refresh_batch_status(case.batch_id)
 
     def _run_svg_generation(self, case_id: str) -> None:
+        self._raise_if_case_canceled(case_id)
         self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="compose_svg")
         self._run_stage(case_id, "compose_svg")
+        self._raise_if_case_canceled(case_id)
         self._register_standard_artifacts(case_id)
         self._run_export(case_id)
         case = self.store.get_case(case_id)
         self._refresh_batch_status(case.batch_id)
 
     def _run_export(self, case_id: str) -> None:
+        self._raise_if_case_canceled(case_id)
         self.store.update_case_status(case_id, status="svg_running", phase="reconstruction", stage="export")
         self._run_stage(case_id, "export")
+        self._raise_if_case_canceled(case_id)
         self._register_standard_artifacts(case_id)
         self.store.update_case_status(case_id, status="completed", phase="reconstruction", stage="completed")
 
     def _run_stage(self, case_id: str, stage: str) -> None:
+        self._raise_if_case_canceled(case_id)
         case = self.store.get_case(case_id)
         reconstruction_stages = {"process_assets", "compose_svg", "export"}
         self.store.update_case_status(
@@ -1182,26 +1309,38 @@ class WorkbenchRunner:
         stage_run = self.store.start_stage_run(case_id, stage)
         resources = STAGE_RESOURCES.get(stage, ())
         try:
+            self._raise_if_case_canceled(case_id)
             if resources:
                 with ExitStack() as stack:
                     for resource in resources:
                         stack.enter_context(self._resource_slot(resource))
+                    self._raise_if_case_canceled(case_id)
                     self._execute_stage(case, stage)
             else:
                 self._execute_stage(case, stage)
+            self._raise_if_case_canceled(case_id)
             self.store.finish_stage_run(stage_run.stage_run_id, status="ok")
+        except WorkbenchCaseCanceled:
+            self.store.finish_stage_run(stage_run.stage_run_id, status="canceled", error_message="case run was canceled")
+            raise
         except Exception as exc:
+            if self._case_cancel_requested(case_id):
+                self.store.finish_stage_run(stage_run.stage_run_id, status="canceled", error_message="case run was canceled")
+                raise WorkbenchCaseCanceled("case run was canceled") from exc
             self.store.finish_stage_run(stage_run.stage_run_id, status="failed", error_message=f"{type(exc).__name__}: {exc}")
             raise
 
     def _execute_stage(self, case: CaseRecord, stage: str) -> None:
+        self._raise_if_case_canceled(case.case_id)
         if self.stage_executor is not None:
             self.stage_executor(case, stage)
+            self._raise_if_case_canceled(case.case_id)
             return
         if stage not in {*ANALYSIS_STAGES, "process_assets", "compose_svg", "export"}:
             raise ValueError(f"unsupported stage: {stage}")
         self._prepare_refinement_analysis_if_needed(case, stage)
         summary = run_drawai_pipeline_from_stage(case.config_path, stage, to_stage=stage)
+        self._raise_if_case_canceled(case.case_id)
         if summary.get("status") != "ok":
             message = _pipeline_failure_message(summary)
             failed_stage = summary.get("failed_stage") or stage

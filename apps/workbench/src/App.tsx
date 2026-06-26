@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
   approveAssets,
+  cancelCase,
   composeV2Case,
   createUploadBatch,
   deleteBatch,
@@ -166,6 +167,7 @@ type TaskDetailExitSnapshot = {
   runInProgress: boolean;
   canRunFromAssets: boolean;
   caseActionPendingId: string;
+  caseCancelPendingIds: string[];
 };
 
 type DragState =
@@ -333,6 +335,7 @@ export default function App() {
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
   const [error, setError] = useState("");
   const [assetsRunPendingCaseId, setAssetsRunPendingCaseId] = useState("");
+  const [caseCancelPendingIds, setCaseCancelPendingIds] = useState<string[]>([]);
   const [pptxExportPendingCaseId, setPptxExportPendingCaseId] = useState("");
   const [batchPptxDownloadPendingId, setBatchPptxDownloadPendingId] = useState("");
   const [batchRunPendingId, setBatchRunPendingId] = useState("");
@@ -404,6 +407,15 @@ export default function App() {
       status: reconstruction ? "svg_running" : "analysis_running",
       phase: reconstruction ? "reconstruction" : "analysis",
       stage: canonicalStage,
+      error_message: "",
+      stale_from_stage: ""
+    };
+  }
+
+  function optimisticCancelCaseStatus(caseRecord: CaseRecord): CaseRecord {
+    return {
+      ...caseRecord,
+      status: "canceled",
       error_message: "",
       stale_from_stage: ""
     };
@@ -978,6 +990,41 @@ export default function App() {
     }
   }
 
+  async function cancelCases(items: Array<Pick<CaseRecord, "case_id" | "batch_id">>) {
+    const seen = new Set<string>();
+    const targets = items.filter((item) => {
+      if (!item || seen.has(item.case_id)) return false;
+      seen.add(item.case_id);
+      return true;
+    });
+    if (targets.length === 0) return;
+    const targetIds = targets.map((item) => item.case_id);
+    const activeCaseId = activeCase?.case.case_id || "";
+    const refreshActiveCase = Boolean(activeCaseId && targetIds.includes(activeCaseId));
+    setCaseCancelPendingIds((current) => Array.from(new Set([...current, ...targetIds])));
+    for (const target of targets) {
+      const optimisticCase = currentCaseForOptimisticUpdate(target);
+      if (optimisticCase) {
+        mergeCaseStatus(optimisticCancelCaseStatus(optimisticCase));
+      }
+    }
+    try {
+      const responses = await Promise.all(targets.map((target) => cancelCase(target.case_id)));
+      let latestBatchId = targets[0].batch_id;
+      for (const response of responses) {
+        latestBatchId = response.case.batch_id;
+        mergeCaseStatus(response.case);
+      }
+      await selectBatch(latestBatchId);
+      if (refreshActiveCase) {
+        await selectCase(activeCaseId);
+      }
+      await refreshBatches();
+    } finally {
+      setCaseCancelPendingIds((current) => current.filter((caseId) => !targetIds.includes(caseId)));
+    }
+  }
+
   async function rerunStageForCase(item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) {
     if (!item || assetsRunPendingCaseId) return;
     setAssetsRunPendingCaseId(item.case_id);
@@ -1225,6 +1272,7 @@ export default function App() {
               v2ActionPending={v2ActionPending}
               canForkV2FromSource={canForkV2FromSource}
               caseActionPendingId={assetsRunPendingCaseId}
+              caseCancelPendingIds={caseCancelPendingIds}
               pptxExportPendingCaseId={pptxExportPendingCaseId}
               batchPptxDownloadPendingId={batchPptxDownloadPendingId}
               batchRunPendingId={batchRunPendingId}
@@ -1246,6 +1294,7 @@ export default function App() {
               onSetWorkflowBreakpoint={(item, nodeId) => setBreakpointForCase(item, nodeId).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onClearWorkflowBreakpoint={(item) => clearBreakpointForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onContinueWorkflow={(item) => continueWorkflowForCase(item).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+              onCancelCases={(items) => cancelCases(items).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onExportPptx={(caseId) => exportPptxForCase(caseId)}
               onDownloadPptx={(caseId, artifact) => downloadPptxArtifactForCase(caseId, artifact).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
               onDownloadBatchPptx={(batchId) => downloadBatchPptxForBatch(batchId)}
@@ -1375,6 +1424,7 @@ function BoardWorkspace({
   v2ActionPending,
   canForkV2FromSource,
   caseActionPendingId,
+  caseCancelPendingIds,
   pptxExportPendingCaseId,
   batchPptxDownloadPendingId,
   batchRunPendingId,
@@ -1396,6 +1446,7 @@ function BoardWorkspace({
   onSetWorkflowBreakpoint,
   onClearWorkflowBreakpoint,
   onContinueWorkflow,
+  onCancelCases,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx,
@@ -1423,6 +1474,7 @@ function BoardWorkspace({
   v2ActionPending: string;
   canForkV2FromSource: boolean;
   caseActionPendingId: string;
+  caseCancelPendingIds: string[];
   pptxExportPendingCaseId: string;
   batchPptxDownloadPendingId: string;
   batchRunPendingId: string;
@@ -1444,6 +1496,7 @@ function BoardWorkspace({
   onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void;
   onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
   onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
+  onCancelCases: (items: CaseRecord[]) => void | Promise<void>;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -1477,7 +1530,8 @@ function BoardWorkspace({
         v2ActionPending,
         runInProgress,
         canRunFromAssets,
-        caseActionPendingId
+        caseActionPendingId,
+        caseCancelPendingIds
       }
     : null;
   const renderedDetailSnapshot = activeDetailSnapshot || detailExitSnapshot;
@@ -1592,6 +1646,7 @@ function BoardWorkspace({
           canRunFromAssets={canRunFromAssets}
           runCompatibility={runCompatibility}
           caseActionPendingId={caseActionPendingId}
+          caseCancelPendingIds={caseCancelPendingIds}
           pptxExportPendingCaseId={pptxExportPendingCaseId}
           batchPptxDownloadPendingId={batchPptxDownloadPendingId}
           batchRunPendingId={batchRunPendingId}
@@ -1609,6 +1664,7 @@ function BoardWorkspace({
           onRerunAnalysis={onRerunAnalysis}
           onRerunCases={onRerunCases}
           onContinueWorkflow={onContinueWorkflow}
+          onCancelCases={onCancelCases}
           onExportPptx={onExportPptx}
           onDownloadPptx={onDownloadPptx}
           onDownloadBatchPptx={onDownloadBatchPptx}
@@ -1633,11 +1689,13 @@ function BoardWorkspace({
             runInProgress={renderedDetailSnapshot.runInProgress}
             canRunFromAssets={renderedDetailSnapshot.canRunFromAssets}
             caseActionPendingId={renderedDetailSnapshot.caseActionPendingId}
+            caseCancelPendingIds={renderedDetailSnapshot.caseCancelPendingIds}
             onRunFromAssets={onRunFromAssets}
             onRerunStage={onRerunStage}
             onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
             onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
             onContinueWorkflow={onContinueWorkflow}
+            onCancelCases={onCancelCases}
           />
         )}
       </div>
@@ -3341,11 +3399,13 @@ function TaskDetailPanel({
   runInProgress,
   canRunFromAssets,
   caseActionPendingId,
+  caseCancelPendingIds,
   onRunFromAssets,
   onRerunStage,
   onSetWorkflowBreakpoint,
   onClearWorkflowBreakpoint,
-  onContinueWorkflow
+  onContinueWorkflow,
+  onCancelCases
 }: {
   caseDetail: CaseDetail | null;
   progress: CaseProgress | null;
@@ -3365,11 +3425,13 @@ function TaskDetailPanel({
   runInProgress: boolean;
   canRunFromAssets: boolean;
   caseActionPendingId: string;
+  caseCancelPendingIds: string[];
   onRunFromAssets: () => void;
   onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
   onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
   onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
   onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onCancelCases: (items: CaseRecord[]) => void | Promise<void>;
 }) {
   if (!caseDetail) {
     return (
@@ -3392,11 +3454,13 @@ function TaskDetailPanel({
         runInProgress={runInProgress}
         canRunFromAssets={canRunFromAssets}
         caseActionPendingId={caseActionPendingId}
+        caseCancelPendingIds={caseCancelPendingIds}
         onContinueFromReview={onRunFromAssets}
         onRerunStage={onRerunStage}
         onSetWorkflowBreakpoint={onSetWorkflowBreakpoint}
         onClearWorkflowBreakpoint={onClearWorkflowBreakpoint}
         onContinueWorkflow={onContinueWorkflow}
+        onCancelCases={onCancelCases}
       />
       {runCompatibility === "v2" && v2PackageError && <ErrorDetail message={v2PackageError} />}
       {currentCase.error_message && <ErrorDetail message={currentCase.error_message} />}
@@ -3428,11 +3492,13 @@ function DagRunPanel({
   runInProgress,
   canRunFromAssets,
   caseActionPendingId,
+  caseCancelPendingIds,
   onContinueFromReview,
   onRerunStage,
   onSetWorkflowBreakpoint,
   onClearWorkflowBreakpoint,
-  onContinueWorkflow
+  onContinueWorkflow,
+  onCancelCases
 }: {
   caseDetail: CaseDetail;
   progress: CaseProgress | null;
@@ -3443,11 +3509,13 @@ function DagRunPanel({
   runInProgress: boolean;
   canRunFromAssets: boolean;
   caseActionPendingId: string;
+  caseCancelPendingIds: string[];
   onContinueFromReview: () => void;
   onRerunStage: (item: Pick<CaseRecord, "case_id" | "batch_id">, stage: WorkbenchRerunStage) => void | Promise<void>;
   onSetWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">, nodeId: string) => void | Promise<void>;
   onClearWorkflowBreakpoint: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
   onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void | Promise<void>;
+  onCancelCases: (items: CaseRecord[]) => void | Promise<void>;
 }) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -3485,6 +3553,8 @@ function DagRunPanel({
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   const selectedRerunStage = workflowStageRerunStage(selectedView?.stage || "");
   const actionPending = runInProgress || caseActionPendingId === currentCase.case_id;
+  const cancelPending = caseCancelPendingIds.includes(currentCase.case_id);
+  const cancelEnabled = isTerminableCase(currentCase) && !cancelPending;
   const breakpointMutationPending = caseActionPendingId === currentCase.case_id;
   const rerunDisabled = !selectedRerunStage || actionPending;
   const breakpointNodeId = currentCase.workflow_breakpoint_node_id || "";
@@ -3537,6 +3607,11 @@ function DagRunPanel({
       return;
     }
     onContinueFromReview();
+  }
+
+  function cancelRun() {
+    if (!cancelEnabled) return;
+    void onCancelCases([currentCase]);
   }
 
   return (
@@ -3635,6 +3710,16 @@ function DagRunPanel({
           )}
         </div>
         <div className="dag-run-action-strip" aria-label="DAG 节点操作">
+          <button
+            type="button"
+            className="dag-action-button danger"
+            disabled={!cancelEnabled}
+            title={cancelEnabled ? "终止当前任务" : cancelPending ? "正在终止" : "当前任务没有运行或排队"}
+            onClick={cancelRun}
+          >
+            {cancelPending ? <ButtonSpinner /> : <StopIcon />}
+            <span>{cancelPending ? "终止中" : "终止"}</span>
+          </button>
           <button
             type="button"
             className="dag-action-button"
@@ -5491,6 +5576,7 @@ function TaskSelectionWorkspace({
   canRunFromAssets,
   runCompatibility,
   caseActionPendingId,
+  caseCancelPendingIds,
   pptxExportPendingCaseId,
   batchPptxDownloadPendingId,
   batchRunPendingId,
@@ -5508,6 +5594,7 @@ function TaskSelectionWorkspace({
   onRerunAnalysis,
   onRerunCases,
   onContinueWorkflow,
+  onCancelCases,
   onExportPptx,
   onDownloadPptx,
   onDownloadBatchPptx
@@ -5521,6 +5608,7 @@ function TaskSelectionWorkspace({
   canRunFromAssets: boolean;
   runCompatibility: RunCompatibilityMode;
   caseActionPendingId: string;
+  caseCancelPendingIds: string[];
   pptxExportPendingCaseId: string;
   batchPptxDownloadPendingId: string;
   batchRunPendingId: string;
@@ -5538,6 +5626,7 @@ function TaskSelectionWorkspace({
   onRerunAnalysis: (item: CaseRecord) => void;
   onRerunCases: (items: CaseRecord[]) => void | Promise<void>;
   onContinueWorkflow: (item: Pick<CaseRecord, "case_id" | "batch_id">) => void;
+  onCancelCases: (items: CaseRecord[]) => void | Promise<void>;
   onExportPptx: (caseId: string) => Promise<ArtifactRecord[]>;
   onDownloadPptx: (caseId: string, artifact: ArtifactRecord) => void | Promise<void>;
   onDownloadBatchPptx: (batchId: string) => void | Promise<void>;
@@ -5582,6 +5671,10 @@ function TaskSelectionWorkspace({
   const rerunTargets = caseSelectionMode ? selectedCases : cases;
   const rerunDisabled = !activeBatch || rerunTargets.length === 0 || batchActionBusy;
   const continueDisabled = !continueTarget || batchActionBusy;
+  const cancelTargetPool = caseSelectionMode ? selectedCases : cases;
+  const cancelTargets = cancelTargetPool.filter(isTerminableCase);
+  const cancelPending = cancelTargets.some((item) => caseCancelPendingIds.includes(item.case_id));
+  const cancelDisabled = !activeBatch || cancelTargets.length === 0 || cancelPending;
   const selectionCount = selectedCaseIds.length;
   const statusSummary = activeBatch ? batchStatusSummary(activeBatch.batch, cases) : "";
 
@@ -5743,6 +5836,14 @@ function TaskSelectionWorkspace({
     onContinueWorkflow(continueTarget);
   }
 
+  async function cancelSelectedTargets() {
+    if (cancelDisabled) return;
+    await onCancelCases(cancelTargets);
+    if (caseSelectionMode) {
+      setSelectedCaseIds((current) => current.filter((caseId) => !cancelTargets.some((item) => item.case_id === caseId)));
+    }
+  }
+
   return (
     <main className="task-selection-workspace">
       <section className="batch-rail">
@@ -5806,6 +5907,26 @@ function TaskSelectionWorkspace({
                 <em>{statusSummary}</em>
               </div>
               <div className="task-batch-actions" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="task-batch-action danger"
+                  disabled={cancelDisabled}
+                  title={
+                    caseSelectionMode
+                      ? cancelTargets.length > 0
+                        ? `终止选中的 ${cancelTargets.length} 张`
+                        : "选中的图片没有运行或排队"
+                      : cancelTargets.length > 0
+                        ? `终止当前任务中运行或排队的 ${cancelTargets.length} 张`
+                        : "当前任务没有运行或排队的图片"
+                  }
+                  onClick={() => {
+                    void cancelSelectedTargets();
+                  }}
+                >
+                  {cancelPending ? <ButtonSpinner /> : <StopIcon />}
+                  <span>{caseSelectionMode && cancelTargets.length > 0 ? `终止 ${cancelTargets.length}` : "终止"}</span>
+                </button>
                 <button
                   type="button"
                   className="task-batch-action"
@@ -7619,6 +7740,15 @@ function RetryIcon() {
   );
 }
 
+function StopIcon() {
+  return (
+    <svg className="stop-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M6.4 4.5h7.2l1.9 1.9v7.2l-1.9 1.9H6.4l-1.9-1.9V6.4Z" />
+      <path d="M8.1 8.1h3.8v3.8H8.1Z" />
+    </svg>
+  );
+}
+
 function ViewResultIcon() {
   return (
     <svg className="view-result-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -8100,6 +8230,10 @@ function batchStatusSummary(batch: BatchRecord, cases: CaseRecord[]): string {
 
 function isCasePausedAtWorkflowBreakpoint(item: Pick<CaseRecord, "status" | "stage" | "workflow_breakpoint_node_id">): boolean {
   return Boolean(item.workflow_breakpoint_node_id && item.status === "assets_review" && item.stage === item.workflow_breakpoint_node_id);
+}
+
+function isTerminableCase(item: Pick<CaseRecord, "status">): boolean {
+  return item.status === "queued" || item.status === "analysis_running" || item.status === "svg_running";
 }
 
 function loadImageGenConnectionSettings(): ImageGenConnectionSettings {

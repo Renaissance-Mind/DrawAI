@@ -1167,6 +1167,18 @@ select:focus {
   color: #ffffff;
 }
 
+.task-batch-action.danger {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: #fff5f5;
+  color: #b91c1c;
+}
+
+.task-batch-action.danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.36);
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .task-batch-action.select-toggle.active {
   border-color: rgba(220, 38, 38, 0.18);
   background: #fff1f2;
@@ -1183,6 +1195,7 @@ select:focus {
 
 .task-batch-action .play-icon,
 .task-batch-action .retry-icon,
+.task-batch-action .stop-icon,
 .task-batch-action .download-icon,
 .task-batch-action .select-cards-icon,
 .task-batch-action .panel-close-icon {
@@ -2152,6 +2165,7 @@ select:focus {
 
 .view-result-icon,
 .breakpoint-icon,
+.stop-icon,
 .select-cards-icon,
 .selection-check-icon {
   width: 18px;
@@ -3155,6 +3169,18 @@ button.dag-run-node.running.active {
   border-color: rgba(15, 118, 110, 0.34);
   background: var(--teal);
   color: #ffffff;
+}
+
+.dag-action-button.danger {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: #fff5f5;
+  color: #b91c1c;
+}
+
+.dag-action-button.danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.36);
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .dag-action-button .button-spinner {

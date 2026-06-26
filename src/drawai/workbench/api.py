@@ -905,8 +905,8 @@ def create_app(
 
     @app.post("/api/cases/{case_id}/cancel")
     def cancel_case(case_id: str) -> dict[str, Any]:
-        case = _get_case_or_404(resolved_store, case_id)
-        resolved_store.update_case_status(case_id, status="canceled", phase=case.phase, stage=case.stage)
+        _get_case_or_404(resolved_store, case_id)
+        resolved_runner.cancel_case(case_id)
         return {"case": resolved_store.get_case(case_id).to_api()}
 
     @app.post("/api/cases/{case_id}/retry")

@@ -266,6 +266,12 @@ export function continueWorkflowCase(caseId: string): Promise<{ case: CaseDetail
   });
 }
 
+export function cancelCase(caseId: string): Promise<{ case: CaseDetail["case"] }> {
+  return requestJson<{ case: CaseDetail["case"] }>(`/api/cases/${caseId}/cancel`, {
+    method: "POST"
+  });
+}
+
 export function getCase(caseId: string): Promise<CaseDetail> {
   return requestJson<CaseDetail>(`/api/cases/${caseId}`);
 }
