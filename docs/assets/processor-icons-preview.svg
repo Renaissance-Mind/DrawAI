@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 900" role="img" aria-labelledby="title desc">
+  <title id="title">DrawAI processor icon candidates</title>
+  <desc id="desc">Preview sheet for DrawAI asset processor and workflow processor icons.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .page { fill: #f8fafc; }
+      .headline { fill: #0f172a; font: 700 34px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { fill: #334155; font: 700 21px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .note { fill: #64748b; font: 500 15px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.2; filter: url(#shadow); }
+      .label { fill: #0f172a; font: 700 18px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .id { fill: #64748b; font: 500 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; letter-spacing: 0; }
+      .tag { fill: #475569; font: 700 11px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; text-transform: uppercase; }
+      .pill { fill: #f1f5f9; stroke: #e2e8f0; }
+    </style>
+  </defs>
+
+  <rect class="page" width="1280" height="900"/>
+  <text class="headline" x="64" y="72">DrawAI Processor Icon Candidates</text>
+  <text class="note" x="64" y="100">Self-drawn SVG candidates only. They are not wired into the Workbench UI yet.</text>
+
+  <text class="section" x="64" y="152">Asset processing types</text>
+  <text class="note" x="64" y="177">Registered in PROCESSOR_DEFINITIONS / AssetProcessor implementations.</text>
+
+  <g transform="translate(64 206)">
+    <g class="card" transform="translate(0 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/no-process.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">No process</text>
+      <text class="id" x="81" y="134" text-anchor="middle">no_process</text>
+    </g>
+    <g class="card" transform="translate(180 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/crop.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">Crop</text>
+      <text class="id" x="81" y="134" text-anchor="middle">crop</text>
+    </g>
+    <g class="card" transform="translate(360 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/crop-nobg.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">Crop no bg</text>
+      <text class="id" x="81" y="134" text-anchor="middle">crop_nobg</text>
+    </g>
+    <g class="card" transform="translate(540 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/svg-self-draw.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">SVG self draw</text>
+      <text class="id" x="81" y="134" text-anchor="middle">svg_self_draw</text>
+    </g>
+    <g class="card" transform="translate(720 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/image-generate.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">Image generate</text>
+      <text class="id" x="81" y="134" text-anchor="middle">image_generate</text>
+    </g>
+    <g class="card" transform="translate(900 0)">
+      <rect width="162" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/image-edit.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">Image edit</text>
+      <text class="id" x="81" y="134" text-anchor="middle">image_edit</text>
+    </g>
+    <g class="card" transform="translate(0 184)">
+      <rect width="220" height="160" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/chart-rebuild-reserved.svg" x="78" y="22" width="64" height="64"/>
+      <text class="label" x="110" y="112" text-anchor="middle">Chart rebuild</text>
+      <text class="id" x="110" y="134" text-anchor="middle">chart_rebuild_reserved</text>
+    </g>
+  </g>
+
+  <text class="section" x="64" y="588">Workflow processor nodes</text>
+  <text class="note" x="64" y="613">Four are visible in the current node picker; two are runner-supported branches.</text>
+
+  <g transform="translate(64 642)">
+    <g class="card" transform="translate(0 0)">
+      <rect width="162" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/sam-parse.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">SAM Parse</text>
+      <text class="id" x="81" y="134" text-anchor="middle">sam_parse</text>
+      <rect class="pill" x="45" y="146" width="72" height="16" rx="8"/>
+      <text class="tag" x="81" y="158" text-anchor="middle">picker</text>
+    </g>
+    <g class="card" transform="translate(180 0)">
+      <rect width="162" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/ocr-parse.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">OCR Parse</text>
+      <text class="id" x="81" y="134" text-anchor="middle">ocr_parse</text>
+      <rect class="pill" x="45" y="146" width="72" height="16" rx="8"/>
+      <text class="tag" x="81" y="158" text-anchor="middle">picker</text>
+    </g>
+    <g class="card" transform="translate(360 0)">
+      <rect width="162" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/page-spec-fuse.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">PageSpec Fuse</text>
+      <text class="id" x="81" y="134" text-anchor="middle">page_spec_fuse</text>
+      <rect class="pill" x="45" y="146" width="72" height="16" rx="8"/>
+      <text class="tag" x="81" y="158" text-anchor="middle">picker</text>
+    </g>
+    <g class="card" transform="translate(540 0)">
+      <rect width="162" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/asset-prepare.svg" x="49" y="22" width="64" height="64"/>
+      <text class="label" x="81" y="112" text-anchor="middle">Asset Prepare</text>
+      <text class="id" x="81" y="134" text-anchor="middle">asset_prepare</text>
+      <rect class="pill" x="45" y="146" width="72" height="16" rx="8"/>
+      <text class="tag" x="81" y="158" text-anchor="middle">picker</text>
+    </g>
+    <g class="card" transform="translate(720 0)">
+      <rect width="190" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/asset-planner.svg" x="63" y="22" width="64" height="64"/>
+      <text class="label" x="95" y="112" text-anchor="middle">Asset Planner</text>
+      <text class="id" x="95" y="134" text-anchor="middle">asset_planner</text>
+      <rect class="pill" x="39" y="146" width="112" height="16" rx="8"/>
+      <text class="tag" x="95" y="158" text-anchor="middle">runner only</text>
+    </g>
+    <g class="card" transform="translate(928 0)">
+      <rect width="210" height="168" rx="10"/>
+      <image href="../../apps/workbench/public/processor-icons/asset-processors.svg" x="73" y="22" width="64" height="64"/>
+      <text class="label" x="105" y="112" text-anchor="middle">Asset Processors</text>
+      <text class="id" x="105" y="134" text-anchor="middle">asset_processors</text>
+      <rect class="pill" x="49" y="146" width="112" height="16" rx="8"/>
+      <text class="tag" x="105" y="158" text-anchor="middle">runner only</text>
+    </g>
+  </g>
+</svg>

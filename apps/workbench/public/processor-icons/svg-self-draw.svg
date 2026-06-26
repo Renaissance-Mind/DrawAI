@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">SVG self draw</title>
+  <desc id="desc">Generate a standalone editable SVG asset.</desc>
+  <rect width="64" height="64" rx="16" fill="#f3e8ff"/>
+  <path d="M18 17h21l7 7v23H18z" fill="#ffffff" stroke="#7e22ce" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M39 17v8h7" fill="none" stroke="#7e22ce" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M24 38c6-12 12 9 17-4" fill="none" stroke="#9333ea" stroke-width="2.7" stroke-linecap="round"/>
+  <path d="m39 34 6-6 4 4-6 6-5 1z" fill="#faf5ff" stroke="#581c87" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M24 25h8" fill="none" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

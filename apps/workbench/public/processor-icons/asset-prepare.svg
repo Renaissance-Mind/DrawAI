@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Asset Prepare</title>
+  <desc id="desc">Materialize PageSpec raster assets into the bundle.</desc>
+  <rect width="64" height="64" rx="16" fill="#f0fdf4"/>
+  <path d="m18 25 14-8 14 8v16l-14 8-14-8z" fill="#ffffff" stroke="#15803d" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="m18 25 14 8 14-8M32 33v16" fill="none" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 39h6M38 34h4M38 40h4" fill="none" stroke="#166534" stroke-width="2.3" stroke-linecap="round"/>
+  <path d="M47 15v6M44 18h6" fill="none" stroke="#22c55e" stroke-width="2.7" stroke-linecap="round"/>
+</svg>

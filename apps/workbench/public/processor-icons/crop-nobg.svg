@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Crop no background</title>
+  <desc id="desc">Crop a foreground element and remove the background.</desc>
+  <rect width="64" height="64" rx="16" fill="#dcfce7"/>
+  <path d="M17 18h30v30H17z" fill="#ffffff" stroke="#15803d" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M17 28h30M17 38h30M27 18v30M37 18v30" fill="none" stroke="#bbf7d0" stroke-width="1.8"/>
+  <path d="M32 24c4 0 7 3.4 7 7.5 0 4.8-3.3 8.5-7 8.5s-7-3.7-7-8.5C25 27.4 28 24 32 24Z" fill="#ffffff" stroke="#166534" stroke-width="2.4"/>
+  <path d="M43 17v7M39.5 20.5h7M19 45l26-26" fill="none" stroke="#22c55e" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

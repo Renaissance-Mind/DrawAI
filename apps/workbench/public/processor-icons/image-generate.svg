@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Image generate</title>
+  <desc id="desc">Synthesize a new raster image asset from context.</desc>
+  <rect width="64" height="64" rx="16" fill="#fef3c7"/>
+  <rect x="17" y="21" width="30" height="25" rx="4" fill="#ffffff" stroke="#b45309" stroke-width="2.4"/>
+  <path d="m21 41 8-8 5 5 4-5 6 8" fill="none" stroke="#d97706" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="38.5" cy="28.5" r="2" fill="#f59e0b"/>
+  <path d="M48 13v7M44.5 16.5h7M51 28l3 3M42 13l-3-3" fill="none" stroke="#f59e0b" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M25 16c2-2 5-3 8-3" fill="none" stroke="#92400e" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

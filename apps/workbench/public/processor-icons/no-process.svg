@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">No process</title>
+  <desc id="desc">Structural element kept for downstream drawing without materialization.</desc>
+  <rect width="64" height="64" rx="16" fill="#edf2f7"/>
+  <rect x="17" y="17" width="30" height="30" rx="5" fill="#ffffff" stroke="#475569" stroke-width="2.4"/>
+  <path d="M22 27h15M22 36h10" fill="none" stroke="#475569" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M19 47 47 19" fill="none" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>
+</svg>

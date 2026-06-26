@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Chart rebuild reserved</title>
+  <desc id="desc">Reserved future chart reconstruction processor.</desc>
+  <rect width="64" height="64" rx="16" fill="#ede9fe"/>
+  <rect x="17" y="17" width="30" height="30" rx="5" fill="#ffffff" stroke="#5b21b6" stroke-width="2.4" stroke-dasharray="4 3"/>
+  <path d="M23 40V29M32 40V23M41 40V33" fill="none" stroke="#6d28d9" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="45" cy="45" r="7" fill="#ffffff" stroke="#4c1d95" stroke-width="2.2"/>
+  <path d="M45 41v4l3 2" fill="none" stroke="#4c1d95" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

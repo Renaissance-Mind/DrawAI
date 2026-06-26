@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Crop</title>
+  <desc id="desc">Pixel-preserving crop from the original image.</desc>
+  <rect width="64" height="64" rx="16" fill="#e0f2fe"/>
+  <rect x="18" y="18" width="28" height="28" rx="4" fill="#ffffff" stroke="#0369a1" stroke-width="2.4"/>
+  <path d="M13 23h10V13M41 51V41h10" fill="none" stroke="#0284c7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M23 13v10H13M51 41H41v10" fill="none" stroke="#0284c7" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 39 29 31l5 5 3-4 6 7" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">PageSpec Fuse</title>
+  <desc id="desc">Fuse SAM and OCR PageSpec evidence into one document.</desc>
+  <rect width="64" height="64" rx="16" fill="#ecfeff"/>
+  <rect x="13" y="18" width="16" height="20" rx="3" fill="#ffffff" stroke="#0e7490" stroke-width="2.2"/>
+  <rect x="35" y="18" width="16" height="20" rx="3" fill="#ffffff" stroke="#0e7490" stroke-width="2.2"/>
+  <rect x="24" y="36" width="16" height="12" rx="3" fill="#ffffff" stroke="#155e75" stroke-width="2.2"/>
+  <path d="M29 28h6M23 38l6-6M41 38l-6-6" fill="none" stroke="#0891b2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 24h8M17 30h6M39 24h8M39 30h5M28 42h8" fill="none" stroke="#06b6d4" stroke-width="1.9" stroke-linecap="round"/>
+</svg>

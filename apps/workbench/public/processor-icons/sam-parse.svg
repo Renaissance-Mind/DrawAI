@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">SAM Parse</title>
+  <desc id="desc">Segment visual candidates into PageSpec evidence.</desc>
+  <rect width="64" height="64" rx="16" fill="#e0f2fe"/>
+  <path d="M17 24v-6h6M41 18h6v6M47 40v6h-6M23 46h-6v-6" fill="none" stroke="#075985" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="28" cy="29" r="5.5" fill="#ffffff" stroke="#0284c7" stroke-width="2.4"/>
+  <rect x="35" y="34" width="10" height="8" rx="2" fill="#ffffff" stroke="#0284c7" stroke-width="2.4"/>
+  <path d="M24 41c7-1 15-8 17-17" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 4"/>
+</svg>

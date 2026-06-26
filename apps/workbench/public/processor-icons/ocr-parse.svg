@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">OCR Parse</title>
+  <desc id="desc">Extract text boxes into PageSpec evidence.</desc>
+  <rect width="64" height="64" rx="16" fill="#fef9c3"/>
+  <path d="M17 23v-6h30v6M17 41v6h30v-6" fill="none" stroke="#854d0e" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 38 27 25h4l5 13M24 34h10" fill="none" stroke="#a16207" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39 29h5M39 35h6" fill="none" stroke="#ca8a04" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M15 32h34" fill="none" stroke="#facc15" stroke-width="2.2" stroke-linecap="round"/>
+</svg>
