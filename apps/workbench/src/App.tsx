@@ -5898,8 +5898,7 @@ function TaskSelectionWorkspace({
               <div className="task-batch-file">
                 <span className="task-batch-status-dot" aria-hidden="true" />
                 <div>
-                  <span>文件名</span>
-                  <strong title={activeBatch.batch.name}>{activeBatch.batch.name}</strong>
+                  <strong title={activeBatch.batch.batch_id}>TaskID {activeBatch.batch.batch_id}</strong>
                 </div>
               </div>
               <div className="task-batch-overview">

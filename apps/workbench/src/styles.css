@@ -1016,25 +1016,25 @@ select:focus {
 }
 
 .task-batch-status-bar {
-  width: min(100%, 1120px);
-  min-height: 58px;
+  width: min(100%, 980px);
+  min-height: 50px;
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(150px, 0.82fr) auto auto;
   align-items: center;
-  gap: 16px;
-  border: 1px solid rgba(203, 213, 225, 0.82);
+  gap: 12px;
+  border: 1px solid rgba(203, 213, 225, 0.58);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--ink);
-  padding: 7px 10px 7px 18px;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
+  padding: 6px 9px 6px 15px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(16px);
   pointer-events: auto;
 }
 
 .task-batch-status-bar.status-failed {
   border-color: rgba(239, 68, 68, 0.24);
-  box-shadow: 0 18px 42px rgba(127, 29, 29, 0.1);
+  box-shadow: 0 10px 26px rgba(127, 29, 29, 0.06);
 }
 
 .task-batch-file {
@@ -1046,27 +1046,27 @@ select:focus {
 
 .task-batch-status-dot {
   flex: 0 0 auto;
-  width: 11px;
-  height: 11px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
-  background: #94a3b8;
-  box-shadow: 0 0 0 5px rgba(148, 163, 184, 0.14);
+  background: #cbd5e1;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.1);
 }
 
 .task-batch-status-bar.status-running .task-batch-status-dot,
 .task-batch-status-bar.status-waiting_review .task-batch-status-dot {
-  background: #2563eb;
-  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.12);
+  background: #93c5fd;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
 }
 
 .task-batch-status-bar.status-completed .task-batch-status-dot {
-  background: #059669;
-  box-shadow: 0 0 0 5px rgba(5, 150, 105, 0.13);
+  background: #6ee7b7;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.08);
 }
 
 .task-batch-status-bar.status-failed .task-batch-status-dot {
-  background: #dc2626;
-  box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.13);
+  background: #fca5a5;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
 }
 
 .task-batch-file > div {
@@ -1086,9 +1086,9 @@ select:focus {
   min-width: 0;
   display: block;
   overflow: hidden;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 650;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 620;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1509,6 +1509,30 @@ select:focus {
 .status-waiting_review {
   background: #fff7ed;
   color: #b45309;
+}
+
+.task-row .status-pill {
+  color: #ffffff;
+  font-weight: 650;
+}
+
+.task-row .status-failed {
+  background: #dc2626;
+}
+
+.task-row .status-running,
+.task-row .status-analysis_running,
+.task-row .status-svg_running {
+  background: #2563eb;
+}
+
+.task-row .status-completed {
+  background: #059669;
+}
+
+.task-row .status-assets_review,
+.task-row .status-waiting_review {
+  background: #d97706;
 }
 
 .task-main em,
