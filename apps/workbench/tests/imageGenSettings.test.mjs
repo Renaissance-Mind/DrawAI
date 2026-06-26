@@ -63,6 +63,15 @@ test("image generation method selection resolves to the active connection", asyn
     apiPresetId: "apimart_images",
     label: "API Mart Images"
   });
+  assert.deepEqual(imageGenConnectionFromMethod({ kind: "custom" }, { ...fallback, label: "Codex 内置" }), {
+    provider: "api",
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "",
+    model: "gpt-image-2",
+    methodId: "custom",
+    apiPresetId: "",
+    label: "自定义"
+  });
 });
 
 test("image generation connection draft resolves selected API preset after reload", async () => {

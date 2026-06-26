@@ -170,7 +170,9 @@ export function imageGenConnectionFromMethod(
     model: normalized.model || IMAGEGEN_DEFAULT_MODEL,
     methodId: CUSTOM_IMAGEGEN_METHOD_ID,
     apiPresetId: "",
-    label: normalized.label || "自定义"
+    label: normalized.provider === "api" && !normalized.apiPresetId && normalized.methodId === CUSTOM_IMAGEGEN_METHOD_ID
+      ? normalized.label || "自定义"
+      : "自定义"
   };
 }
 
