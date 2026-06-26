@@ -2414,10 +2414,13 @@ function WorkbenchSettingsCenter({
                         const definition = processorDefinitions[processorId];
                         const setting = processorDrafts[processorId];
                         const status = processorResponse?.validation.processors[processorId];
+                        const driver = processorDrivers[setting?.driver_id || definition.default_driver_id];
+                        const processorEnabled = Boolean(setting?.enabled);
+                        const processorAvailable = processorCardAvailable(setting, status, driver, apiDrafts);
                         return (
                           <article
                             key={processorId}
-                            className={`settings-model-card${selectedProcessorId === processorId ? " active" : ""}${status?.configured ? "" : " missing"}`}
+                            className={`settings-model-card settings-processor-card${selectedProcessorId === processorId ? " active" : ""}${processorAvailable ? "" : " disabled"}`}
                           >
                             <div className="settings-model-card-head">
                               <span className="settings-model-icon" aria-hidden="true">
@@ -2431,14 +2434,27 @@ function WorkbenchSettingsCenter({
                                 <strong>{definition.label}</strong>
                                 <span>{processorId}</span>
                               </div>
-                              <em className={`settings-card-status ${status?.configured ? "ok" : "missing"}`}>
-                                {setting?.enabled ? (status?.configured ? "可用" : "未配置") : "关闭"}
-                              </em>
+                              <label className="settings-processor-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={processorEnabled}
+                                  disabled={!processorAvailable}
+                                  aria-label={`${processorEnabled ? "关闭" : "启用"}${definition.label}`}
+                                  onChange={(event) => {
+                                    if (!setting) return;
+                                    updateProcessorDraft(setProcessorDrafts, processorId, {
+                                      ...setting,
+                                      enabled: event.target.checked
+                                    });
+                                  }}
+                                />
+                                <span aria-hidden="true" />
+                              </label>
                             </div>
                             <dl className="settings-model-meta">
                               <div>
                                 <dt>Driver</dt>
-                                <dd>{setting?.driver_id || definition.default_driver_id}</dd>
+                                <dd>{driver?.driver_id || setting?.driver_id || definition.default_driver_id}</dd>
                               </div>
                               <div>
                                 <dt>API 预设</dt>
@@ -2821,19 +2837,6 @@ function WorkbenchSettingsCenter({
                       {selectedProcessorValidation?.message && (
                         <div className="agent-settings-error">{selectedProcessorValidation.message}</div>
                       )}
-                      <label className="settings-toggle-row">
-                        <input
-                          type="checkbox"
-                          checked={selectedProcessorSetting.enabled}
-                          onChange={(event) =>
-                            updateProcessorDraft(setProcessorDrafts, selectedProcessor.processing_type, {
-                              ...selectedProcessorSetting,
-                              enabled: event.target.checked
-                            })
-                          }
-                        />
-                        <span>启用 {selectedProcessor.processing_type}</span>
-                      </label>
                       <label className="settings-field">
                         <span>Driver</span>
                         <select
@@ -3171,6 +3174,18 @@ function retargetProcessorApiPresetDrafts(
     })
   );
   return changed ? next : current;
+}
+
+function processorCardAvailable(
+  setting: ProcessorSettingsResponse["settings"]["processors"][string] | undefined,
+  status: ProcessorSettingsResponse["validation"]["processors"][string] | undefined,
+  driver: ProcessorSettingsResponse["definitions"]["drivers"][string] | undefined,
+  apiPresets: ApiPreset[]
+): boolean {
+  if (!setting || !driver || driver.kind === "reserved") return false;
+  if (status && !status.valid) return false;
+  if (!driver.required_api_preset_type) return true;
+  return apiPresets.some((preset) => preset.id === setting.api_preset_id && preset.type === driver.required_api_preset_type);
 }
 
 function updateProcessorDraft(
