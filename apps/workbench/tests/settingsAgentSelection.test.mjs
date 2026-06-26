@@ -35,6 +35,29 @@ test("settings UI selects the current Agent from overview instead of the Agent p
   assert.doesNotMatch(source, /<span>全局 Agent<\/span>/);
 });
 
+test("settings navigation keeps overview above engine and node groups", () => {
+  const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const navBlock = source.match(/const WORKBENCH_SETTINGS_NAV_SECTIONS[\s\S]*?const BOARD_NAV_ITEMS/)?.[0] || "";
+
+  assert.ok(navBlock.indexOf('{ id: "overview"') < navBlock.indexOf('label: "引擎"'));
+  assert.ok(navBlock.indexOf('label: "引擎"') < navBlock.indexOf('label: "节点"'));
+  assert.doesNotMatch(navBlock, /label:\s*"工作空间"/);
+  assert.doesNotMatch(navBlock, /label:\s*"运行"/);
+  assert.match(source, /\{section\.label && <div className="settings-nav-heading">\{section\.label\}<\/div>\}/);
+});
+
+test("settings overview and Agent cards use provider icons and bottom-aligned actions", () => {
+  const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+
+  assert.match(source, /const selectedAgentIcon = selectedAgent \? agentProviderIconForId\(selectedAgent\.provider_id\) : null;/);
+  assert.match(source, /className=\{`settings-overview-agent-icon\$\{selectedAgentIcon \? " settings-provider-logo-mini" : ""\}`\}/);
+  assert.match(source, /selectedAgentIcon \? <img src=\{selectedAgentIcon\.icon_url\} alt="" \/> : <SettingsNavIcon icon="agent" \/>/);
+  assert.match(source, /<div className="settings-model-card-bottom">[\s\S]*?<dl className="settings-model-meta">[\s\S]*?<button type="button" className="settings-model-action"/);
+  assert.match(css, /\.settings-model-card-bottom\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/);
+  assert.match(css, /\.settings-model-action\s*\{[\s\S]*?align-self:\s*end;/);
+});
+
 let selectionModulePromise;
 
 function loadSelectionModule() {

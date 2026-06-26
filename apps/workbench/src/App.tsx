@@ -152,6 +152,7 @@ type TaskContextMenuState = { caseId: string; caseName: string; x: number; y: nu
 type BatchContextMenuState = { batchId: string; batchName: string; caseCount: number; running: boolean; x: number; y: number };
 type TaskDialogTarget = { batchId: string; name: string };
 type WorkbenchSettingsNavItem = { id: WorkbenchSettingsCategory; label: string; icon: WorkbenchSettingsCategory };
+type WorkbenchSettingsNavSection = { label?: string; items: WorkbenchSettingsNavItem[] };
 
 const CASE_DETAIL_LAYOUT_MS = 420;
 const CASE_CARD_LAYOUT_MS = 560;
@@ -190,18 +191,20 @@ type RuntimeStatusRow = {
 const IMAGEGEN_SETTINGS_STORAGE_KEY = "drawai.imagegen.connection";
 const PPTX_EXPORT_POLL_INTERVAL_MS = 1000;
 const PPTX_EXPORT_TIMEOUT_MS = 180_000;
-const WORKBENCH_SETTINGS_NAV_SECTIONS: { label: string; items: WorkbenchSettingsNavItem[] }[] = [
+const WORKBENCH_SETTINGS_NAV_SECTIONS: WorkbenchSettingsNavSection[] = [
   {
-    label: "工作空间",
+    items: [{ id: "overview", label: "总览", icon: "overview" }]
+  },
+  {
+    label: "引擎",
     items: [
-      { id: "overview", label: "总览", icon: "overview" },
       { id: "api", label: "模型供应商", icon: "api" },
       { id: "agent", label: "Agent", icon: "agent" },
       { id: "llm", label: "LLM 配置", icon: "llm" }
     ]
   },
   {
-    label: "运行",
+    label: "节点",
     items: [{ id: "processor", label: "处理器", icon: "processor" }]
   }
 ];
@@ -2187,8 +2190,8 @@ function WorkbenchSettingsCenter({
               </div>
               <nav className="settings-nav" aria-label="设置导航">
                 {WORKBENCH_SETTINGS_NAV_SECTIONS.map((section) => (
-                  <div className="settings-nav-section" key={section.label}>
-                    <div className="settings-nav-heading">{section.label}</div>
+                  <div className="settings-nav-section" key={section.label || section.items[0]?.id}>
+                    {section.label && <div className="settings-nav-heading">{section.label}</div>}
                     <div className="settings-nav-group">
                       {section.items.map((item) => (
                         <button
@@ -2347,21 +2350,23 @@ function WorkbenchSettingsCenter({
                                 {agent.available ? "可用" : "未通过"}
                               </em>
                             </div>
-                            <dl className="settings-model-meta">
-                              <div>
-                                <dt>命令</dt>
-                                <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
-                              </div>
-                              {agent.version && (
+                            <div className="settings-model-card-bottom">
+                              <dl className="settings-model-meta">
                                 <div>
-                                  <dt>版本</dt>
-                                  <dd>{agent.version}</dd>
+                                  <dt>命令</dt>
+                                  <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
                                 </div>
-                              )}
-                            </dl>
-                            <button type="button" className="settings-model-action" onClick={() => openAgentSettings(agent.provider_id)}>
-                              设置
-                            </button>
+                                {agent.version && (
+                                  <div>
+                                    <dt>版本</dt>
+                                    <dd>{agent.version}</dd>
+                                  </div>
+                                )}
+                              </dl>
+                              <button type="button" className="settings-model-action" onClick={() => openAgentSettings(agent.provider_id)}>
+                                设置
+                              </button>
+                            </div>
                           </article>
                         );
                       })}
@@ -2965,6 +2970,7 @@ function SettingsOverviewPage({
   if (error) return <div className="agent-settings-error">{error}</div>;
   if (!overview) return <EmptyState label="暂无状态总览" />;
   const agentSeverity = selectedAgent?.available ? "ok" : "warning";
+  const selectedAgentIcon = selectedAgent ? agentProviderIconForId(selectedAgent.provider_id) : null;
   const checkCount = overview.groups.reduce((total, group) => total + group.items.length, 0);
   return (
     <div className="settings-overview">
@@ -2994,8 +3000,12 @@ function SettingsOverviewPage({
       </section>
       <section className={`settings-overview-agent ${agentSeverity}`}>
         <div className="settings-overview-agent-row">
-          <span className="settings-overview-agent-icon" aria-hidden="true">
-            <SettingsNavIcon icon="agent" />
+          <span
+            className={`settings-overview-agent-icon${selectedAgentIcon ? " settings-provider-logo-mini" : ""}`}
+            style={selectedAgentIcon ? ({ "--provider-color": selectedAgentIcon.accent_color } as CSSProperties) : undefined}
+            aria-hidden="true"
+          >
+            {selectedAgentIcon ? <img src={selectedAgentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
           </span>
           <div>
             <span>当前 Agent</span>
