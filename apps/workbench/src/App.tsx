@@ -5912,7 +5912,7 @@ function TaskSelectionWorkspace({
       <section className="case-lane">
         {activeBatch && (
           <div className={`task-batch-status-shell${caseSelectionMode ? " selecting" : ""}`}>
-            <div className={`task-batch-status-bar status-${activeBatch.batch.status}`}>
+            <div className={`task-batch-status-bar batch-status-${activeBatch.batch.status}`}>
               <div className="task-batch-file">
                 <span className="task-batch-status-dot" aria-hidden="true" />
                 <div>
