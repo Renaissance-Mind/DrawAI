@@ -360,6 +360,7 @@ export default function App() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [workbenchSettingsInitialCategory, setWorkbenchSettingsInitialCategory] = useState<WorkbenchSettingsCategory>("overview");
+  const [submitSettingsRefreshToken, setSubmitSettingsRefreshToken] = useState(0);
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
   const [error, setError] = useState("");
   const [assetsRunPendingCaseId, setAssetsRunPendingCaseId] = useState("");
@@ -1396,8 +1397,13 @@ export default function App() {
       )}
       {submitOpen && (
         <SubmitDialog
+          settingsRefreshToken={submitSettingsRefreshToken}
           onSubmitted={() => setSubmitOpen(false)}
           onClose={() => setSubmitOpen(false)}
+          onOpenSettings={() => {
+            setWorkbenchSettingsInitialCategory("overview");
+            setWorkbenchSettingsOpen(true);
+          }}
           onCreated={async (detail) => {
             setSubmitOpen(false);
             await activateCreatedBatch(detail);
@@ -1409,12 +1415,16 @@ export default function App() {
         <WorkbenchSettingsCenter
           initialCategory={workbenchSettingsInitialCategory}
           imageGenConnection={imageGenConnection}
-          onClose={() => setWorkbenchSettingsOpen(false)}
+          onClose={() => {
+            setWorkbenchSettingsOpen(false);
+            if (submitOpen) setSubmitSettingsRefreshToken((current) => current + 1);
+          }}
           onSaved={(nextConnection) => {
             if (nextConnection) {
               setImageGenConnection(nextConnection);
               saveImageGenConnectionSettings(nextConnection);
             }
+            if (submitOpen) setSubmitSettingsRefreshToken((current) => current + 1);
           }}
           onError={setError}
         />
@@ -1759,20 +1769,30 @@ function centerCaseCardInTaskList(taskList: HTMLElement, caseId: string) {
 }
 
 function SubmitDialog({
+  settingsRefreshToken,
   onSubmitted,
   onClose,
+  onOpenSettings,
   onCreated,
   onError
 }: {
+  settingsRefreshToken: number;
   onSubmitted: () => void;
   onClose: () => void;
+  onOpenSettings: () => void;
   onCreated: (detail: BatchDetail) => void | Promise<void>;
   onError: (message: string) => void;
 }) {
   return (
     <div className="modal-backdrop batch-create-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="submit-dialog submit-dialog-drop-only" role="dialog" aria-modal="true" aria-label="提交任务" onMouseDown={(event) => event.stopPropagation()}>
-        <NewBatchForm onSubmitted={onSubmitted} onCreated={onCreated} onError={onError} />
+        <NewBatchForm
+          settingsRefreshToken={settingsRefreshToken}
+          onSubmitted={onSubmitted}
+          onOpenSettings={onOpenSettings}
+          onCreated={onCreated}
+          onError={onError}
+        />
       </section>
     </div>
   );
@@ -6725,11 +6745,15 @@ function EditorWorkspace({
 }
 
 function NewBatchForm({
+  settingsRefreshToken,
   onSubmitted,
+  onOpenSettings,
   onCreated,
   onError
 }: {
+  settingsRefreshToken: number;
   onSubmitted: () => void;
+  onOpenSettings: () => void;
   onCreated: (detail: BatchDetail) => void | Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -6744,7 +6768,9 @@ function NewBatchForm({
   const [selectedExecutionMode, setSelectedExecutionMode] = useState<UploadEngineMode>("agent");
   const [agentSettingsDraft, setAgentSettingsDraft] = useState<WorkbenchAgentSettings>(DEFAULT_WORKBENCH_AGENT_SETTINGS);
   const [agentChoices, setAgentChoices] = useState<WorkbenchAgentDiscovery[]>([]);
-  const [enginePickerOpen, setEnginePickerOpen] = useState(false);
+  const [apiPresets, setApiPresets] = useState<ApiPreset[]>([]);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [llmSearch, setLlmSearch] = useState("");
   const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const continueFileInputRef = useRef<HTMLInputElement>(null);
@@ -6756,20 +6782,26 @@ function NewBatchForm({
   const selectedCount = uploadFileRows.filter((row) => selectedUploadIds.has(row.id)).length;
   const allUploadsSelected = uploadFileRows.length > 0 && selectedCount === uploadFileRows.length;
   const selectedAgent = agentChoices.find((agent) => agent.provider_id === agentSettingsDraft.selected_provider_id) || null;
-  const selectedAgentIcon = selectedAgent ? agentProviderIconForId(selectedAgent.provider_id) : null;
+  const llmPresets = apiPresets.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
+  const selectedLlmPreset = llmPresets.find((preset) => apiPresetMatchesLlmSettings(preset, agentSettingsDraft)) || null;
+  const filteredAgentChoices = filterUploadAgents(agentChoices, agentSearch);
+  const filteredLlmPresets = filterUploadLlmPresets(llmPresets, llmSearch);
   const llmThinking = llmThinkingEnabled(agentSettingsDraft.llm_extra_body);
 
   useEffect(() => {
     let canceled = false;
-    Promise.all([listWorkflowTemplates(), getWorkbenchAgentSettings(true)])
-      .then(([workflowResponse, agentResponse]) => {
+    Promise.all([listWorkflowTemplates(), getWorkbenchAgentSettings(true), getApiPresets()])
+      .then(([workflowResponse, agentResponse, apiResponse]) => {
         if (canceled) return;
         setWorkflowTemplates(workflowResponse.templates);
-        if (!workflowResponse.templates.some((template) => template.template_id === selectedWorkflowTemplateId)) {
-          setSelectedWorkflowTemplateId(workflowResponse.templates[0]?.template_id || "default_drawai_dag");
-        }
+        setSelectedWorkflowTemplateId((current) =>
+          workflowResponse.templates.some((template) => template.template_id === current)
+            ? current
+            : workflowResponse.templates[0]?.template_id || "default_drawai_dag"
+        );
         setAgentSettingsDraft(normalizeWorkbenchAgentDraft(agentResponse.settings));
-        setAgentChoices(agentResponse.agents.filter((agent) => agent.available));
+        setAgentChoices(sortWorkbenchAgentsForDisplay(agentResponse.agents.filter((agent) => agent.available)));
+        setApiPresets(apiResponse.presets || []);
       })
       .catch((err) => {
         if (!canceled) onError(err instanceof Error ? err.message : String(err));
@@ -6777,7 +6809,7 @@ function NewBatchForm({
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [settingsRefreshToken, onError]);
 
   useEffect(() => {
     if (!pendingUpload) {
@@ -6858,6 +6890,18 @@ function NewBatchForm({
     const nextFiles = pendingUpload.files.filter((item) => !selectedUploadIds.has(uploadFileId(item)));
     setSelectedUploadIds(new Set());
     void rebuildPendingUpload(nextFiles);
+  }
+
+  function chooseExecutionMode(mode: UploadEngineMode) {
+    setSelectedExecutionMode(mode);
+    if (mode === "llm" && !selectedLlmPreset && llmPresets[0]) {
+      setAgentSettingsDraft((current) => agentSettingsWithLlmPreset(current, llmPresets[0]));
+    }
+  }
+
+  function chooseLlmPreset(preset: ApiPreset) {
+    setSelectedExecutionMode("llm");
+    setAgentSettingsDraft((current) => agentSettingsWithLlmPreset(current, preset));
   }
 
   async function confirmUpload() {
@@ -6959,24 +7003,6 @@ function NewBatchForm({
               )}
             </section>
             <section className="upload-task-settings" aria-label="任务运行设置">
-              <div className="upload-panel-head">
-                <div>
-                  <span>任务</span>
-                  <strong>运行设置</strong>
-                  <em>{selectedExecutionMode === "agent" ? "Agent 引擎" : "LLM 引擎"}</em>
-                </div>
-                <button
-                  type="button"
-                  className="upload-reset-button"
-                  disabled={submitting}
-                  onClick={() => {
-                    setPendingUpload(null);
-                    setTaskTitle("");
-                  }}
-                >
-                  重新选择
-                </button>
-              </div>
               <div className="upload-settings-fields">
                 <label className="settings-field upload-title-field">
                   <span>任务标题</span>
@@ -6988,114 +7014,119 @@ function NewBatchForm({
                     autoComplete="off"
                   />
                 </label>
-                <label className="settings-field">
-                  <span>工作流</span>
-                  <select
-                    value={selectedWorkflowTemplateId}
-                    disabled={submitting || workflowTemplates.length === 0}
-                    onChange={(event) => setSelectedWorkflowTemplateId(event.currentTarget.value)}
-                  >
-                    {workflowTemplates.map((template) => (
-                      <option value={template.template_id} key={template.template_id}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="upload-engine-field">
-                  <span>引擎</span>
-                  <button
-                    type="button"
-                    className="upload-engine-trigger"
-                    disabled={submitting}
-                    onClick={() => setEnginePickerOpen((current) => !current)}
-                  >
-                    {selectedExecutionMode === "agent" ? (
-                      <span
-                        className={`upload-engine-logo settings-provider-logo${selectedAgentIcon ? "" : " settings-provider-logo-custom"}`}
-                        style={selectedAgentIcon ? ({ "--provider-color": selectedAgentIcon.accent_color } as CSSProperties) : undefined}
-                        aria-hidden="true"
-                      >
-                        {selectedAgentIcon ? <img src={selectedAgentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
+                <div className="upload-settings-section">
+                  <span className="upload-setting-label">工作流</span>
+                  <div className="upload-workflow-grid" aria-label="选择工作流">
+                    {workflowTemplates.map((template) => {
+                      const selected = selectedWorkflowTemplateId === template.template_id;
+                      return (
+                        <button
+                          type="button"
+                          key={template.template_id}
+                          className={selected ? "upload-workflow-card active" : "upload-workflow-card"}
+                          disabled={submitting}
+                          aria-pressed={selected}
+                          onClick={() => setSelectedWorkflowTemplateId(template.template_id)}
+                        >
+                          <UploadWorkflowThumbnail template={template} />
+                          <span className="upload-workflow-copy">
+                            <strong>{template.name}</strong>
+                            <em>{workflowTemplateSummary(template)}</em>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {workflowTemplates.length === 0 && <div className="upload-option-empty">暂无可选工作流</div>}
+                  </div>
+                </div>
+                <div className="upload-settings-section">
+                  <span className="upload-setting-label">引擎</span>
+                  <div className="upload-mode-grid" role="tablist" aria-label="选择运行引擎">
+                    <button
+                      type="button"
+                      className={selectedExecutionMode === "agent" ? "upload-mode-card active" : "upload-mode-card"}
+                      disabled={submitting}
+                      role="tab"
+                      aria-selected={selectedExecutionMode === "agent"}
+                      onClick={() => chooseExecutionMode("agent")}
+                    >
+                      <span className="upload-engine-logo settings-provider-logo settings-provider-logo-custom" aria-hidden="true">
+                        <SettingsNavIcon icon="agent" />
                       </span>
-                    ) : (
+                      <span className="upload-engine-copy">
+                        <strong>Agent 模式</strong>
+                        <em>{selectedAgent?.label || "选择 Agent"}</em>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={selectedExecutionMode === "llm" ? "upload-mode-card active" : "upload-mode-card"}
+                      disabled={submitting}
+                      role="tab"
+                      aria-selected={selectedExecutionMode === "llm"}
+                      onClick={() => chooseExecutionMode("llm")}
+                    >
                       <span className="upload-engine-logo settings-provider-logo settings-provider-logo-custom" aria-hidden="true">
                         <SettingsNavIcon icon="llm" />
                       </span>
-                    )}
-                    <span className="upload-engine-copy">
-                      <strong>{selectedExecutionMode === "agent" ? "Agent 引擎" : "LLM 引擎"}</strong>
-                      <em>{selectedExecutionMode === "agent" ? selectedAgent?.label || agentSettingsDraft.selected_provider_id : agentSettingsDraft.llm_model || "未选择模型"}</em>
-                    </span>
-                  </button>
-                  {enginePickerOpen && (
-                    <div className="upload-engine-popover" role="dialog" aria-label="选择引擎">
-                      <button
-                        type="button"
-                        className={selectedExecutionMode === "agent" ? "upload-engine-card active" : "upload-engine-card"}
-                        onClick={() => {
-                          setSelectedExecutionMode("agent");
-                          setEnginePickerOpen(false);
-                        }}
-                      >
-                        <span
-                          className={`upload-engine-logo settings-provider-logo${selectedAgentIcon ? "" : " settings-provider-logo-custom"}`}
-                          style={selectedAgentIcon ? ({ "--provider-color": selectedAgentIcon.accent_color } as CSSProperties) : undefined}
-                          aria-hidden="true"
-                        >
-                          {selectedAgentIcon ? <img src={selectedAgentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
-                        </span>
-                        <span className="upload-engine-copy">
-                          <strong>Agent 模式</strong>
-                          <em>{selectedAgent?.label || agentSettingsDraft.selected_provider_id}</em>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className={selectedExecutionMode === "llm" ? "upload-engine-card active" : "upload-engine-card"}
-                        onClick={() => {
-                          setSelectedExecutionMode("llm");
-                          setEnginePickerOpen(false);
-                        }}
-                      >
-                        <span className="upload-engine-logo settings-provider-logo settings-provider-logo-custom" aria-hidden="true">
-                          <SettingsNavIcon icon="llm" />
-                        </span>
-                        <span className="upload-engine-copy">
-                          <strong>LLM 模式</strong>
-                          <em>{agentSettingsDraft.llm_model || "OpenAI compatible"}</em>
-                        </span>
-                      </button>
-                    </div>
-                  )}
+                      <span className="upload-engine-copy">
+                        <strong>LLM 模式</strong>
+                        <em>{selectedLlmPreset?.label || agentSettingsDraft.llm_model || "选择 LLM"}</em>
+                      </span>
+                    </button>
+                  </div>
                 </div>
                 {selectedExecutionMode === "agent" ? (
                   <div className="upload-engine-settings">
-                    <label className="settings-field">
-                      <span>Agent</span>
-                      <select
-                        value={agentSettingsDraft.selected_provider_id}
-                        disabled={submitting || agentChoices.length === 0}
-                        onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, selected_provider_id: event.target.value }))}
-                      >
-                        {agentChoices.length === 0 && <option value={agentSettingsDraft.selected_provider_id}>{agentSettingsDraft.selected_provider_id}</option>}
-                        {agentChoices.map((agent) => (
-                          <option key={agent.provider_id} value={agent.provider_id}>{agent.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="settings-form-row">
-                      <label className="settings-field">
-                        <span>模型</span>
+                    <input
+                      className="upload-choice-search"
+                      value={agentSearch}
+                      disabled={submitting}
+                      onChange={(event) => setAgentSearch(event.target.value)}
+                      placeholder="搜索 Agent"
+                      aria-label="搜索 Agent"
+                    />
+                    <div className="upload-provider-grid" aria-label="选择 Agent">
+                      {filteredAgentChoices.map((agent) => {
+                        const agentIcon = agentProviderIconForId(agent.provider_id);
+                        const selected = agent.provider_id === agentSettingsDraft.selected_provider_id;
+                        return (
+                          <button
+                            type="button"
+                            key={agent.provider_id}
+                            className={selected ? "upload-provider-card active" : "upload-provider-card"}
+                            disabled={submitting}
+                            aria-pressed={selected}
+                            onClick={() => setAgentSettingsDraft((current) => ({ ...current, selected_provider_id: agent.provider_id }))}
+                          >
+                            <span
+                              className={`upload-engine-logo settings-provider-logo${agentIcon ? "" : " settings-provider-logo-custom"}`}
+                              style={agentIcon ? ({ "--provider-color": agentIcon.accent_color } as CSSProperties) : undefined}
+                              aria-hidden="true"
+                            >
+                              {agentIcon ? <img src={agentIcon.icon_url} alt="" /> : <SettingsNavIcon icon="agent" />}
+                            </span>
+                            <span className="upload-provider-copy">
+                              <strong>{agent.label}</strong>
+                              <em>{agent.kind.toUpperCase()}</em>
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {filteredAgentChoices.length === 0 && <div className="upload-option-empty">暂无匹配 Agent</div>}
+                    </div>
+                    <div className="upload-runtime-options">
+                      <label className="settings-field upload-compact-field">
+                        <span>模型覆盖</span>
                         <input
                           value={agentSettingsDraft.model}
                           disabled={submitting}
                           onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, model: event.target.value }))}
-                          placeholder="留空使用默认"
+                          placeholder="留空使用所选 Agent 默认"
                           autoComplete="off"
                         />
                       </label>
-                      <label className="settings-field">
+                      <label className="settings-field upload-compact-field">
                         <span>推理强度</span>
                         <select
                           value={agentSettingsDraft.reasoning_effort}
@@ -7111,84 +7142,99 @@ function NewBatchForm({
                           <option value="xhigh">xhigh</option>
                         </select>
                       </label>
+                      <label className="settings-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={agentSettingsDraft.fast}
+                          disabled={submitting}
+                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, fast: event.target.checked }))}
+                        />
+                        <span>Fast 模式</span>
+                      </label>
                     </div>
-                    <label className="settings-toggle-row">
-                      <input
-                        type="checkbox"
-                        checked={agentSettingsDraft.fast}
-                        disabled={submitting}
-                        onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, fast: event.target.checked }))}
-                      />
-                      <span>Fast 模式</span>
-                    </label>
                   </div>
                 ) : (
                   <div className="upload-engine-settings">
-                    <label className="settings-field">
-                      <span>模型</span>
-                      <input
-                        value={agentSettingsDraft.llm_model}
-                        disabled={submitting}
-                        onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, llm_model: event.target.value }))}
-                        placeholder="例如 qwen3-vl-plus"
-                        autoComplete="off"
-                      />
-                    </label>
-                    <label className="settings-field">
-                      <span>Base URL</span>
-                      <input
-                        value={agentSettingsDraft.llm_base_url}
-                        disabled={submitting}
-                        onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, llm_base_url: event.target.value }))}
-                        placeholder="https://api.openai.com/v1"
-                        autoComplete="off"
-                      />
-                    </label>
-                    <div className="settings-form-row">
-                      <label className="settings-field">
-                        <span>API Key Env</span>
-                        <input
-                          value={agentSettingsDraft.llm_api_key_env}
-                          disabled={submitting}
-                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, llm_api_key_env: event.target.value }))}
-                          placeholder="OPENAI_API_KEY"
-                          autoComplete="off"
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>API 格式</span>
+                    <input
+                      className="upload-choice-search"
+                      value={llmSearch}
+                      disabled={submitting}
+                      onChange={(event) => setLlmSearch(event.target.value)}
+                      placeholder="搜索 LLM 配置"
+                      aria-label="搜索 LLM 配置"
+                    />
+                    <div className="upload-provider-grid" aria-label="选择 LLM 配置">
+                      {filteredLlmPresets.map((preset) => {
+                        const presetTemplate = apiPresetTemplateForPreset(preset);
+                        const selected = selectedLlmPreset?.id === preset.id;
+                        return (
+                          <button
+                            type="button"
+                            key={preset.id}
+                            className={selected ? "upload-provider-card active" : "upload-provider-card"}
+                            disabled={submitting}
+                            aria-pressed={selected}
+                            onClick={() => chooseLlmPreset(preset)}
+                          >
+                            <span
+                              className={`upload-engine-logo settings-provider-logo${presetTemplate ? "" : " settings-provider-logo-custom"}`}
+                              style={presetTemplate ? ({ "--provider-color": presetTemplate.accent_color } as CSSProperties) : undefined}
+                              aria-hidden="true"
+                            >
+                              {presetTemplate ? <img src={presetTemplate.icon_url} alt="" /> : <SettingsNavIcon icon="llm" />}
+                            </span>
+                            <span className="upload-provider-copy">
+                              <strong>{preset.label || preset.id}</strong>
+                              <em>{preset.model || preset.type}</em>
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {filteredLlmPresets.length === 0 && <div className="upload-option-empty">暂无匹配 LLM 配置</div>}
+                    </div>
+                    <div className="upload-runtime-options">
+                      <label className="settings-field upload-compact-field">
+                        <span>推理强度</span>
                         <select
-                          value={agentSettingsDraft.llm_wire_api}
+                          value={agentSettingsDraft.reasoning_effort}
                           disabled={submitting}
-                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, llm_wire_api: event.target.value === "responses" ? "responses" : "chat_completions" }))}
+                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
                         >
-                          <option value="chat_completions">Chat Completions</option>
-                          <option value="responses">Responses</option>
+                          <option value="">默认</option>
+                          <option value="none">none</option>
+                          <option value="minimal">minimal</option>
+                          <option value="low">low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                          <option value="xhigh">xhigh</option>
                         </select>
                       </label>
+                      <label className="settings-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={llmThinking}
+                          disabled={submitting}
+                          onChange={(event) => setAgentSettingsDraft((current) => ({
+                            ...current,
+                            llm_extra_body: llmExtraBodyWithThinking(current.llm_extra_body, event.target.checked)
+                          }))}
+                        />
+                        <span>Thinking</span>
+                      </label>
                     </div>
-                    <label className="settings-toggle-row">
-                      <input
-                        type="checkbox"
-                        checked={llmThinking}
-                        disabled={submitting}
-                        onChange={(event) => setAgentSettingsDraft((current) => ({
-                          ...current,
-                          llm_extra_body: llmExtraBodyWithThinking(current.llm_extra_body, event.target.checked)
-                        }))}
-                      />
-                      <span>Thinking</span>
-                    </label>
                   </div>
                 )}
               </div>
               {uploadError && <p className="upload-error">{uploadError}</p>}
               <div className="upload-confirmation-actions">
-                <button type="button" disabled={submitting} onClick={() => setPendingUpload(null)}>取消</button>
-              <button type="button" className="primary" disabled={submitting} onClick={() => void confirmUpload()}>
-                {submitting && <ButtonSpinner />}
-                {submitting ? "提交中" : "提交"}
-              </button>
+                <button type="button" className="upload-settings-shortcut" disabled={submitting} onClick={onOpenSettings} aria-label="打开设置">
+                  <SettingsIcon />
+                  <span>设置</span>
+                </button>
+                <button type="button" className="primary" disabled={submitting} onClick={() => void confirmUpload()}>
+                  {submitting && <ButtonSpinner />}
+                  {submitting ? "提交中" : "提交"}
+                </button>
               </div>
             </section>
           </div>
@@ -7285,6 +7331,93 @@ function formatBytes(value: number): string {
     unitIndex += 1;
   }
   return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function filterUploadAgents(agents: WorkbenchAgentDiscovery[], query: string): WorkbenchAgentDiscovery[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return agents;
+  return agents.filter((agent) =>
+    [
+      agent.provider_id,
+      agent.label,
+      agent.kind,
+      agent.workflow_provider_id,
+      agent.description,
+      agent.command.join(" ")
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(needle)
+  );
+}
+
+function filterUploadLlmPresets(presets: ApiPreset[], query: string): ApiPreset[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return presets;
+  return presets.filter((preset) =>
+    [
+      preset.id,
+      preset.label,
+      preset.type,
+      preset.base_url,
+      preset.model,
+      preset.api_key_env
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(needle)
+  );
+}
+
+function apiPresetMatchesLlmSettings(preset: ApiPreset, settings: WorkbenchAgentSettings): boolean {
+  return (
+    preset.model.trim() === settings.llm_model.trim() &&
+    preset.base_url.trim().replace(/\/+$/, "") === settings.llm_base_url.trim().replace(/\/+$/, "") &&
+    (preset.type === "llm_responses" ? "responses" : "chat_completions") === settings.llm_wire_api
+  );
+}
+
+function agentSettingsWithLlmPreset(settings: WorkbenchAgentSettings, preset: ApiPreset): WorkbenchAgentSettings {
+  return normalizeWorkbenchAgentDraft({
+    ...settings,
+    llm_model: preset.model,
+    llm_base_url: preset.base_url,
+    llm_api_key: preset.api_key,
+    llm_api_key_env: preset.api_key_env,
+    llm_wire_api: preset.type === "llm_responses" ? "responses" : "chat_completions"
+  });
+}
+
+function workflowTemplateSummary(template: WorkflowTemplate): string {
+  const nodeCount = template.nodes.length;
+  const edgeCount = template.edges.length;
+  return `${nodeCount} 节点 · ${edgeCount} 连接`;
+}
+
+function UploadWorkflowThumbnail({ template }: { template: WorkflowTemplate }) {
+  const nodes = template.nodes.slice(0, 6);
+  return (
+    <span className="upload-workflow-thumbnail" aria-hidden="true">
+      {nodes.length === 0 ? (
+        <span className="upload-workflow-node empty" />
+      ) : (
+        nodes.map((node, index) => (
+          <span
+            key={node.node_id}
+            className={`upload-workflow-node ${uploadWorkflowNodeClass(node.node_type)}`}
+            style={{ "--node-index": index } as CSSProperties}
+          />
+        ))
+      )}
+    </span>
+  );
+}
+
+function uploadWorkflowNodeClass(nodeType: string): string {
+  if (nodeType.includes("agent")) return "agent";
+  if (nodeType.includes("export") || nodeType.includes("package")) return "output";
+  if (nodeType.includes("processor") || nodeType.includes("detect") || nodeType.includes("parse")) return "processor";
+  return "default";
 }
 
 function llmThinkingEnabled(extraBody: Record<string, unknown>): boolean {
