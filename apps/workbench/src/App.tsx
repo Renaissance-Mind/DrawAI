@@ -6070,10 +6070,6 @@ function TaskSelectionWorkspace({
                     <SelectionCheckIcon />
                   </span>
                 )}
-                <div className="task-row-top">
-                  <span className={`status-pill status-${item.status}`}>{humanize(item.status)}</span>
-                  <em>{humanize(item.stage || item.phase)}</em>
-                </div>
                 <div className="task-thumb">
                   {rowPreviewUrl ? <img src={rowPreviewUrl} alt="" /> : <span>{caseInitials(item.name)}</span>}
                   {needsAssetReview && <span className="task-review-dot" title="等待素材确认" aria-label="等待素材确认" />}
@@ -6102,12 +6098,15 @@ function TaskSelectionWorkspace({
                 <div className="task-bottom">
                   <div className="task-info">
                     <div className="task-main">
-                      <strong>{item.name}</strong>
-                      <span>{humanize(item.phase)} / {humanize(item.stage)}</span>
+                      <div className="task-title-row">
+                        <strong title={item.name}>{item.name}</strong>
+                        <span className={`status-pill status-${item.status}`}>{humanize(item.status)}</span>
+                      </div>
                       {item.error_message && <em>{shortenError(item.error_message)}</em>}
                     </div>
-                    <div className="task-meta">
-                      {item.stale_from_stage ? <em>需从 {humanize(item.stale_from_stage)} 重新运行</em> : <em>{editorReady ? "素材已准备" : "等待中"}</em>}
+                    <div className="task-current-stage">
+                      <span>当前阶段</span>
+                      <em title={caseCurrentStageLabel(item)}>{caseCurrentStageLabel(item)}</em>
                     </div>
                   </div>
                   <div
@@ -8386,6 +8385,11 @@ function shortenError(value: string): string {
   return value.length > 180 ? `${value.slice(0, 180)}...` : value;
 }
 
+function caseCurrentStageLabel(item: Pick<CaseRecord, "status" | "phase" | "stage">): string {
+  if (item.status === "completed" && item.stage === "completed") return humanize("output");
+  return humanize(item.stage || item.phase || item.status || "idle");
+}
+
 function humanize(value: string): string {
   const labels: Record<string, string> = {
     idle: "空闲",
@@ -8413,6 +8417,15 @@ function humanize(value: string): string {
     compose: "SVG 组合",
     compose_svg: "SVG 组合",
     package_run: "运行包封装",
+    input: "Input",
+    sam_parse: "SAM Parse",
+    ocr_parse: "OCR Parse",
+    page_spec_fuse: "PageSpec Fuse",
+    page_spec_refine: "PageSpec Refine",
+    asset_prepare: "Asset Prepare",
+    svg_compose: "SVG Compose",
+    svg_to_ppt: "SVG to PPT",
+    output: "Output",
     detect_structure: "提取结构（SAM）",
     detect_text: "OCR解析",
     assemble_boxir: "素材合并",

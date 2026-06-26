@@ -1016,17 +1016,17 @@ select:focus {
 }
 
 .task-batch-status-bar {
-  width: min(100%, 820px);
-  min-height: 36px;
+  width: min(100%, 920px);
+  min-height: 44px;
   display: grid;
-  grid-template-columns: minmax(180px, 0.78fr) auto auto;
+  grid-template-columns: minmax(210px, 0.78fr) auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: 1px solid rgba(203, 213, 225, 0.58);
   border-radius: 999px;
   background: #ffffff;
   color: #475569;
-  padding: 3px 8px 3px 12px;
+  padding: 5px 10px 5px 14px;
   box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(16px);
   pointer-events: auto;
@@ -1041,40 +1041,40 @@ select:focus {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .task-batch-status-dot {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #cbd5e1;
-  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1);
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.1);
 }
 
 .task-batch-status-bar.batch-status-running .task-batch-status-dot,
 .task-batch-status-bar.batch-status-analysis_running .task-batch-status-dot,
 .task-batch-status-bar.batch-status-svg_running .task-batch-status-dot {
   background: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
 }
 
 .task-batch-status-bar.batch-status-completed .task-batch-status-dot {
   background: #6ee7b7;
-  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.08);
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.08);
 }
 
 .task-batch-status-bar.batch-status-failed .task-batch-status-dot {
   background: #fca5a5;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
 }
 
 .task-batch-status-bar.batch-status-queued .task-batch-status-dot,
 .task-batch-status-bar.batch-status-assets_review .task-batch-status-dot,
 .task-batch-status-bar.batch-status-waiting_review .task-batch-status-dot {
   background: #fcd34d;
-  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.08);
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.08);
 }
 
 .task-batch-file > div {
@@ -1095,7 +1095,7 @@ select:focus {
   display: block;
   overflow: hidden;
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 620;
   line-height: 1.15;
   text-overflow: ellipsis;
@@ -1113,7 +1113,7 @@ select:focus {
 
 .task-batch-overview em {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 560;
 }
@@ -1122,6 +1122,8 @@ select:focus {
   border: 1px solid rgba(203, 213, 225, 0.72);
   background: #ffffff;
   color: #64748b;
+  padding: 4px 9px;
+  font-size: 12px;
   font-weight: 620;
 }
 
@@ -1136,19 +1138,19 @@ select:focus {
 .task-batch-action {
   box-sizing: border-box;
   position: relative;
-  flex: 0 0 30px;
-  width: 30px;
-  min-width: 30px;
-  max-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  max-height: 30px;
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
   aspect-ratio: 1 / 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: #737a80;
   padding: 0;
@@ -1179,12 +1181,6 @@ select:focus {
   border-color: transparent;
   background: transparent;
   color: #737a80;
-}
-
-.task-batch-action.primary:hover:not(:disabled) {
-  border-color: transparent;
-  background: #f3f4f6;
-  color: #272b30;
 }
 
 .task-batch-action.dark {
@@ -1261,8 +1257,8 @@ select:focus {
 .task-batch-action .download-icon,
 .task-batch-action .select-cards-icon,
 .task-batch-action .panel-close-icon {
-  width: 20px;
-  height: 20px;
+  width: 21px;
+  height: 21px;
 }
 
 .task-batch-action .play-icon {
@@ -1270,8 +1266,8 @@ select:focus {
 }
 
 .task-batch-action .button-spinner {
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
 }
 
 .batch-download-floating {
@@ -1523,7 +1519,9 @@ select:focus {
 
 .batch-row-main span,
 .task-main span,
-.task-meta em {
+.task-meta em,
+.task-current-stage span,
+.task-current-stage em {
   color: var(--muted);
   font-size: 12px;
   font-style: normal;
@@ -1746,7 +1744,7 @@ select:focus {
 .task-bottom {
   min-width: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
@@ -1764,8 +1762,34 @@ select:focus {
   gap: 4px;
 }
 
+.task-title-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-title-row strong {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.task-title-row .status-pill {
+  justify-self: end;
+  max-width: 96px;
+  overflow: hidden;
+  box-shadow: none;
+  text-overflow: ellipsis;
+}
+
 .task-main span,
-.task-meta em {
+.task-meta em,
+.task-current-stage em {
   max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
@@ -1786,6 +1810,26 @@ select:focus {
   align-items: center;
   justify-content: flex-start;
   gap: 5px;
+}
+
+.task-current-stage {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.task-current-stage span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 580;
+  white-space: nowrap;
+}
+
+.task-current-stage em {
+  color: var(--muted);
+  font-style: normal;
 }
 
 .task-thumb {
@@ -2455,8 +2499,8 @@ select:focus {
   }
 
   .task-batch-status-bar {
-    min-height: 36px;
-    padding: 3px 8px 3px 12px;
+    min-height: 42px;
+    padding: 5px 9px 5px 13px;
   }
 
   .task-batch-actions {
@@ -2464,12 +2508,12 @@ select:focus {
   }
 
   .task-batch-action {
-    width: 30px;
-    min-width: 30px;
-    max-width: 30px;
-    height: 30px;
-    min-height: 30px;
-    max-height: 30px;
+    width: 32px;
+    min-width: 32px;
+    max-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    max-height: 32px;
     padding: 0;
   }
 
