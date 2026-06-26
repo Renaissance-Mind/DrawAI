@@ -127,6 +127,11 @@ type NodeArtifactViewMode = "artifact" | "agent_log";
 type WorkbenchSettingsCategory = "overview" | "api" | "agent" | "llm" | "processor";
 type WorkbenchSettingsDetailCategory = Exclude<WorkbenchSettingsCategory, "overview">;
 type ApiPresetDialogMode = "choose_provider" | "edit";
+type CloseSettingsDetailOptions = { discardApiDraft?: boolean };
+type SaveSettingsOptions = {
+  agentSettingsOverride?: WorkbenchAgentSettings;
+  closeDetailOnSuccess?: boolean;
+};
 type PipelineNodeState = DagRunNodeState;
 type AssetPlanChangeOptions = { track?: boolean };
 type V2FilterDropdownId = "elementTypes" | "processingTypes" | "statuses";
@@ -1984,8 +1989,8 @@ function WorkbenchSettingsCenter({
     setApiTemplateSearch("");
   };
 
-  const closeSettingsDetail = () => {
-    if (settingsDetailTarget === "api") {
+  const closeSettingsDetail = (options: CloseSettingsDetailOptions = {}) => {
+    if ((options.discardApiDraft ?? true) && settingsDetailTarget === "api") {
       discardNewApiPresetDraft();
     }
     setApiPresetDialogMode("edit");
@@ -2099,11 +2104,11 @@ function WorkbenchSettingsCenter({
     setSettingsCategory("overview");
   };
 
-  const saveSettings = async (agentSettingsOverride?: WorkbenchAgentSettings) => {
+  const saveSettings = async (options: SaveSettingsOptions = {}) => {
     setSaving(true);
     setLocalError("");
     try {
-      const sourceDraft = agentSettingsOverride || draft;
+      const sourceDraft = options.agentSettingsOverride || draft;
       const agentPayload = normalizeWorkbenchAgentDraft({
         ...sourceDraft,
         llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
@@ -2134,6 +2139,9 @@ function WorkbenchSettingsCenter({
       setProcessorDrafts({ ...(nextProcessorResponse.settings?.processors || {}) });
       setLlmExtraBodyText(formatWorkbenchAgentJsonObject(normalizedSettings.llm_extra_body));
       setNewApiPresetDraftIndex(null);
+      if (options.closeDetailOnSuccess) {
+        closeSettingsDetail({ discardApiDraft: false });
+      }
       try {
         const nextOverviewResponse = await getWorkbenchStatusOverview();
         setOverviewResponse(nextOverviewResponse);
@@ -2468,7 +2476,7 @@ function WorkbenchSettingsCenter({
                                   const nextDraft = selectAgentProvider(agent.provider_id);
                                   setAgentPickerOpen(false);
                                   if (!agent.selected) {
-                                    void saveSettings(nextDraft);
+                                    void saveSettings({ agentSettingsOverride: nextDraft });
                                   }
                                 }}
                                 disabled={saving}
@@ -2495,7 +2503,7 @@ function WorkbenchSettingsCenter({
                   </div>
                 )}
                 {settingsDetailTarget && (
-                  <div className="settings-detail-backdrop" role="presentation" onMouseDown={closeSettingsDetail}>
+                  <div className="settings-detail-backdrop" role="presentation" onMouseDown={() => closeSettingsDetail()}>
                     <section
                       className="settings-detail-modal"
                       role="dialog"
@@ -2520,7 +2528,7 @@ function WorkbenchSettingsCenter({
                             <strong>{settingsDetailTitle}</strong>
                           </div>
                         </div>
-                        <button type="button" className="settings-detail-close" aria-label="关闭设置" onClick={closeSettingsDetail}>
+                        <button type="button" className="settings-detail-close" aria-label="关闭设置" onClick={() => closeSettingsDetail()}>
                           ×
                         </button>
                       </header>
@@ -2906,11 +2914,16 @@ function WorkbenchSettingsCenter({
               )}
                       </div>
                       <footer className="settings-detail-modal-actions">
-                        <button type="button" onClick={closeSettingsDetail} disabled={saving}>
+                        <button type="button" onClick={() => closeSettingsDetail()} disabled={saving}>
                           取消
                         </button>
                         {!(settingsCategory === "api" && apiPresetDialogMode === "choose_provider") && (
-                          <button type="button" className="primary" onClick={() => void saveSettings()} disabled={loading || saving}>
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={() => void saveSettings({ closeDetailOnSuccess: settingsCategory === "api" })}
+                            disabled={loading || saving}
+                          >
                             {saving ? "保存中" : "保存"}
                           </button>
                         )}

@@ -29,7 +29,7 @@ test("settings UI selects the current Agent from overview instead of the Agent p
   const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 
   assert.match(source, /aria-label="选择当前 Agent"/);
-  assert.match(source, /saveSettings\(nextDraft\)/);
+  assert.match(source, /saveSettings\(\{ agentSettingsOverride: nextDraft \}\)/);
   assert.match(source, /settings-agent-picker/);
   assert.doesNotMatch(source, /aria-label="保存当前 Agent"/);
   assert.doesNotMatch(source, /<span>全局 Agent<\/span>/);
