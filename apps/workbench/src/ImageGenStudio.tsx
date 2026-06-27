@@ -8,7 +8,7 @@ import {
   type ImageGenSelectionMode,
   type ImageGenTile
 } from "./imageGenState";
-import type { ImageGenConnectionSettings } from "./imageGenSettings";
+import type { ImageGenConnectionSettings, ImageGenMethodCard } from "./imageGenSettings";
 import type {
   BatchDetail,
   BatchExecutionMode,
@@ -262,11 +262,15 @@ interface GeneratedImage extends ImageGenerationTaskImage {
 
 export default function ImageGenStudio({
   connection,
+  methodCards,
+  onSelectMethod,
   onOpenSettings,
   onCreated,
   onError
 }: {
   connection: ImageGenConnectionSettings;
+  methodCards: ImageGenMethodCard[];
+  onSelectMethod?: (method: ImageGenMethodCard) => void;
   onOpenSettings?: () => void;
   onCreated: (detail: BatchDetail) => void | Promise<void>;
   onError: (message: string) => void;
@@ -495,6 +499,7 @@ export default function ImageGenStudio({
   const completedVisibleCount = visibleTiles.filter((tile) => tile.status === "completed").length;
   const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) || null : null;
   const canSubmitVisibleImages = actionState.canSubmit && !hasAnyRunningTask;
+  const generationMethodCards = methodCards.length > 0 ? methodCards : [imageGenConnectionFallbackCard(connection)];
 
   useEffect(() => {
     const completedIds = new Set(imageGenVisibleTiles(tasks).filter((tile) => tile.status === "completed").map((tile) => tile.id));
@@ -625,29 +630,51 @@ export default function ImageGenStudio({
         {composerOpen ? (
           <div className="gen-settings-panel">
             <div className="gen-form gen-settings-form">
-              <div className="gen-prompt-block gen-prompt-wide">
-                <span className="gen-field-label">提示词</span>
-                <textarea
-                  className="gen-prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="描述你想要生成的画面，例如：赛博朋克风格的城市夜景，霓虹灯倒映在湿润的街道上…"
-                  rows={7}
-                />
-              </div>
+              <div className="gen-settings-column">
+                <Field label="生成方式" hint={`${generationMethodCards.length} 个方式`}>
+                  <div className="gen-method-card-grid" role="radiogroup" aria-label="生成方式">
+                    {generationMethodCards.map((method) => (
+                      <GenerationMethodCard
+                        key={method.id}
+                        method={method}
+                        onSelect={() => onSelectMethod?.(method)}
+                      />
+                    ))}
+                    {onOpenSettings && (
+                      <button type="button" className="gen-method-card gen-method-manage-card" onClick={onOpenSettings}>
+                        <span className="gen-method-glyph manage" aria-hidden="true">
+                          <SettingsSlidersIcon />
+                        </span>
+                        <span className="gen-method-card-copy">
+                          <strong>管理方式</strong>
+                          <em>添加或编辑连接</em>
+                        </span>
+                        <span className="gen-method-status">设置</span>
+                      </button>
+                    )}
+                  </div>
+                </Field>
 
-              <Field label="生成方式" hint={provider === "codex" ? "Codex SDK" : "Images API"}>
-                <button type="button" className="gen-method-summary" onClick={onOpenSettings}>
-                  <span className="gen-method-summary-copy">
-                    <strong>{connection.label || (provider === "codex" ? "Codex 内置" : "Images API")}</strong>
-                    <em>{provider === "codex" ? "使用设置中心选择的 Codex 内置方式" : connection.baseUrl || "自定义 Images API"}</em>
-                  </span>
-                  <span className="gen-method-summary-action">设置</span>
-                </button>
-              </Field>
+                <Field label="尺寸 / 比例" hint={effectiveSize}>
+                  <div className="gen-ratio-grid">
+                    {SIZE_PRESETS.map((preset) => {
+                      const active = size === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          className={`gen-ratio${active ? " active" : ""}`}
+                          onClick={() => setSize(preset)}
+                        >
+                          <RatioGlyph ratio={preset} />
+                          <span className="gen-ratio-label">{sizePresetLabel(preset)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
 
-              {provider === "codex" && (
-                <>
+                {provider === "codex" && (
                   <Field label="模板选择" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "可选"}>
                     <div className="gen-template-picker-summary">
                       <div className="gen-template-picker-current">
@@ -696,76 +723,79 @@ export default function ImageGenStudio({
                       </div>
                     )}
                   </Field>
-
-                  <Field label="输出语言" hint="默认自动">
-                    <select className="gen-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                      {LANGUAGE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label} - {option.sub}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="参考图路径" hint="Image as context">
-                    <input
-                      className="gen-input"
-                      value={referenceImagePathInput}
-                      onChange={(e) => setReferenceImagePathInput(e.target.value)}
-                      placeholder="C:\\Users\\...\\reference.png；填写后 Codex 会把图片作为视觉上下文"
-                    />
-                  </Field>
-                </>
-              )}
-
-              <Field label="尺寸 / 比例" hint={effectiveSize}>
-                <div className="gen-ratio-grid">
-                  {SIZE_PRESETS.map((preset) => {
-                    const active = size === preset;
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        className={`gen-ratio${active ? " active" : ""}`}
-                        onClick={() => setSize(preset)}
-                      >
-                        <RatioGlyph ratio={preset} />
-                        <span className="gen-ratio-label">{sizePresetLabel(preset)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-
-              <div className="gen-settings-inline">
-                <Field label="像素等级" hint="输出尺寸">
-                  <Segmented
-                    options={RESOLUTIONS.map((r) => ({ value: r.value, label: r.label, sub: r.hint }))}
-                    value={resolution}
-                    onChange={(v) => setResolution(v as Resolution)}
-                  />
-                </Field>
-                <Field label="生成数量" hint="1-10">
-                  <Stepper value={count} min={1} max={10} onChange={setCount} />
-                </Field>
+                )}
               </div>
 
-              <div className="gen-settings-inline">
+              <div className="gen-settings-column">
+                <div className="gen-settings-inline">
+                  <Field label="像素等级" hint="输出尺寸">
+                    <ChoiceCards
+                      options={RESOLUTIONS.map((r) => ({
+                        value: r.value,
+                        label: r.label,
+                        sub: r.hint,
+                        icon: <ResolutionGlyph resolution={r.value} />
+                      }))}
+                      value={resolution}
+                      onChange={(v) => setResolution(v as Resolution)}
+                    />
+                  </Field>
+                  <Field label="生成数量" hint="1-10">
+                    <Stepper value={count} min={1} max={10} onChange={setCount} />
+                  </Field>
+                </div>
+
                 <Field label="质量" hint="生成质量">
-                  <Segmented
-                    options={QUALITIES.map((q) => ({ value: q.value, label: q.label }))}
+                  <ChoiceCards
+                    options={QUALITIES.map((q) => ({
+                      value: q.value,
+                      label: q.label,
+                      icon: <QualityGlyph quality={q.value} />
+                    }))}
                     value={quality}
                     onChange={(v) => setQuality(v as Quality)}
                   />
                 </Field>
 
                 <Field label="背景" hint="背景模式">
-                  <Segmented
-                    options={BACKGROUNDS.map((b) => ({ value: b.value, label: b.label }))}
-                    value={background}
-                    onChange={(v) => setBackground(v as Background)}
-                  />
+                  <BackgroundChoiceCards value={background} onChange={(v) => setBackground(v as Background)} />
                 </Field>
+
+                {provider === "codex" && (
+                  <>
+                    <Field label="输出语言" hint="默认自动">
+                      <ChoiceCards
+                        options={LANGUAGE_OPTIONS.map((option) => ({
+                          value: option.value,
+                          label: option.label,
+                          sub: option.sub
+                        }))}
+                        value={language}
+                        onChange={setLanguage}
+                      />
+                    </Field>
+
+                    <Field label="参考图路径" hint="Image as context">
+                      <input
+                        className="gen-input"
+                        value={referenceImagePathInput}
+                        onChange={(e) => setReferenceImagePathInput(e.target.value)}
+                        placeholder="C:\\Users\\...\\reference.png；填写后 Codex 会把图片作为视觉上下文"
+                      />
+                    </Field>
+                  </>
+                )}
+              </div>
+
+              <div className="gen-prompt-block gen-prompt-wide gen-prompt-bottom">
+                <span className="gen-field-label">提示词</span>
+                <textarea
+                  className="gen-prompt"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="描述你想要生成的画面，例如：赛博朋克风格的城市夜景，霓虹灯倒映在湿润的街道上…"
+                  rows={6}
+                />
               </div>
             </div>
 
@@ -905,13 +935,94 @@ export default function ImageGenStudio({
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="gen-field">
+    <div className="gen-field">
       <span className="gen-field-head">
         <span className="gen-field-label">{label}</span>
         {hint && <span className="gen-field-hint">{hint}</span>}
       </span>
       {children}
-    </label>
+    </div>
+  );
+}
+
+function GenerationMethodCard({ method, onSelect }: { method: ImageGenMethodCard; onSelect: () => void }) {
+  const disabled = !method.available && !method.selected;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={method.selected}
+      className={`gen-method-card${method.selected ? " active" : ""}${method.available ? "" : " missing"}`}
+      disabled={disabled}
+      onClick={onSelect}
+    >
+      <span className={`gen-method-glyph ${method.kind}`} aria-hidden="true">
+        <GenerationMethodGlyph kind={method.kind} />
+      </span>
+      <span className="gen-method-card-copy">
+        <strong>{method.label}</strong>
+        <em>{methodTypeLabel(method)}</em>
+      </span>
+      <span className={`gen-method-status ${method.available ? "ok" : "missing"}`}>
+        {method.selected ? "当前" : method.available ? "可用" : "缺失"}
+      </span>
+      <span className="gen-method-card-detail">{method.model || method.detail || "默认模型"}</span>
+      <span className="gen-method-card-detail muted">{method.detail || method.baseUrl || "内置连接"}</span>
+    </button>
+  );
+}
+
+function ChoiceCards({
+  options,
+  value,
+  onChange
+}: {
+  options: Array<{ value: string; label: string; sub?: string; icon?: React.ReactNode }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="gen-choice-card-grid" role="radiogroup">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          className={`gen-choice-card${value === option.value ? " active" : ""}`}
+          onClick={() => onChange(option.value)}
+        >
+          {option.icon && <span className="gen-choice-card-icon" aria-hidden="true">{option.icon}</span>}
+          <span className="gen-choice-card-copy">
+            <strong>{option.label}</strong>
+            {option.sub && <em>{option.sub}</em>}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BackgroundChoiceCards({ value, onChange }: { value: Background; onChange: (value: Background) => void }) {
+  return (
+    <div className="gen-choice-card-grid gen-background-card-grid" role="radiogroup" aria-label="背景">
+      {BACKGROUNDS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          className={`gen-choice-card gen-background-choice${value === option.value ? " active" : ""}`}
+          onClick={() => onChange(option.value)}
+        >
+          <BackgroundGlyph background={option.value} />
+          <span className="gen-choice-card-copy">
+            <strong>{option.label}</strong>
+            <em>{backgroundOptionHint(option.value)}</em>
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1422,29 +1533,97 @@ function provenanceLabel(card: SlideTemplateCard): string {
   return sources[0] || "DrawAI";
 }
 
-function Segmented({
-  options,
-  value,
-  onChange
-}: {
-  options: Array<{ value: string; label: string; sub?: string }>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
+function imageGenConnectionFallbackCard(connection: ImageGenConnectionSettings): ImageGenMethodCard {
+  const provider = connection.provider || "api";
+  const codex = provider === "codex";
+  return {
+    id: connection.methodId || (codex ? "codex_builtin" : "custom"),
+    kind: codex ? "codex_builtin" : "custom",
+    provider,
+    label: connection.label || (codex ? "Codex 内置" : "自定义 Images API"),
+    detail: codex ? "Codex SDK 图像生成" : connection.baseUrl || "自定义 Images API",
+    model: connection.model || DEFAULT_MODEL,
+    selected: true,
+    available: true,
+    apiPresetId: connection.apiPresetId || "",
+    baseUrl: connection.baseUrl || ""
+  };
+}
+
+function methodTypeLabel(method: ImageGenMethodCard): string {
+  if (method.kind === "codex_builtin") return "Codex SDK";
+  if (method.kind === "api_preset") return "Images API 预设";
+  return "自定义 API";
+}
+
+function backgroundOptionHint(background: Background): string {
+  if (background === "transparent") return "前景透明";
+  if (background === "opaque") return "白底输出";
+  return "按提示词判断";
+}
+
+function GenerationMethodGlyph({ kind }: { kind: ImageGenMethodCard["kind"] }) {
+  if (kind === "codex_builtin") {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 3.5 18.7 7.4v7.2L12 20.5l-6.7-5.9V7.4L12 3.5Z" strokeLinejoin="round" />
+        <path d="m8.2 9.2 3.8-2.1 3.8 2.1M8.2 14.8l3.8 2.1 3.8-2.1M12 7.1v9.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === "api_preset") {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="4" y="5" width="16" height="14" rx="3" />
+        <path d="M8 9h8M8 13h5" strokeLinecap="round" />
+      </svg>
+    );
+  }
   return (
-    <div className="gen-segmented" role="group">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          className={value === opt.value ? "active" : ""}
-          onClick={() => onChange(opt.value)}
-        >
-          <span>{opt.label}</span>
-          {opt.sub && <em>{opt.sub}</em>}
-        </button>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M5 12h14M12 5v14" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="8" />
+    </svg>
+  );
+}
+
+function SettingsSlidersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 7h10M18 7h2M4 17h2M10 17h10" strokeLinecap="round" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="8" cy="17" r="2" />
+    </svg>
+  );
+}
+
+function ResolutionGlyph({ resolution }: { resolution: Resolution }) {
+  return (
+    <span className={`gen-resolution-glyph r-${resolution}`}>
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+function QualityGlyph({ quality }: { quality: Quality }) {
+  const level = quality === "low" ? 1 : quality === "medium" ? 2 : quality === "high" ? 3 : 0;
+  return (
+    <span className={`gen-quality-glyph ${quality}`} aria-hidden="true">
+      {[1, 2, 3].map((item) => (
+        <span key={item} className={level === 0 || item <= level ? "lit" : ""} />
       ))}
-    </div>
+    </span>
+  );
+}
+
+function BackgroundGlyph({ background }: { background: Background }) {
+  return (
+    <span className={`gen-background-icon ${background}`} aria-hidden="true">
+      {background === "transparent" && <span className="gen-background-object" />}
+      {background === "auto" && <span className="gen-background-auto" />}
+    </span>
   );
 }
 
@@ -1539,10 +1718,6 @@ function ratioDims(ratio: string, max = 26): { w: number; h: number } {
 
 function sizePresetLabel(preset: string): string {
   return preset === "auto" ? "自动" : preset;
-}
-
-function optionLabel<T extends string>(options: Array<{ value: T; label: string }>, value: T): string {
-  return options.find((option) => option.value === value)?.label || value;
 }
 
 function openAiSizeFromPreset(ratio: string, resolution: Resolution): string {

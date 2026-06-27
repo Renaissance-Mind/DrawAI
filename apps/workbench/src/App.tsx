@@ -362,6 +362,8 @@ export default function App() {
   const [workbenchSettingsInitialCategory, setWorkbenchSettingsInitialCategory] = useState<WorkbenchSettingsCategory>("overview");
   const [submitSettingsRefreshToken, setSubmitSettingsRefreshToken] = useState(0);
   const [imageGenConnection, setImageGenConnection] = useState<ImageGenConnectionSettings>(() => loadImageGenConnectionSettings());
+  const [imageGenApiPresetCache, setImageGenApiPresetCache] = useState<ApiPreset[]>([]);
+  const [imageGenAgentCache, setImageGenAgentCache] = useState<WorkbenchAgentDiscovery[]>([]);
   const [error, setError] = useState("");
   const [assetsRunPendingCaseId, setAssetsRunPendingCaseId] = useState("");
   const [caseCancelPendingIds, setCaseCancelPendingIds] = useState<string[]>([]);
@@ -388,6 +390,30 @@ export default function App() {
       setHealthError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  useEffect(() => {
+    let canceled = false;
+    Promise.all([getApiPresets(), getWorkbenchAgentSettings(true)])
+      .then(([apiResponse, agentResponse]) => {
+        if (canceled) return;
+        setImageGenApiPresetCache(apiPresetsWithImageGenMigration(apiResponse.presets || [], imageGenConnection));
+        setImageGenAgentCache(agentResponse.agents || []);
+      })
+      .catch((err) => {
+        if (canceled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [imageGenConnection]);
+
+  const selectImageGenMethodCard = useCallback((method: ImageGenMethodCard) => {
+    if (!method.available && !method.selected) return;
+    const nextConnection = imageGenConnectionFromMethodCard(method, imageGenApiPresetCache, imageGenConnection);
+    setImageGenConnection(nextConnection);
+    saveImageGenConnectionSettings(nextConnection);
+  }, [imageGenApiPresetCache, imageGenConnection]);
 
   async function selectBatch(batchId: string): Promise<BatchDetail> {
     const detail = await getBatch(batchId);
@@ -1273,6 +1299,8 @@ export default function App() {
           <main className="board-workspace board-generate-workspace" hidden={boardMode !== "generate"}>
             <ImageGenStudio
               connection={imageGenConnection}
+              methodCards={imageGenMethodCards(imageGenConnection, imageGenApiPresetCache, imageGenAgentCache)}
+              onSelectMethod={selectImageGenMethodCard}
               onOpenSettings={() => {
                 setWorkbenchSettingsInitialCategory("imagegen");
                 setWorkbenchSettingsOpen(true);
