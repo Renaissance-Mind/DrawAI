@@ -8,6 +8,8 @@ import {
   type ImageGenSelectionMode,
   type ImageGenTile
 } from "./imageGenState";
+import { agentProviderIconForId } from "./agentProviderPresentation";
+import { API_PRESET_TEMPLATES } from "./apiPresetTemplates";
 import type { ImageGenConnectionSettings, ImageGenMethodCard } from "./imageGenSettings";
 import type {
   BatchDetail,
@@ -47,6 +49,10 @@ type GalleryLightbox = {
   title: string;
 };
 type TemplateLibraryMode = "all" | string;
+type ImageGenMethodIcon = {
+  accent_color: string;
+  icon_url: string;
+};
 
 const SIZE_PRESETS = [
   "auto",
@@ -310,7 +316,6 @@ export default function ImageGenStudio({
 
   useEffect(() => {
     let cancelled = false;
-    if (provider !== "codex") return;
     listSlideTemplateCards()
       .then((payload) => {
         if (cancelled) return;
@@ -325,11 +330,10 @@ export default function ImageGenStudio({
     return () => {
       cancelled = true;
     };
-  }, [provider]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    if (provider !== "codex") return;
     listSlideTemplateGallery()
       .then((payload) => {
         if (cancelled) return;
@@ -344,7 +348,7 @@ export default function ImageGenStudio({
     return () => {
       cancelled = true;
     };
-  }, [provider]);
+  }, []);
 
   const templateGalleryGroups = useMemo(() => groupTemplateGallery(templateGallery), [templateGallery]);
   const selectedTemplateOption = useMemo(() => findTemplateOption(templateId), [templateId]);
@@ -398,12 +402,12 @@ export default function ImageGenStudio({
   }, []);
 
   useEffect(() => {
-    if (provider !== "codex" || templateId === "auto") return;
+    if (templateId === "auto") return;
     const linked = findLinkedTemplateCardId(templateId, templateCards);
     if (linked && templateCardId !== linked) {
       setTemplateCardId(linked);
     }
-  }, [provider, templateCardId, templateCards, templateId]);
+  }, [templateCardId, templateCards, templateId]);
 
   useEffect(() => {
     if (!galleryLightbox) return;
@@ -440,17 +444,17 @@ export default function ImageGenStudio({
     const apiKey = connection.apiKey.trim();
     if (apiBaseUrl) body.api_base_url = apiBaseUrl;
     if (apiKey) body.api_key = apiKey;
+    if (templateId !== "auto") {
+      body.template_id = templateId;
+    }
+    if (templateCardId) {
+      body.template_card_id = templateCardId;
+    }
     if (provider === "codex") {
       body.rendering_mode = "baked_text";
       if (language !== "auto") {
         body.language = language;
         body.output_language = language;
-      }
-      if (templateId !== "auto") {
-        body.template_id = templateId;
-      }
-      if (templateCardId) {
-        body.template_card_id = templateCardId;
       }
       const referenceImagePath = referenceImagePathInput.trim();
       if (referenceImagePath) {
@@ -630,31 +634,32 @@ export default function ImageGenStudio({
         {composerOpen ? (
           <div className="gen-settings-panel">
             <div className="gen-form gen-settings-form">
-              <div className="gen-settings-column">
-                <Field label="生成方式" hint={`${generationMethodCards.length} 个方式`}>
-                  <div className="gen-method-card-grid" role="radiogroup" aria-label="生成方式">
-                    {generationMethodCards.map((method) => (
-                      <GenerationMethodCard
-                        key={method.id}
-                        method={method}
-                        onSelect={() => onSelectMethod?.(method)}
-                      />
-                    ))}
-                    {onOpenSettings && (
-                      <button type="button" className="gen-method-card gen-method-manage-card" onClick={onOpenSettings}>
-                        <span className="gen-method-glyph manage" aria-hidden="true">
-                          <SettingsSlidersIcon />
-                        </span>
-                        <span className="gen-method-card-copy">
-                          <strong>管理方式</strong>
-                          <em>添加或编辑连接</em>
-                        </span>
-                        <span className="gen-method-status">设置</span>
-                      </button>
-                    )}
-                  </div>
-                </Field>
+              <Field className="gen-method-field" label="生成方式" hint={`${generationMethodCards.length} 个方式`}>
+                <div className="gen-method-card-grid" role="radiogroup" aria-label="生成方式">
+                  {generationMethodCards.map((method) => (
+                    <GenerationMethodCard
+                      key={method.id}
+                      method={method}
+                      methodIcon={imageGenMethodIcon(method)}
+                      onSelect={() => onSelectMethod?.(method)}
+                    />
+                  ))}
+                  {onOpenSettings && (
+                    <button type="button" className="gen-method-card gen-method-manage-card" onClick={onOpenSettings}>
+                      <span className="gen-method-glyph manage settings-provider-logo-custom" aria-hidden="true">
+                        <SettingsSlidersIcon />
+                      </span>
+                      <span className="gen-method-card-copy">
+                        <strong>管理方式</strong>
+                        <em>添加或编辑连接</em>
+                      </span>
+                      <span className="gen-method-status">设置</span>
+                    </button>
+                  )}
+                </div>
+              </Field>
 
+              <div className="gen-settings-column">
                 <Field label="尺寸 / 比例" hint={effectiveSize}>
                   <div className="gen-ratio-grid">
                     {SIZE_PRESETS.map((preset) => {
@@ -674,56 +679,54 @@ export default function ImageGenStudio({
                   </div>
                 </Field>
 
-                {provider === "codex" && (
-                  <Field label="模板选择" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "可选"}>
-                    <div className="gen-template-picker-summary">
-                      <div className="gen-template-picker-current">
-                        <span className="gen-template-picker-kicker">
-                          {templateId === "auto" ? "OPTIONAL" : selectedGalleryItem?.category || selectedTemplateOption?.group || "TEMPLATE"}
-                        </span>
-                        <strong>
-                          {templateId === "auto"
-                            ? "不选择模板"
-                            : selectedGalleryItem?.template_name || selectedTemplateOption?.label || templateId}
-                        </strong>
-                        <p>
-                          {templateId === "auto"
-                            ? "不套用模板；只按主提示词生成。"
-                            : selectedGalleryItem?.reason || selectedTemplateOption?.sub || "使用选中的模板作为普通视觉参考。"}
-                        </p>
-                      </div>
-                      <div className="gen-template-picker-actions">
-                        <button type="button" className="gen-template-library-open" onClick={openTemplateLibrary}>
-                          打开模板库
+                <Field label="模板选择" hint={linkedTemplateCardId ? `联动 ${linkedTemplateCardId}` : "可选"}>
+                  <div className="gen-template-picker-summary">
+                    <div className="gen-template-picker-current">
+                      <span className="gen-template-picker-kicker">
+                        {templateId === "auto" ? "OPTIONAL" : selectedGalleryItem?.category || selectedTemplateOption?.group || "TEMPLATE"}
+                      </span>
+                      <strong>
+                        {templateId === "auto"
+                          ? "不选择模板"
+                          : selectedGalleryItem?.template_name || selectedTemplateOption?.label || templateId}
+                      </strong>
+                      <p>
+                        {templateId === "auto"
+                          ? "不套用模板；只按主提示词生成。"
+                          : selectedGalleryItem?.reason || selectedTemplateOption?.sub || "使用选中的模板作为普通视觉参考。"}
+                      </p>
+                    </div>
+                    <div className="gen-template-picker-actions">
+                      <button type="button" className="gen-template-library-open" onClick={openTemplateLibrary}>
+                        打开模板库
+                      </button>
+                      {templateId !== "auto" && (
+                        <button type="button" className="gen-template-auto" onClick={selectAutoTemplate}>
+                          自动
                         </button>
-                        {templateId !== "auto" && (
-                          <button type="button" className="gen-template-auto" onClick={selectAutoTemplate}>
-                            自动
-                          </button>
-                        )}
+                      )}
+                    </div>
+                  </div>
+                  {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
+                  {activeTemplateCard && (
+                    <div className="gen-template-card-preview">
+                      <div className="gen-template-card-title">
+                        <span>{activeTemplateCard.name}</span>
+                        <em>{activeTemplateCard.category}</em>
+                      </div>
+                      <p>{activeTemplateCard.prompt_recipe}</p>
+                      <div className="gen-template-card-tags">
+                        {activeTemplateCard.visual_tags.slice(0, 5).map((tag) => (
+                          <span key={tag}>{tag}</span>
+                        ))}
+                      </div>
+                      <div className="gen-template-card-meta">
+                        <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
+                        <span>{provenanceLabel(activeTemplateCard)}</span>
                       </div>
                     </div>
-                    {templateCardsError && <p className="gen-inline-error">{templateCardsError}</p>}
-                    {activeTemplateCard && (
-                      <div className="gen-template-card-preview">
-                        <div className="gen-template-card-title">
-                          <span>{activeTemplateCard.name}</span>
-                          <em>{activeTemplateCard.category}</em>
-                        </div>
-                        <p>{activeTemplateCard.prompt_recipe}</p>
-                        <div className="gen-template-card-tags">
-                          {activeTemplateCard.visual_tags.slice(0, 5).map((tag) => (
-                            <span key={tag}>{tag}</span>
-                          ))}
-                        </div>
-                        <div className="gen-template-card-meta">
-                          <span>{activeTemplateCard.layout_archetypes.slice(0, 2).join(" / ")}</span>
-                          <span>{provenanceLabel(activeTemplateCard)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </Field>
-                )}
+                  )}
+                </Field>
               </div>
 
               <div className="gen-settings-column">
@@ -933,9 +936,19 @@ export default function ImageGenStudio({
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  className,
+  label,
+  hint,
+  children
+}: {
+  className?: string;
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="gen-field">
+    <div className={`gen-field${className ? ` ${className}` : ""}`}>
       <span className="gen-field-head">
         <span className="gen-field-label">{label}</span>
         {hint && <span className="gen-field-hint">{hint}</span>}
@@ -945,8 +958,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function GenerationMethodCard({ method, onSelect }: { method: ImageGenMethodCard; onSelect: () => void }) {
+function GenerationMethodCard({
+  method,
+  methodIcon,
+  onSelect
+}: {
+  method: ImageGenMethodCard;
+  methodIcon: ImageGenMethodIcon | null;
+  onSelect: () => void;
+}) {
   const disabled = !method.available && !method.selected;
+  const iconStyle = methodIcon
+    ? ({ "--provider-color": methodIcon.accent_color } as React.CSSProperties)
+    : undefined;
   return (
     <button
       type="button"
@@ -956,8 +980,12 @@ function GenerationMethodCard({ method, onSelect }: { method: ImageGenMethodCard
       disabled={disabled}
       onClick={onSelect}
     >
-      <span className={`gen-method-glyph ${method.kind}`} aria-hidden="true">
-        <GenerationMethodGlyph kind={method.kind} />
+      <span
+        className={`gen-method-glyph ${method.kind}${methodIcon ? " settings-provider-logo-mini" : ""}`}
+        style={iconStyle}
+        aria-hidden="true"
+      >
+        {methodIcon ? <img src={methodIcon.icon_url} alt="" /> : <GenerationMethodGlyph kind={method.kind} />}
       </span>
       <span className="gen-method-card-copy">
         <strong>{method.label}</strong>
@@ -1554,6 +1582,19 @@ function methodTypeLabel(method: ImageGenMethodCard): string {
   if (method.kind === "codex_builtin") return "Codex SDK";
   if (method.kind === "api_preset") return "Images API 预设";
   return "自定义 API";
+}
+
+function imageGenMethodIcon(method: ImageGenMethodCard): ImageGenMethodIcon | null {
+  if (method.kind === "codex_builtin") return agentProviderIconForId("codex_sdk");
+  const normalizedPresetId = method.apiPresetId.replace(/_\d+$/, "");
+  return (
+    API_PRESET_TEMPLATES.find(
+      (template) =>
+        template.id === method.apiPresetId ||
+        template.id === normalizedPresetId ||
+        (template.base_url === method.baseUrl && template.model === method.model)
+    ) || null
+  );
 }
 
 function backgroundOptionHint(background: Background): string {

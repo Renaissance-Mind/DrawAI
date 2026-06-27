@@ -1133,12 +1133,16 @@
 
 .gen-method-card-grid {
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  padding: 1px 2px 4px;
+  scroll-snap-type: x proximity;
 }
 
 .gen-method-card {
+  flex: 0 0 clamp(220px, 24vw, 280px);
   min-width: 0;
   min-height: 84px;
   display: grid;
@@ -1152,6 +1156,7 @@
   color: #263244;
   padding: 10px;
   text-align: left;
+  scroll-snap-align: start;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
@@ -1191,17 +1196,37 @@
   box-shadow: 0 6px 14px rgba(49, 104, 245, 0.08);
 }
 
-.gen-method-glyph.codex_builtin {
+.gen-method-glyph.settings-provider-logo-mini,
+.gen-method-glyph.settings-provider-logo-custom {
+  border-color: color-mix(in srgb, var(--provider-color, #3168f5) 20%, #dbe4ef);
+  background: #ffffff;
+  color: #172033;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 6px 14px color-mix(in srgb, var(--provider-color, #3168f5) 12%, transparent);
+}
+
+.gen-method-glyph.settings-provider-logo-custom {
+  --provider-color: #3168f5;
+  color: var(--blue);
+}
+
+.gen-method-glyph.settings-provider-logo-mini img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  object-fit: contain;
+}
+
+.gen-method-glyph.codex_builtin:not(.settings-provider-logo-mini) {
   color: #0f766e;
   box-shadow: 0 6px 14px rgba(15, 118, 110, 0.1);
 }
 
-.gen-method-glyph.api_preset {
+.gen-method-glyph.api_preset:not(.settings-provider-logo-mini) {
   color: var(--blue);
 }
 
-.gen-method-glyph.custom,
-.gen-method-glyph.manage {
+.gen-method-glyph.custom:not(.settings-provider-logo-mini),
+.gen-method-glyph.manage:not(.settings-provider-logo-custom) {
   color: #475467;
 }
 
@@ -1264,6 +1289,7 @@
 }
 
 .gen-method-manage-card {
+  flex-basis: 220px;
   min-height: 78px;
   border-style: dashed;
 }
@@ -2289,6 +2315,10 @@
   display: grid;
   align-content: start;
   gap: 14px;
+}
+
+.gen-method-field {
+  grid-column: 1 / -1;
 }
 
 .gen-prompt-wide {

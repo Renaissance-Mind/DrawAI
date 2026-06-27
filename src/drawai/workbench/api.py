@@ -65,7 +65,12 @@ from ..codex_python_sdk_imagegen import (
 from ..config import load_drawai_config
 from ..http_utils import urlopen_direct_for_loopback
 from ..rmbg_client import RemoteRmbgClient
-from ..slide_image_prompt import build_slide_image_generation_prompt, merge_codex_imagegen_context
+from ..slide_image_prompt import (
+    build_slide_image_api_generation_prompt,
+    build_slide_image_generation_prompt,
+    codex_imagegen_context_payload,
+    merge_codex_imagegen_context,
+)
 from ..slide_template_library import list_template_cards, recommend_template_cards
 from ..v2.packages import classify_run_root, element_dir
 from ..v2.workbench import (
@@ -404,7 +409,11 @@ def create_app(
             )
         api_url = _image_generation_api_url(payload.get("api_base_url") or payload.get("base_url"))
         api_key = str(payload.get("api_key") or "").strip() or None
-        return _call_image_generation_upstream(normalized, api_url=api_url, api_key=api_key)
+        return _call_image_generation_upstream(
+            _api_image_generation_payload(normalized, payload),
+            api_url=api_url,
+            api_key=api_key,
+        )
 
     @app.post("/api/imagegen/edits")
     async def edit_image(request: Request) -> dict[str, Any]:
@@ -1971,6 +1980,17 @@ def _normalize_image_generation_payload(payload: Mapping[str, Any]) -> dict[str,
         normalized.pop("image_path", None)
         normalized.pop("reference_image_paths", None)
     return normalized
+
+
+def _api_image_generation_payload(normalized_payload: Mapping[str, Any], raw_payload: Mapping[str, Any]) -> dict[str, Any]:
+    api_payload = dict(normalized_payload)
+    context_payload = codex_imagegen_context_payload(raw_payload)
+    if not context_payload:
+        return api_payload
+    api_payload["prompt"] = build_slide_image_api_generation_prompt(
+        merge_codex_imagegen_context(normalized_payload, raw_payload)
+    )
+    return api_payload
 
 
 def _normalize_image_edit_payload(payload: Mapping[str, Any]) -> dict[str, Any]:

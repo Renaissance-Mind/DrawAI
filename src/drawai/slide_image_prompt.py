@@ -232,6 +232,60 @@ def build_slide_image_generation_prompt(
     return "\n".join(line for line in lines if line is not None).strip()
 
 
+def build_slide_image_api_generation_prompt(
+    payload: Mapping[str, Any],
+    *,
+    variant_index: int = 1,
+    variant_count: int = 1,
+) -> str:
+    manifest = build_slide_image_generation_manifest(
+        payload,
+        variant_index=variant_index,
+        variant_count=variant_count,
+    )
+    lines = [
+        "DrawAI high-quality slide image request for an Images API provider.",
+        "",
+        "Primary request:",
+        manifest["primary_request"],
+        "",
+        "Generation settings:",
+        *[f"- {key}: {value}" for key, value in manifest["generation_settings"].items()],
+        "",
+        "Slide intent:",
+        *_render_mapping_lines(manifest["slide_intent"]),
+        "",
+        "Design direction:",
+        *_render_mapping_lines(manifest["design"]),
+        "",
+        "Optional template:",
+        *_optional_template_lines(manifest),
+        "",
+        "Content and text policy:",
+        f"- {manifest['text']['policy']}",
+        *_language_policy_lines(manifest["text"]),
+        "- Render a complete, readable slide image when the request implies a PPT or explanation page.",
+        "- Do not invent statistics, citations, dates, product UI, maps, rankings, logos, or named-entity details.",
+        "- Body copy may paraphrase only the primary request.",
+        "",
+        "Quality gates to satisfy visually:",
+        *_render_list_lines(manifest["quality_gates"]),
+        "",
+        "Visual richness guidance:",
+        *_render_list_lines(_visual_richness_guidance(payload)),
+        "",
+        "DrawAI post-processing constraints:",
+        *_render_list_lines(manifest["drawai_postprocess"]),
+        "",
+        "Variant instruction:",
+        _variant_instruction(variant_index, variant_count),
+        "",
+        "Negative constraints:",
+        _compact_json(manifest["inclusion"], limit=3000),
+    ]
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
 def build_slide_image_prompt_comparison(
     payload: Mapping[str, Any],
     *,

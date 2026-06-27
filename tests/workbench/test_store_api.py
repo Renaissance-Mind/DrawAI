@@ -3356,6 +3356,62 @@ def test_image_generation_endpoint_proxies_upstream_request(tmp_path: Path, monk
     assert "locked_visible_text" not in payload
 
 
+def test_image_generation_endpoint_applies_template_context_to_api_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DRAWAI_IMAGEGEN_API_KEY", "secret-test-key")
+    monkeypatch.setenv("DRAWAI_IMAGEGEN_API_URL", "https://image.example.test/v1/images/generations")
+    base_config = _base_config(tmp_path)
+    store = WorkbenchStore(tmp_path / "workspace")
+    settings = _settings(tmp_path, base_config)
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self, _: int = -1) -> bytes:
+            return json.dumps({"data": [{"url": "https://cdn.example.test/image.png"}]}).encode("utf-8")
+
+    def fake_urlopen(request, *, timeout: float):
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setattr(workbench_api, "urlopen_external", fake_urlopen)
+    app = create_app(settings, store=store, runner=WorkbenchRunner(store, settings))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/imagegen/generations",
+        json={
+            "provider": "api",
+            "model": "gpt-image-2",
+            "prompt": "draw a clean green logo",
+            "size": "1024x1024",
+            "quality": "high",
+            "background": "transparent",
+            "moderation": "auto",
+            "output_format": "png",
+            "n": 1,
+            "template_id": "consulting_report",
+            "template_card_id": "swiss_international",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "gpt-image-2"
+    assert payload["size"] == "1024x1024"
+    assert "template_id" not in payload
+    assert "template_card_id" not in payload
+    assert "draw a clean green logo" in payload["prompt"]
+    assert "Optional template:" in payload["prompt"]
+    assert "template_id: consulting_report" in payload["prompt"]
+    assert "Card: swiss_international / Swiss International" in payload["prompt"]
+
+
 def test_image_generation_endpoint_accepts_request_connection_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DRAWAI_IMAGEGEN_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
