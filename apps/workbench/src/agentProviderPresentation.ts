@@ -71,6 +71,10 @@ export const AGENT_PROVIDER_ICONS: Record<string, AgentProviderIcon> = {
   hermes_cli: {
     accent_color: "#111827",
     icon_url: "/agent-icons/hermes-agent.svg"
+  },
+  drawai_tool_agent: {
+    accent_color: "#0f172a",
+    icon_url: "/drawai_image.png"
   }
 };
 

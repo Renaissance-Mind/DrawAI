@@ -141,7 +141,8 @@ def test_workbench_workflow_provider_api_lists_provider_scoped_limits(tmp_path: 
         "hermes_acp",
     ):
         assert providers[provider_id]["resource_key"] == f"agent_provider:{provider_id}"
-    assert "drawai_tool_agent" not in providers
+    assert providers["drawai_tool_agent"]["label"] == "内置 Agent"
+    assert providers["drawai_tool_agent"]["kind"] == "api"
 
 
 def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider(
@@ -183,7 +184,9 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     assert agents["cline_acp"]["command"] == [str(cline), "--acp"]
     assert agents["copilot_acp"]["command"] == [str(copilot), "--acp", "--stdio"]
     assert agents["hermes_acp"]["command"] == [str(hermes), "acp"]
-    assert "drawai_tool_agent" not in agents
+    assert agents["drawai_tool_agent"]["available"] is True
+    assert agents["drawai_tool_agent"]["label"] == "内置 Agent"
+    assert agents["drawai_tool_agent"]["kind"] == "api"
 
     save_response = client.put(
         "/api/workbench/agent-settings",
@@ -295,7 +298,7 @@ def test_workbench_agent_settings_api_preserves_explicit_empty_llm_key_env(tmp_p
     assert read_response.json()["settings"]["llm_api_key_env"] == ""
 
 
-def test_workbench_agent_settings_api_rejects_hidden_drawai_tool_agent(tmp_path: Path) -> None:
+def test_workbench_agent_settings_api_requires_api_preset_for_builtin_agent(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
     response = client.put(
@@ -304,14 +307,21 @@ def test_workbench_agent_settings_api_rejects_hidden_drawai_tool_agent(tmp_path:
     )
 
     assert response.status_code == 400
-    assert "not selectable yet" in response.json()["detail"]
+    assert "需要选择 API 预设" in response.json()["detail"]
 
 
-def test_workbench_agent_settings_api_falls_back_from_stale_hidden_provider(tmp_path: Path) -> None:
+def test_workbench_agent_settings_api_reads_saved_builtin_agent(tmp_path: Path) -> None:
     settings_path = tmp_path / "workspace" / "settings" / "agent.json"
     settings_path.parent.mkdir(parents=True)
     settings_path.write_text(
-        json.dumps({"selected_provider_id": "drawai_tool_agent", "model": "qwen3.7-plus"}),
+        json.dumps(
+            {
+                "selected_provider_id": "drawai_tool_agent",
+                "llm_api_preset_id": "openrouter",
+                "llm_model": "qwen3.7-plus",
+                "llm_base_url": "https://openrouter.ai/api/v1",
+            }
+        ),
         encoding="utf-8",
     )
     client = _client(tmp_path)
@@ -319,7 +329,9 @@ def test_workbench_agent_settings_api_falls_back_from_stale_hidden_provider(tmp_
     response = client.get("/api/workbench/agent-settings")
 
     assert response.status_code == 200
-    assert response.json()["settings"]["selected_provider_id"] == "codex_sdk"
+    settings = response.json()["settings"]
+    assert settings["selected_provider_id"] == "drawai_tool_agent"
+    assert settings["llm_api_preset_id"] == "openrouter"
 
 
 def test_workbench_api_presets_api_saves_and_validates_presets(tmp_path: Path) -> None:
@@ -1309,6 +1321,56 @@ def test_create_batch_applies_saved_workbench_llm_runtime_to_case_config(tmp_pat
     assert thirdparty["base_url"] == "https://openrouter.ai/api/v1"
     assert thirdparty["api_key_env"] == "OPENROUTER_API_KEY"
     assert thirdparty["wire_api"] == "chat_completions"
+
+
+def test_create_batch_applies_saved_builtin_agent_api_preset_to_case_config(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    source = tmp_path / "single.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    save_response = client.put(
+        "/api/workbench/agent-settings",
+        json={
+            "selected_provider_id": "drawai_tool_agent",
+            "llm_api_preset_id": "openrouter",
+            "llm_model": "minimax/minimax-m3",
+            "llm_base_url": "https://openrouter.ai/api/v1",
+            "llm_api_key_env": "OPENROUTER_API_KEY",
+            "llm_wire_api": "chat_completions",
+            "llm_extra_body": {"reasoning": {"enabled": True}},
+            "timeout_seconds": 900,
+        },
+    )
+    assert save_response.status_code == 200
+    settings = save_response.json()["settings"]
+    assert settings["selected_provider_id"] == "drawai_tool_agent"
+    assert settings["llm_api_preset_id"] == "openrouter"
+
+    response = client.post(
+        "/api/batches",
+        json={
+            "name": "builtin agent config batch",
+            "input_mode": "local_dir",
+            "local_dir": str(source),
+            "auto_run_svg_after_analysis": False,
+            "max_concurrent_cases": 1,
+            "base_config_path": str(_base_config(tmp_path)),
+            "execution_mode": "agent",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["batch"]["execution_mode"] == "agent"
+    config_path = Path(response.json()["cases"][0]["config_path"])
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["svg"]["generation_backend"] == "tool_agent"
+    assert payload["model_runtime"]["provider"] == "drawai_tool_agent"
+    assert payload["model_runtime"]["connection_id"] == "drawai_tool_agent"
+    assert payload["model_runtime"]["api_preset_id"] == "openrouter"
+    assert payload["model_runtime"]["model_name"] == "minimax/minimax-m3"
+    assert payload["model_runtime"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert payload["model_runtime"]["api_key_env"] == "OPENROUTER_API_KEY"
+    assert payload["model_runtime"]["wire_api"] == "chat_completions"
+    assert payload["model_runtime"]["timeout_seconds"] == 900
 
 
 def test_workbench_agent_mode_keeps_default_agent_nodes(tmp_path: Path) -> None:

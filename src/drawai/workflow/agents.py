@@ -251,7 +251,7 @@ def default_agent_provider_registry() -> dict[str, AgentProviderSpec]:
         ),
         DRAWAI_TOOL_AGENT_PROVIDER: AgentProviderSpec(
             provider_id=DRAWAI_TOOL_AGENT_PROVIDER,
-            label="DrawAI Tool Agent",
+            label="内置 Agent",
             kind="api",
             resource_key=f"agent_provider:{DRAWAI_TOOL_AGENT_PROVIDER}",
             default_max_concurrent=2,

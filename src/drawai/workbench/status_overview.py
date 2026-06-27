@@ -135,11 +135,11 @@ def _api_group(api_presets: Sequence[ApiPreset], api_error: str, issues: list[di
                 "error",
                 "API 预设文件无效",
                 api_error,
-                "模型供应商",
+                "API 预设",
                 _action("去配置", "api", ""),
             )
         )
-        return _group("api", "模型供应商", "error", "API 预设文件无效", items)
+        return _group("api", "API 预设", "error", "API 预设文件无效", items)
     if not api_presets:
         issues.append(
             _issue(
@@ -147,7 +147,7 @@ def _api_group(api_presets: Sequence[ApiPreset], api_error: str, issues: list[di
                 "warning",
                 "未配置 API 预设",
                 "当前 workspace 还没有可复用的模型 API 预设。",
-                "模型供应商",
+                "API 预设",
                 _action("去配置", "api", ""),
             )
         )
@@ -158,7 +158,7 @@ def _api_group(api_presets: Sequence[ApiPreset], api_error: str, issues: list[di
                 "warning",
                 "未配置图像 API 预设",
                 "没有 images_api 预设时，图像生成/编辑 processor 无法选择 API 驱动。",
-                "模型供应商",
+                "API 预设",
                 _action("去配置", "api", "", mode="create_images_api"),
             )
         )
@@ -169,13 +169,13 @@ def _api_group(api_presets: Sequence[ApiPreset], api_error: str, issues: list[di
                 "warning",
                 "未配置 LLM API 预设",
                 "默认 LLM 配置没有可选择的 LLM API 预设。",
-                "模型供应商",
+                "API 预设",
                 _action("去配置", "api", "", mode="create_llm_api"),
             )
         )
     severity = _max_severity(item["severity"] for item in items)
     summary = f"{len(api_presets)} 个 API 预设"
-    return _group("api", "模型供应商", severity, summary, items)
+    return _group("api", "API 预设", severity, summary, items)
 
 
 def _agent_group(

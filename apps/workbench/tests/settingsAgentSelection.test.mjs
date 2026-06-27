@@ -60,6 +60,18 @@ test("settings overview engine and Agent cards use provider icons and bottom-ali
   assert.match(css, /\.settings-model-action\s*\{[\s\S]*?align-self:\s*end;/);
 });
 
+test("settings Agent panel exposes the built-in Agent API preset selector", () => {
+  const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const presentationSource = readFileSync(new URL("../src/agentProviderPresentation.ts", import.meta.url), "utf8");
+
+  assert.match(presentationSource, /drawai_tool_agent:\s*\{[\s\S]*?icon_url:\s*"\/drawai_image\.png"/);
+  assert.match(source, /const DRAWAI_TOOL_AGENT_PROVIDER_ID = "drawai_tool_agent";/);
+  assert.match(source, /const selectedAgentUsesApiPreset = selectedAgent\?\.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID;/);
+  assert.match(source, /<span>API 预设<\/span>[\s\S]*?value=\{selectedLlmPresetId\}/);
+  assert.match(source, /throw new Error\("内置 Agent 需要选择 API 预设"\);/);
+  assert.match(source, /agentRuntimeLabel\(agent\)/);
+});
+
 let selectionModulePromise;
 
 function loadSelectionModule() {

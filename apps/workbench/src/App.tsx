@@ -204,6 +204,7 @@ type RuntimeStatusRow = {
   activity: RuntimeActivityStatus;
 };
 const IMAGEGEN_SETTINGS_STORAGE_KEY = "drawai.imagegen.connection";
+const DRAWAI_TOOL_AGENT_PROVIDER_ID = "drawai_tool_agent";
 const PPTX_EXPORT_POLL_INTERVAL_MS = 1000;
 const PPTX_EXPORT_TIMEOUT_MS = 180_000;
 const WORKBENCH_SETTINGS_NAV_SECTIONS: WorkbenchSettingsNavSection[] = [
@@ -213,7 +214,7 @@ const WORKBENCH_SETTINGS_NAV_SECTIONS: WorkbenchSettingsNavSection[] = [
   {
     label: "引擎",
     items: [
-      { id: "api", label: "模型供应商", icon: "api" },
+      { id: "api", label: "API 预设", icon: "api" },
       { id: "agent", label: "Agent", icon: "agent" },
       { id: "llm", label: "LLM 配置", icon: "llm" },
       { id: "imagegen", label: "图像生成", icon: "imagegen" }
@@ -244,6 +245,7 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   reasoning_effort: "",
   fast: false,
   timeout_seconds: 0,
+  llm_api_preset_id: "",
   llm_model: "",
   llm_base_url: "",
   llm_api_key: "",
@@ -1944,6 +1946,7 @@ function WorkbenchSettingsCenter({
   const llmPresets = apiDrafts.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
   const selectedLlmPreset = llmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
   const selectedLlmPresetTemplate = selectedLlmPreset ? apiPresetTemplateForPreset(selectedLlmPreset) : null;
+  const selectedLlmPresetIndex = selectedLlmPreset ? apiDrafts.findIndex((preset) => preset.id === selectedLlmPreset.id) : -1;
   const imageApiPresets = imageGenApiPresets(apiDrafts);
   const imageGenMethodCardsList = imageGenMethodCards(imageGenConnectionDraft, apiDrafts, sortedAgents);
   const selectedImageGenMethod = imageGenMethodCardsList.find((method) => method.selected) || imageGenMethodCardsList[0] || null;
@@ -1964,6 +1967,7 @@ function WorkbenchSettingsCenter({
     currentAgent ||
     sortedAgents[0] ||
     null;
+  const selectedAgentUsesApiPreset = selectedAgent?.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID;
   const agentPickerChoices = workbenchAgentPickerChoices(sortedAgents, draft.selected_provider_id);
   const selectAgentProvider = (providerId: string): WorkbenchAgentSettings => {
     const nextDraft = { ...draft, selected_provider_id: providerId };
@@ -2154,11 +2158,15 @@ function WorkbenchSettingsCenter({
         llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
       });
       if (selectedLlmPreset) {
+        agentPayload.llm_api_preset_id = selectedLlmPreset.id;
         agentPayload.llm_model = selectedLlmPreset.model;
         agentPayload.llm_base_url = selectedLlmPreset.base_url;
         agentPayload.llm_api_key = selectedLlmPreset.api_key;
         agentPayload.llm_api_key_env = selectedLlmPreset.api_key_env;
         agentPayload.llm_wire_api = selectedLlmPreset.type === "llm_responses" ? "responses" : "chat_completions";
+      }
+      if (agentPayload.selected_provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID && !selectedLlmPreset) {
+        throw new Error("内置 Agent 需要选择 API 预设");
       }
       const normalizedApiDrafts = normalizeApiPresetDrafts(apiDrafts);
       const nextApiResponse = await saveApiPresets(normalizedApiDrafts);
@@ -2264,7 +2272,7 @@ function WorkbenchSettingsCenter({
                         {settingsCategory === "overview"
                           ? "状态与能力总览"
                           : settingsCategory === "api"
-                            ? "模型与 API 预设"
+                            ? "API 预设管理"
                             : settingsCategory === "agent"
                               ? "Agent 运行配置"
                               : settingsCategory === "llm"
@@ -2281,7 +2289,7 @@ function WorkbenchSettingsCenter({
                           : settingsCategory === "api"
                             ? `${apiDrafts.length} 个 API 预设`
                             : settingsCategory === "agent"
-                              ? `${agents.length} 个 Agent 供应方`
+                              ? `${agents.length} 个 Agent`
                               : settingsCategory === "llm"
                                 ? `${llmPresets.length} 个 LLM 预设`
                                 : settingsCategory === "imagegen"
@@ -2377,7 +2385,7 @@ function WorkbenchSettingsCenter({
                     </div>
                   )}
                   {settingsCategory === "agent" && (
-                    <div className="settings-model-grid" aria-label="本地 Agent">
+                    <div className="settings-model-grid" aria-label="Agent">
                       {(loading || agentsLoading) && <div className="agent-settings-empty">加载中</div>}
                       {!loading && !agentsLoading && agents.length === 0 && <div className="agent-settings-empty">未发现 Agent</div>}
                       {sortedAgents.map((agent) => {
@@ -2407,7 +2415,7 @@ function WorkbenchSettingsCenter({
                               <dl className="settings-model-meta">
                                 <div>
                                   <dt>命令</dt>
-                                  <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
+                                  <dd>{agentRuntimeLabel(agent)}</dd>
                                 </div>
                                 {agent.version && (
                                   <div>
@@ -2626,6 +2634,10 @@ function WorkbenchSettingsCenter({
                                   const nextDraft = selectAgentProvider(agent.provider_id);
                                   setAgentPickerOpen(false);
                                   if (!agent.selected) {
+                                    if (agent.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID && !selectedLlmPreset) {
+                                      openAgentSettings(agent.provider_id);
+                                      return;
+                                    }
                                     void saveSettings({ agentSettingsOverride: nextDraft });
                                   }
                                 }}
@@ -2640,7 +2652,7 @@ function WorkbenchSettingsCenter({
                                 </span>
                                 <span className="settings-provider-option-copy">
                                   <strong>{agent.label}</strong>
-                                  <span>{agent.kind.toUpperCase()} · {agent.command.length ? agent.command.join(" ") : "SDK"}</span>
+                                  <span>{agent.kind.toUpperCase()} · {agentRuntimeLabel(agent)}</span>
                                 </span>
                                 {agent.selected && <em className="settings-agent-picker-current">当前</em>}
                               </button>
@@ -2746,6 +2758,10 @@ function WorkbenchSettingsCenter({
                           setApiDrafts(next);
                           setSelectedApiPresetIndex(Math.min(removeIndex, Math.max(0, next.length - 1)));
                           setSelectedLlmPresetId((current) => (current === removeId ? "" : current));
+                          setDraft((current) => ({
+                            ...current,
+                            llm_api_preset_id: current.llm_api_preset_id === removeId ? "" : current.llm_api_preset_id
+                          }));
                           setProcessorDrafts((current) => retargetProcessorApiPresetDrafts(current, removeId, ""));
                         }}
                       >
@@ -2765,6 +2781,10 @@ function WorkbenchSettingsCenter({
                               const nextId = event.target.value;
                               updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { id: nextId });
                               setSelectedLlmPresetId((current) => (current === previousId ? nextId : current));
+                              setDraft((current) => ({
+                                ...current,
+                                llm_api_preset_id: current.llm_api_preset_id === previousId ? nextId : current.llm_api_preset_id
+                              }));
                               setProcessorDrafts((current) => retargetProcessorApiPresetDrafts(current, previousId, nextId));
                             }}
                             autoComplete="off"
@@ -2846,31 +2866,91 @@ function WorkbenchSettingsCenter({
                     <strong>{selectedAgent?.label || draft.selected_provider_id}</strong>
                     <em>{selectedAgent?.provider_id || draft.selected_provider_id}</em>
                   </div>
-                  <label className="settings-field">
-                    <span>模型</span>
-                    <input
-                      value={draft.model}
-                      onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-                      placeholder={selectedAgent?.provider_id === "codex_sdk" ? "留空使用默认模型" : "例如 kimi-code/kimi-for-coding"}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <div className="settings-form-row">
+                  {selectedAgentUsesApiPreset ? (
+                    <>
+                      <label className="settings-field">
+                        <span>API 预设</span>
+                        <select
+                          value={selectedLlmPresetId}
+                          onChange={(event) => setSelectedLlmPresetId(event.target.value)}
+                        >
+                          <option value="">未选择</option>
+                          {llmPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.label || preset.id} · {preset.model}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {llmPresets.length === 0 && (
+                        <div className="agent-settings-empty">请先在 API 预设里新建 LLM 预设</div>
+                      )}
+                      {selectedLlmPreset && (
+                        <div className="settings-summary-row settings-llm-summary">
+                          <span
+                            className={`settings-summary-logo${selectedLlmPresetTemplate ? " settings-provider-logo-mini" : ""}`}
+                            style={selectedLlmPresetTemplate ? ({ "--provider-color": selectedLlmPresetTemplate.accent_color } as CSSProperties) : undefined}
+                            aria-hidden="true"
+                          >
+                            {selectedLlmPresetTemplate ? <img src={selectedLlmPresetTemplate.icon_url} alt="" /> : <SettingsNavIcon icon="llm" />}
+                          </span>
+                          <div>
+                            <span>{selectedLlmPreset.type === "llm_responses" ? "Responses" : "Chat Completions"}</span>
+                            <strong>{selectedLlmPreset.label || selectedLlmPreset.id}</strong>
+                            <em>{selectedLlmPreset.model}</em>
+                          </div>
+                          {selectedLlmPresetIndex >= 0 && (
+                            <button type="button" className="settings-model-action" onClick={() => openApiPresetSettings(selectedLlmPresetIndex)}>
+                              编辑
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
                     <label className="settings-field">
-                      <span>推理强度</span>
-                      <select
-                        value={draft.reasoning_effort}
-                        onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
-                      >
-                        <option value="">默认</option>
-                        <option value="none">none</option>
-                        <option value="minimal">minimal</option>
-                        <option value="low">low</option>
-                        <option value="medium">medium</option>
-                        <option value="high">high</option>
-                        <option value="xhigh">xhigh</option>
-                      </select>
+                      <span>模型</span>
+                      <input
+                        value={draft.model}
+                        onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
+                        placeholder={selectedAgent?.provider_id === "codex_sdk" ? "留空使用默认模型" : "例如 kimi-code/kimi-for-coding"}
+                        autoComplete="off"
+                      />
                     </label>
+                  )}
+                  {!selectedAgentUsesApiPreset && (
+                    <div className="settings-form-row">
+                      <label className="settings-field">
+                        <span>推理强度</span>
+                        <select
+                          value={draft.reasoning_effort}
+                          onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
+                        >
+                          <option value="">默认</option>
+                          <option value="none">none</option>
+                          <option value="minimal">minimal</option>
+                          <option value="low">low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                          <option value="xhigh">xhigh</option>
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>超时秒数</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={draft.timeout_seconds || ""}
+                          onChange={(event) =>
+                            setDraft((current) => ({ ...current, timeout_seconds: Number(event.target.value || 0) }))
+                          }
+                          placeholder="默认"
+                        />
+                      </label>
+                    </div>
+                  )}
+                  {selectedAgentUsesApiPreset && (
                     <label className="settings-field">
                       <span>超时秒数</span>
                       <input
@@ -2884,15 +2964,17 @@ function WorkbenchSettingsCenter({
                         placeholder="默认"
                       />
                     </label>
-                  </div>
-                  <label className="settings-toggle-row">
-                    <input
-                      type="checkbox"
-                      checked={draft.fast}
-                      onChange={(event) => setDraft((current) => ({ ...current, fast: event.target.checked }))}
-                    />
-                    <span>Fast 模式</span>
-                  </label>
+                  )}
+                  {!selectedAgentUsesApiPreset && (
+                    <label className="settings-toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={draft.fast}
+                        onChange={(event) => setDraft((current) => ({ ...current, fast: event.target.checked }))}
+                      />
+                      <span>Fast 模式</span>
+                    </label>
+                  )}
                   {selectedAgent && <AgentValidationCard agent={selectedAgent} />}
                 </div>
               )}
@@ -3409,6 +3491,16 @@ function apiPresetsWithImageGenMigration(presets: ApiPreset[], connection: Image
 }
 
 function matchingLlmPresetId(presets: ApiPreset[], settings: WorkbenchAgentSettings): string {
+  if (
+    settings.llm_api_preset_id &&
+    presets.some(
+      (preset) =>
+        preset.id === settings.llm_api_preset_id &&
+        (preset.type === "llm_chat_completions" || preset.type === "llm_responses")
+    )
+  ) {
+    return settings.llm_api_preset_id;
+  }
   const llmBaseUrl = settings.llm_base_url.trim().replace(/\/+$/, "");
   const llmModel = settings.llm_model.trim();
   const match = presets.find(
@@ -3509,7 +3601,7 @@ function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {
       <dl>
         <div>
           <dt>命令</dt>
-          <dd>{agent.command.length ? agent.command.join(" ") : "SDK"}</dd>
+          <dd>{agentRuntimeLabel(agent)}</dd>
         </div>
         {agent.executable_path && (
           <div>
@@ -3544,6 +3636,13 @@ function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {
   );
 }
 
+function agentRuntimeLabel(agent: WorkbenchAgentDiscovery): string {
+  if (agent.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID || agent.kind === "api") {
+    return "API 预设";
+  }
+  return agent.command.length ? agent.command.join(" ") : "SDK";
+}
+
 function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): WorkbenchAgentSettings {
   const timeout = Number(settings.timeout_seconds || 0);
   const llmExtraBody = isWorkbenchAgentJsonObject(settings.llm_extra_body) ? settings.llm_extra_body : {};
@@ -3553,6 +3652,7 @@ function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): Workben
     reasoning_effort: (settings.reasoning_effort || "").trim(),
     fast: Boolean(settings.fast),
     timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0,
+    llm_api_preset_id: (settings.llm_api_preset_id || "").trim(),
     llm_model: (settings.llm_model || "").trim(),
     llm_base_url: (settings.llm_base_url || "").trim().replace(/\/+$/, ""),
     llm_api_key: (settings.llm_api_key || "").trim(),
@@ -7398,6 +7498,9 @@ function filterUploadLlmPresets(presets: ApiPreset[], query: string): ApiPreset[
 }
 
 function apiPresetMatchesLlmSettings(preset: ApiPreset, settings: WorkbenchAgentSettings): boolean {
+  if (settings.llm_api_preset_id) {
+    return preset.id === settings.llm_api_preset_id;
+  }
   return (
     preset.model.trim() === settings.llm_model.trim() &&
     preset.base_url.trim().replace(/\/+$/, "") === settings.llm_base_url.trim().replace(/\/+$/, "") &&
@@ -7408,6 +7511,7 @@ function apiPresetMatchesLlmSettings(preset: ApiPreset, settings: WorkbenchAgent
 function agentSettingsWithLlmPreset(settings: WorkbenchAgentSettings, preset: ApiPreset): WorkbenchAgentSettings {
   return normalizeWorkbenchAgentDraft({
     ...settings,
+    llm_api_preset_id: preset.id,
     llm_model: preset.model,
     llm_base_url: preset.base_url,
     llm_api_key: preset.api_key,

@@ -23,7 +23,8 @@ const EXPECTED_AGENT_PROVIDER_IDS = [
   "hermes_acp",
   "claude_cli",
   "openclaw_cli",
-  "hermes_cli"
+  "hermes_cli",
+  "drawai_tool_agent"
 ];
 
 test("Agent provider icon mapping covers selectable Workbench agents", async () => {
@@ -38,7 +39,7 @@ test("Agent provider icon mapping uses bundled image assets", async () => {
   const { AGENT_PROVIDER_ICONS } = await loadPresentationModule();
 
   for (const [providerId, icon] of Object.entries(AGENT_PROVIDER_ICONS)) {
-    assert.match(icon.icon_url, /^\/agent-icons\/.+\.(?:svg|png)$/, providerId);
+    assert.match(icon.icon_url, /^(?:\/agent-icons\/.+\.(?:svg|png)|\/drawai_image\.png)$/, providerId);
     assert.equal(existsSync(new URL(`../public${icon.icon_url}`, import.meta.url)), true, icon.icon_url);
   }
 });

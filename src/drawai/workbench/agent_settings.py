@@ -41,6 +41,7 @@ class WorkbenchAgentSettings:
     reasoning_effort: str = ""
     fast: bool = False
     timeout_seconds: int = 0
+    llm_api_preset_id: str = ""
     llm_model: str = ""
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -122,7 +123,7 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
     ),
     DRAWAI_TOOL_AGENT_PROVIDER: WorkbenchAgentDefinition(
         provider_id=DRAWAI_TOOL_AGENT_PROVIDER,
-        label="DrawAI Tool Agent",
+        label="内置 Agent",
         kind="api",
         workflow_provider_id=DRAWAI_TOOL_AGENT_PROVIDER,
         pipeline_agent="",
@@ -130,11 +131,7 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
     ),
 }
 
-WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS: tuple[str, ...] = tuple(
-    provider_id
-    for provider_id in AGENT_DEFINITIONS
-    if provider_id != DRAWAI_TOOL_AGENT_PROVIDER
-)
+WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS: tuple[str, ...] = tuple(AGENT_DEFINITIONS)
 
 
 def agent_settings_path(workspace: str | Path) -> Path:
@@ -155,7 +152,7 @@ def write_workbench_agent_settings(
     workspace: str | Path,
     payload: Mapping[str, Any],
 ) -> WorkbenchAgentSettings:
-    settings = normalize_workbench_agent_settings(payload)
+    settings = normalize_workbench_agent_settings(payload, require_selected_api_preset=True)
     path = agent_settings_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -166,6 +163,7 @@ def normalize_workbench_agent_settings(
     payload: Mapping[str, Any] | None,
     *,
     fallback_hidden_provider: bool = False,
+    require_selected_api_preset: bool = False,
 ) -> WorkbenchAgentSettings:
     data = dict(payload or {})
     raw_llm_api_key_env = data.get("llm_api_key_env")
@@ -193,14 +191,19 @@ def normalize_workbench_agent_settings(
     if not isinstance(llm_extra_body, Mapping):
         raise ValueError("llm_extra_body must be a JSON object")
     timeout_seconds = _settings_timeout_seconds(data.get("timeout_seconds"))
+    llm_model = str(data.get("llm_model") or "").strip()
+    llm_base_url = str(data.get("llm_base_url") or "").strip().rstrip("/")
+    if require_selected_api_preset and provider_id == DRAWAI_TOOL_AGENT_PROVIDER and (not llm_model or not llm_base_url):
+        raise ValueError("内置 Agent 需要选择 API 预设")
     return WorkbenchAgentSettings(
         selected_provider_id=provider_id,
         model=str(data.get("model") or "").strip(),
         reasoning_effort=reasoning_effort,
         fast=_settings_fast(data.get("fast")),
         timeout_seconds=timeout_seconds,
-        llm_model=str(data.get("llm_model") or "").strip(),
-        llm_base_url=str(data.get("llm_base_url") or "").strip().rstrip("/"),
+        llm_api_preset_id=str(data.get("llm_api_preset_id") or "").strip(),
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
         llm_api_key=str(data.get("llm_api_key") or "").strip(),
         llm_api_key_env=("OPENAI_API_KEY" if raw_llm_api_key_env is None else str(raw_llm_api_key_env)).strip(),
         llm_wire_api=llm_wire_api,
@@ -212,9 +215,6 @@ def discover_workbench_agent(provider_id: str) -> dict[str, Any]:
     if provider_id not in AGENT_DEFINITIONS:
         supported = ", ".join(WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS)
         raise ValueError(f"unsupported Workbench agent provider: {provider_id!r}. Expected one of: {supported}")
-    if provider_id not in WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS:
-        supported = ", ".join(WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS)
-        raise ValueError(f"Workbench agent provider is not selectable yet: {provider_id!r}. Expected one of: {supported}")
     return _discover_agent(AGENT_DEFINITIONS[provider_id])
 
 
@@ -248,6 +248,8 @@ def apply_workbench_agent_settings_to_node_config(
     config = dict(node_config)
     config["provider_id"] = definition.workflow_provider_id
     if definition.provider_id == DRAWAI_TOOL_AGENT_PROVIDER:
+        if settings.llm_api_preset_id:
+            config["api_preset_id"] = settings.llm_api_preset_id
         if settings.llm_model or settings.model:
             config["model"] = settings.llm_model or settings.model
         if settings.llm_base_url:
@@ -279,6 +281,8 @@ def apply_workbench_llm_settings_to_node_config(
 ) -> dict[str, Any]:
     config = dict(node_config)
     config["provider_id"] = DEFAULT_LLM_PROVIDER_ID
+    if settings.llm_api_preset_id:
+        config["api_preset_id"] = settings.llm_api_preset_id
     if settings.llm_model:
         config["model"] = settings.llm_model
     if settings.reasoning_effort:
@@ -337,6 +341,8 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["connection_id"] = DRAWAI_TOOL_AGENT_PROVIDER
         runtime_config["model_name"] = settings.llm_model or settings.model
         runtime_config["wire_api"] = "chat_completions"
+        if settings.llm_api_preset_id:
+            runtime_config["api_preset_id"] = settings.llm_api_preset_id
         if settings.llm_base_url:
             runtime_config["base_url"] = settings.llm_base_url
         if settings.llm_api_key:
@@ -378,6 +384,8 @@ def _apply_workbench_llm_settings_to_config_payload(
     svg_config["generation_backend"] = "responses"
     runtime_config["provider"] = DEFAULT_LLM_PROVIDER_ID
     runtime_config["connection_id"] = DEFAULT_LLM_PROVIDER_ID
+    if settings.llm_api_preset_id:
+        runtime_config["api_preset_id"] = settings.llm_api_preset_id
     if settings.llm_model:
         runtime_config["model_name"] = settings.llm_model
     if settings.reasoning_effort:
@@ -445,7 +453,7 @@ def _discover_agent(definition: WorkbenchAgentDefinition) -> dict[str, Any]:
             "kind": definition.kind,
             "available": True,
             "status": "ok",
-            "detail": "OpenAI-compatible API settings are configured per workspace.",
+            "detail": "使用 workspace API 预设连接 OpenAI-compatible 模型。",
             "fix": "",
             "executable_path": "",
             "command": [],
