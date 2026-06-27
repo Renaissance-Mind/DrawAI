@@ -1599,7 +1599,9 @@ def test_api_workflow_node_viewer_summarizes_agent_logs_without_runtime_deltas(t
         "commandExecution",
         "agentMessage",
     ]
+    assert logs["session_events"][1]["event"]["command"] == "/bin/zsh -lc 'ls output'"
     assert [item["event_type"] for item in logs["runtime_log_tail"]] == ["response.output_item.done"]
+    assert logs["runtime_log_tail"][0]["event"]["type"] == "response.output_item.done"
 
 
 def test_api_workflow_node_viewer_reads_kimi_cli_trace_events(tmp_path: Path) -> None:
@@ -1665,6 +1667,7 @@ def test_api_workflow_node_viewer_reads_kimi_cli_trace_events(tmp_path: Path) ->
     logs = response.json()["agent_logs"]
     assert "kimi_cli_trace.jsonl" in {item["source"] for item in logs["trace_events"]}
     assert [item["type"] for item in logs["trace_events"]] == ["agent_request", "agent_response"]
+    assert logs["trace_events"][0]["event"]["provider_id"] == "kimi_cli"
 
 
 def test_api_workflow_node_viewer_reads_gemini_acp_trace_events(tmp_path: Path) -> None:
@@ -1731,6 +1734,7 @@ def test_api_workflow_node_viewer_reads_gemini_acp_trace_events(tmp_path: Path) 
         "acp_request",
         "acp_notification",
     ]
+    assert logs["trace_events"][1]["event"]["method"] == "initialize"
     assert any(file["label"] == "gemini_acp_error.txt" for file in logs["files"])
 
 

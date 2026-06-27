@@ -3216,6 +3216,7 @@ def _agent_trace_events(
                         "source": path.name,
                         "type": str(item.get("type") or ""),
                         "summary": _truncate_progress_text(_compact_json_text(item), limit=800),
+                        "event": _agent_log_event_detail(item),
                     }
                 )
     return events[-80:]
@@ -3276,6 +3277,7 @@ def _agent_session_events(path: Path) -> list[dict[str, Any]]:
                 "index": item.get("index"),
                 "kind": _agent_event_kind(event_item),
                 "summary": _truncate_progress_text(summary, limit=1200),
+                "event": _agent_log_event_detail(event_item),
             }
         )
     return events
@@ -3308,6 +3310,7 @@ def _codex_runtime_log_tail(path: Path) -> list[dict[str, Any]]:
                 "target": str(row[2] or ""),
                 "event_type": event_type,
                 "message": _truncate_progress_text(message, limit=900),
+                "event": {"message": _truncate_progress_text(message, limit=900)},
             }
         )
     return events
@@ -3339,6 +3342,7 @@ def _codex_runtime_event_tail(path: Path) -> list[dict[str, Any]]:
                 "target": str(item.get("target") or ""),
                 "event_type": event_type or event_kind,
                 "message": _truncate_progress_text(message, limit=900),
+                "event": _agent_log_event_detail(event if isinstance(event, Mapping) else item),
             }
         )
     return events
@@ -3463,6 +3467,25 @@ def _agent_event_kind(value: Any) -> str:
             if isinstance(item, str) and item:
                 return item
     return type(value).__name__
+
+
+def _agent_log_event_detail(value: Any, *, depth: int = 4) -> Any:
+    if depth <= 0:
+        return _truncate_progress_text(_compact_json_text(value), limit=420)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _agent_log_event_detail(item, depth=depth - 1)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        limit = 16
+        items = [_agent_log_event_detail(item, depth=depth - 1) for item in value[:limit]]
+        if len(value) > limit:
+            items.append({"omitted": len(value) - limit})
+        return items
+    if isinstance(value, str):
+        return _truncate_progress_text(value, limit=1200)
+    return value
 
 
 def _compact_json_text(value: Any) -> str:

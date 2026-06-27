@@ -44,6 +44,13 @@ import {
 import ImageGenStudio from "./ImageGenStudio";
 import WorkflowWorkspace from "./WorkflowWorkspace";
 import {
+  agentLogEntryVisible,
+  agentLogStats,
+  agentLogSummaryItem,
+  buildAgentLogDisplayItem,
+  type AgentLogEntry
+} from "./agentLogPresentation";
+import {
   API_PRESET_TEMPLATES,
   apiPresetDraftFromTemplate,
   apiPresetTemplateForPreset,
@@ -4477,16 +4484,24 @@ function NodeAgentLogWorkspace({
   agentLogLinks,
   viewer
 }: {
-  agentLogItems: Array<{ source: string; item: Record<string, unknown> }>;
+  agentLogItems: AgentLogEntry[];
   agentLogLinks: CaseProgressFile[];
   viewer: WorkflowNodeViewer;
 }) {
+  const displayItems = agentLogItems.map((entry, index) => buildAgentLogDisplayItem(entry, index));
+  const stats = agentLogStats(displayItems);
+
   return (
     <section className="node-agent-log-workspace" aria-label="Agent 执行日志">
       <header className="node-agent-log-workspace-head">
         <div>
           <strong>Agent log</strong>
-          <span>{viewer.node_id} · {viewer.attempt_id ? `run ${viewer.attempt_id}` : "not run"} · {agentLogItems.length} 条事件</span>
+          <span>{viewer.node_id} · {viewer.attempt_id ? `run ${viewer.attempt_id}` : "not run"} · {stats.total} 条事件</span>
+          <div className="node-agent-log-summary-chips" aria-label="Agent 日志摘要">
+            <span>{stats.toolCalls} 次工具</span>
+            <span>{stats.finalResponses} 条最终响应</span>
+            {stats.errors > 0 && <span className="is-error">{stats.errors} 个错误</span>}
+          </div>
         </div>
         <div className="node-agent-log-links" aria-label="Agent 日志文件">
           {agentLogLinks.slice(0, 8).map((file) => (
@@ -4496,56 +4511,41 @@ function NodeAgentLogWorkspace({
           ))}
         </div>
       </header>
-      <div className="node-agent-log-list node-agent-log-list--workspace">
-        {agentLogItems.length > 0 ? (
-          agentLogItems.map((entry, index) => (
-            <pre key={`${entry.source}-${index}`}>{agentLogEntryText(entry.source, entry.item)}</pre>
+      <div className="node-agent-log-timeline" aria-label="Agent 日志时间线">
+        {displayItems.length > 0 ? (
+          displayItems.map((entry, index) => (
+            <article key={`${entry.source}-${index}`} className={`node-agent-log-event is-${entry.tone}`}>
+              <div className="node-agent-log-dot" aria-hidden="true" />
+              <div className="node-agent-log-card">
+                <div className="node-agent-log-card-head">
+                  <span className="node-agent-log-badge">{entry.sourceLabel}</span>
+                  <strong>{entry.title}</strong>
+                  <em>{entry.kind}</em>
+                </div>
+                <p>{entry.detail}</p>
+                {entry.meta.length > 0 && (
+                  <dl className="node-agent-log-meta">
+                    {entry.meta.slice(0, 6).map((metaItem) => (
+                      <div key={`${metaItem.label}:${metaItem.value}`}>
+                        <dt>{metaItem.label}</dt>
+                        <dd>{metaItem.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                <details className="node-agent-log-raw">
+                  <summary>Raw JSON</summary>
+                  <pre>{entry.rawText}</pre>
+                </details>
+              </div>
+            </article>
           ))
         ) : (
-          <span>日志文件已生成，等待事件写入。</span>
+          <div className="node-agent-log-empty">日志文件已生成，等待事件写入。</div>
         )}
       </div>
     </section>
   );
-}
-
-function agentLogEntryText(source: string, item: Record<string, unknown>): string {
-  const kind = stringField(item, "type") || stringField(item, "kind") || stringField(item, "level") || source;
-  const summary = stringField(item, "summary") || stringField(item, "message") || JSON.stringify(item);
-  const index = item.index;
-  const prefix = typeof index === "number" || typeof index === "string" ? `[${source} #${index}]` : `[${source}]`;
-  return `${prefix} ${kind}: ${summary}`;
-}
-
-function agentLogSummaryItem(summary: unknown): { source: string; item: Record<string, unknown> } | null {
-  if (!isRecord(summary)) return null;
-  const finalResponse = stringField(summary, "final_response").trim();
-  if (!finalResponse) return null;
-  return {
-    source: "summary",
-    item: {
-      kind: stringField(summary, "status") || "final",
-      summary: finalResponse
-    }
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function agentLogEntryVisible(entry: { source: string; item: Record<string, unknown> }): boolean {
-  const eventType = stringField(entry.item, "event_type");
-  if (eventType === "response.output_text.delta" || eventType === "response.function_call_arguments.delta") {
-    return false;
-  }
-  const summary = stringField(entry.item, "summary") || stringField(entry.item, "message");
-  return summary.trim().length > 0;
-}
-
-function stringField(item: Record<string, unknown>, key: string): string {
-  const value = item[key];
-  return typeof value === "string" ? value : "";
 }
 
 function V2AssetPackagePanel({
