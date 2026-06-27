@@ -14,16 +14,61 @@ from drawai.workflow.agent_execution import (
     _copy_codex_session_log_snapshot,
     _execute_codex_cli_agent,
     _execute_codex_sdk_agent,
+    _execute_drawai_tool_agent,
     _execute_kimi_cli_agent,
     _execute_subprocess_agent,
     _timeout_seconds,
     AgentExecutionResult,
 )
+from drawai.tool_agent_runtime import DEFAULT_TOOL_AGENT_MAX_ITERATIONS
 from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
 
 
 def test_agent_execution_default_timeout_is_thirty_minutes() -> None:
     assert _timeout_seconds({}) == DEFAULT_AGENT_TIMEOUT_SECONDS
+
+
+def test_drawai_tool_agent_default_iteration_budget_is_large_enough_for_svg_compose() -> None:
+    assert DEFAULT_TOOL_AGENT_MAX_ITERATIONS == 200
+
+
+def test_drawai_tool_agent_execution_uses_large_default_iteration_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "svg_compose" / "runs" / "001"
+    workdir.mkdir(parents=True)
+    prompt_path = workdir / "prompt.md"
+    prompt = AgentPrompt(
+        preset_id="svg_generation",
+        provider_id="drawai_tool_agent",
+        text="Write output/semantic.svg.",
+        inputs=(),
+        outputs=(),
+        options={},
+    )
+    request = AgentExecutionRequest(
+        prompt=prompt,
+        workdir=workdir,
+        run_root=run_root,
+        node_id="svg_compose",
+        node_type="agent",
+        runtime_config={"provider": "drawai_tool_agent", "model_name": "fake-model", "api_key": "fake-key"},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_tool_agent(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(final_text="ok")
+
+    monkeypatch.setattr("drawai.workflow.agent_execution.invoke_drawai_tool_agent", fake_tool_agent)
+
+    result = _execute_drawai_tool_agent(request, prompt_path=prompt_path)
+
+    assert result.provider_id == "drawai_tool_agent"
+    assert captured["max_iterations"] == 200
+    assert (workdir / "drawai_tool_agent_final_response.txt").read_text(encoding="utf-8") == "ok"
 
 
 def test_agent_execution_requires_declared_input_files(tmp_path: Path) -> None:
