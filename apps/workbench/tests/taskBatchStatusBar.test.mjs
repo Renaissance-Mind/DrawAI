@@ -11,6 +11,8 @@ test("expanded case view keeps a centered icon-only batch action bar", () => {
   const hiddenTextBlock = css.match(/\.board-workspace\.case-detail-open \.task-batch-file,[\s\S]*?\.board-workspace\.case-detail-open \.task-batch-overview\s*\{(?<body>[^}]*)\}/)?.groups?.body || "";
   const compactActionsBlock = css.match(/\.board-workspace\.case-detail-open \.task-batch-actions\s*\{(?<body>[^}]*)\}/)?.groups?.body || "";
   const compactActionButtonBlock = css.match(/\.board-workspace\.case-detail-open \.task-batch-action\s*\{(?<body>[^}]*)\}/)?.groups?.body || "";
+  const primaryActionBlock = css.match(/\.task-batch-action\.primary\s*\{(?<body>[^}]*)\}/)?.groups?.body || "";
+  const selectToggleActiveBlock = css.match(/\.task-batch-action\.select-toggle\.active\s*\{(?<body>[^}]*)\}/)?.groups?.body || "";
   const compactAnimationBlock = css.match(/@keyframes task-batch-status-compact-in\s*\{[\s\S]*?from\s*\{(?<from>[^}]*)\}[\s\S]*?to\s*\{(?<to>[^}]*)\}/)?.groups || {};
 
   assert.match(openTaskListBlock, /align-items:\s*center;/);
@@ -26,6 +28,8 @@ test("expanded case view keeps a centered icon-only batch action bar", () => {
   assert.match(compactActionsBlock, /gap:\s*4px;/);
   assert.match(compactActionButtonBlock, /width:\s*32px;/);
   assert.match(compactActionButtonBlock, /height:\s*32px;/);
+  assert.match(primaryActionBlock, /box-shadow:\s*none;/);
+  assert.match(selectToggleActiveBlock, /box-shadow:\s*none;/);
   assert.match(compactAnimationBlock.from || "", /translateX\(72px\)/);
   assert.match(compactAnimationBlock.to || "", /translateX\(0\)/);
 });

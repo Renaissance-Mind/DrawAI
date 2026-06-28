@@ -1177,6 +1177,7 @@ select:focus {
   border-color: transparent;
   background: #f3f4f6;
   color: #272b30;
+  box-shadow: none;
   transform: none;
 }
 
@@ -1189,6 +1190,7 @@ select:focus {
   border-color: transparent;
   background: transparent;
   color: #737a80;
+  box-shadow: none;
 }
 
 .task-batch-action.dark {
@@ -1219,6 +1221,7 @@ select:focus {
   border-color: transparent;
   background: #f3f4f6;
   color: #272b30;
+  box-shadow: none;
 }
 
 .task-batch-action:disabled {
