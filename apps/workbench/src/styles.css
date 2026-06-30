@@ -5720,11 +5720,6 @@ button.asset-status-unsupported {
   min-width: min(100%, 820px);
 }
 
-.node-artifact-view-switch {
-  width: 214px;
-  grid-template-columns: repeat(2, minmax(86px, 1fr));
-}
-
 .artifact-kind-pill {
   grid-area: mode;
   display: inline-flex;
@@ -5739,6 +5734,73 @@ button.asset-status-unsupported {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.node-artifact-output-switch {
+  grid-area: mode;
+  min-width: 180px;
+  max-width: min(520px, 46vw);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  padding: 3px;
+  scrollbar-width: none;
+}
+
+.node-artifact-output-switch::-webkit-scrollbar {
+  display: none;
+}
+
+.node-artifact-output-switch button {
+  flex: 0 0 auto;
+  min-width: 74px;
+  max-width: 148px;
+  height: 28px;
+  display: inline-grid;
+  align-content: center;
+  gap: 1px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 10px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.node-artifact-output-switch button:hover {
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink-soft);
+}
+
+.node-artifact-output-switch button.active {
+  background: #ffffff;
+  color: var(--teal);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+
+.node-artifact-output-switch button span,
+.node-artifact-output-switch button strong {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-artifact-output-switch button span {
+  font-size: 9px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.node-artifact-output-switch button strong {
+  font-size: 11px;
+  font-weight: 760;
 }
 
 .home-button {
@@ -6124,65 +6186,6 @@ button.asset-status-unsupported {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   background: #f8fafc;
-}
-
-.node-artifact-browser.has-list {
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-}
-
-.node-artifact-list {
-  min-width: 0;
-  overflow-y: auto;
-  border-right: 1px solid rgba(15, 23, 42, 0.1);
-  background: rgba(255, 255, 255, 0.92);
-  padding: 10px;
-}
-
-.node-artifact-list button {
-  width: 100%;
-  min-height: 68px;
-  display: grid;
-  gap: 4px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 7px;
-  background: #ffffff;
-  color: var(--ink);
-  padding: 9px 10px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.node-artifact-list button + button {
-  margin-top: 8px;
-}
-
-.node-artifact-list button:hover,
-.node-artifact-list button.active {
-  border-color: rgba(20, 184, 166, 0.42);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-}
-
-.node-artifact-list button span,
-.node-artifact-list button em {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.node-artifact-list button strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .node-artifact-preview {
@@ -6624,7 +6627,8 @@ button.asset-status-unsupported {
     grid-area: title;
   }
 
-  .editor-banner-controls > .asset-type-switch {
+  .editor-banner-controls > .asset-type-switch,
+  .editor-banner-controls > .node-artifact-output-switch {
     grid-area: mode;
   }
 

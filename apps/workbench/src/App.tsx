@@ -4351,7 +4351,7 @@ function nodeArtifactRoleLabel(role: string): string {
 function nodeViewerPrimaryArtifact(viewer: WorkflowNodeViewer): WorkflowNodeArtifact | null {
   const artifacts = selectableWorkflowNodeArtifacts(viewer.artifacts || []);
   return (
-    artifacts.find((artifact) => artifact.artifact_id === viewer.primary_artifact_id && artifact.exists && artifact.url) ||
+    artifacts.find((artifact) => artifact.artifact_id === viewer.primary_artifact_id) ||
     artifacts.find((artifact) => artifact.exists && artifact.url && artifact.role !== "log" && artifact.kind !== "agent_log") ||
     artifacts.find((artifact) => artifact.kind === "agent_log") ||
     null

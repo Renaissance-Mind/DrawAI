@@ -1672,6 +1672,10 @@ def test_api_workflow_node_viewer_exposes_non_bbox_artifacts_for_svg_compose(tmp
     assert artifacts[0]["role"] == "accepted"
     assert artifacts[0]["relative_path"] == semantic_rel.as_posix()
     assert {artifact["kind"] for artifact in artifacts} >= {"svg", "image", "validation_report", "agent_log"}
+    agent_log_artifacts = [artifact for artifact in artifacts if artifact["kind"] == "agent_log"]
+    assert len(agent_log_artifacts) == 1
+    assert agent_log_artifacts[0]["artifact_id"] == "agent_log:timeline"
+    assert agent_log_artifacts[0]["url"] == ""
     assert all(file["relative_path"] != session_rel.as_posix() for file in payload["files"])
     assert any(
         file["relative_path"] == f"{session_rel.as_posix()}/manifest.json" and file["exists"]

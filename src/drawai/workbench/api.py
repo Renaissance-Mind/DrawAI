@@ -3226,8 +3226,10 @@ def _workflow_node_artifact_record(
 
 
 def _workflow_node_agent_log_artifact(agent_logs: Mapping[str, Any]) -> dict[str, Any]:
-    event_count = len(_json_list(agent_logs.get("session_events"))) or len(_json_list(agent_logs.get("trace_events"))) or len(
-        _json_list(agent_logs.get("runtime_log_tail"))
+    event_count = (
+        len(_json_list(agent_logs.get("session_events")))
+        or len(_json_list(agent_logs.get("trace_events")))
+        or len(_json_list(agent_logs.get("runtime_log_tail")))
     )
     file_count = len([file for file in _json_list(agent_logs.get("files")) if file.get("exists")])
     return {
