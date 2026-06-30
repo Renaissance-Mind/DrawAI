@@ -39,10 +39,10 @@ def drawai_tool_registry() -> dict[str, DrawAITool]:
     return {
         "format": DrawAITool(
             tool_id="format",
-            summary="Inspect and validate DrawAI workflow file formats.",
+            summary="检查并校验 DrawAI workflow 文件格式。",
             parameters=(
-                "describe <format_id>: print the registered format contract.",
-                "validate --format-id <format_id> --path <file>: validate a concrete file and print JSON.",
+                "describe <format_id>: 输出已注册的格式契约。",
+                "validate --format-id <format_id> --path <file>: 校验具体文件并输出 JSON。",
             ),
             examples=(
                 "format describe drawai.page_spec.v1",
@@ -52,10 +52,10 @@ def drawai_tool_registry() -> dict[str, DrawAITool]:
         ),
         "page-spec-assets": DrawAITool(
             tool_id="page-spec-assets",
-            summary="List materialized PageSpec element assets and compute SVG hrefs from a target SVG directory.",
+            summary="列出 PageSpec element 的 materialized assets，并根据目标 SVG 目录计算可用的 SVG href。",
             parameters=(
-                "--page-spec <path>: PageSpec JSON containing element.materialization outputs.",
-                "--svg-dir <path>: directory where the SVG will be written; used to compute relative hrefs.",
+                "--page-spec <path>: 包含 element.materialization 输出的 PageSpec JSON。",
+                "--svg-dir <path>: SVG 将被写入的目录；工具用它计算相对 href。",
             ),
             examples=(
                 "page-spec-assets --page-spec nodes/asset_prepare/runs/001/output/page_spec.json --svg-dir svg",
@@ -65,17 +65,17 @@ def drawai_tool_registry() -> dict[str, DrawAITool]:
         "page-spec-svg-draft": DrawAITool(
             tool_id="page-spec-svg-draft",
             summary=(
-                "Generate a baseline semantic SVG from a materialized PageSpec and its allowed raster assets. "
-                "When validation is requested, also promote validated drafts to canonical Workbench outputs."
+                "从 materialized PageSpec 和允许的 raster assets 生成 baseline semantic SVG。"
+                "请求 validation 时，也会把通过校验的 draft 提升为 canonical Workbench outputs。"
             ),
             parameters=(
-                "--page-spec <path>: Materialized PageSpec JSON containing element.materialization outputs.",
-                "--svg <path>: SVG path to write; validated draft paths like semantic_0.svg are copied to semantic.svg.",
-                "--href-base-dir <path>: base directory used to compute/validate SVG hrefs; use svg for final deliverables.",
-                "--rendered <path>: optional PNG render path to write via validation; validated drafts are copied to rendered.png.",
-                "--report <path>: optional JSON validation report path to write; validated drafts are copied to validation_report_final.json.",
-                "--iteration-log-md <path>: optional Markdown iteration log path to write.",
-                "--iteration-log-jsonl <path>: optional JSONL iteration log path to write.",
+                "--page-spec <path>: 包含 element.materialization 输出的 materialized PageSpec JSON。",
+                "--svg <path>: 要写出的 SVG 路径；通过校验的 semantic_0.svg 等 draft 会被复制到 semantic.svg。",
+                "--href-base-dir <path>: 用于计算/校验 SVG href 的基础目录；最终 deliverables 使用 svg。",
+                "--rendered <path>: 可选 PNG render 输出路径；通过校验的 draft 会被复制到 rendered.png。",
+                "--report <path>: 可选 JSON validation report 输出路径；通过校验的 draft 会被复制到 validation_report_final.json。",
+                "--iteration-log-md <path>: 可选 Markdown iteration log 输出路径。",
+                "--iteration-log-jsonl <path>: 可选 JSONL iteration log 输出路径。",
             ),
             examples=(
                 "page-spec-svg-draft --page-spec nodes/asset_prepare/runs/001/output/page_spec.json --svg nodes/svg_compose/runs/001/output/semantic.svg --href-base-dir svg --rendered nodes/svg_compose/runs/001/output/rendered.png --report nodes/svg_compose/runs/001/output/validation_report_final.json --iteration-log-md nodes/svg_compose/runs/001/output/iteration_log.md --iteration-log-jsonl nodes/svg_compose/runs/001/output/iteration_log.jsonl",
@@ -84,14 +84,14 @@ def drawai_tool_registry() -> dict[str, DrawAITool]:
         ),
         "svg-validate": DrawAITool(
             tool_id="svg-validate",
-            summary="Validate and render a semantic SVG using canvas and materialized asset information from PageSpec.",
+            summary="使用 PageSpec 的 canvas 和 materialized asset 信息校验并渲染 semantic SVG。",
             parameters=(
-                "--svg <path>: SVG file to validate.",
-                "--page-spec <path>: PageSpec JSON used for canvas size and allowed raster assets.",
-                "--rendered <path>: PNG render path to write.",
-                "--report <path>: JSON validation report path to write.",
-                "--href-base-dir <path>: base directory used to resolve SVG hrefs; use svg for final deliverables.",
-                "--allow-external-assets: optional escape hatch for non-local assets; default is false.",
+                "--svg <path>: 要校验的 SVG 文件。",
+                "--page-spec <path>: 用于 canvas size 和 allowed raster assets 的 PageSpec JSON。",
+                "--rendered <path>: 要写出的 PNG render 路径。",
+                "--report <path>: 要写出的 JSON validation report 路径。",
+                "--href-base-dir <path>: 用于解析 SVG href 的基础目录；最终 deliverables 使用 svg。",
+                "--allow-external-assets: 可选 escape hatch，允许非本地 assets；默认 false。",
             ),
             examples=(
                 "svg-validate --svg nodes/svg_compose/runs/001/output/semantic.svg --page-spec nodes/asset_prepare/runs/001/output/page_spec.json --rendered nodes/svg_compose/runs/001/output/rendered.png --report nodes/svg_compose/runs/001/output/validation_report_final.json --href-base-dir svg",
@@ -146,10 +146,10 @@ def render_drawai_tool_prompt_section(
     if invocation == "tool_call":
         return _render_drawai_tool_call_prompt_section(selected)
     lines = [
-        "## DrawAI Tools",
-        "Use only the DrawAI tools listed here. They are CLI product interfaces, not direct Python function calls.",
-        f"Exact command prefix from the Agent cwd: `{command_prefix}`",
-        "Run `<command prefix> help <tool_id>` for the full contract of a tool before using unfamiliar parameters.",
+        "## DrawAI 工具",
+        "只能使用下面列出的 DrawAI tools。它们是 CLI 产品接口，不是直接调用的 Python 内部函数。",
+        f"Agent cwd 下的精确命令前缀：`{command_prefix}`",
+        "使用不熟悉的工具参数前，先运行 `<command prefix> help <tool_id>` 查看完整契约。",
     ]
     for tool in selected:
         lines.extend(
@@ -157,21 +157,21 @@ def render_drawai_tool_prompt_section(
                 "",
                 f"### Tool `{tool.tool_id}`",
                 tool.summary,
-                "Parameters:",
+                "参数：",
             ]
         )
         lines.extend(f"- {parameter}" for parameter in tool.parameters)
         if tool.examples:
-            lines.append("Examples:")
+            lines.append("示例：")
             lines.extend(f"- `{command_prefix} {example}`" for example in tool.examples)
     return "\n".join(lines)
 
 
 def _render_drawai_tool_call_prompt_section(tools: Sequence[DrawAITool]) -> str:
     lines = [
-        "## DrawAI Tools",
-        "Use only the DrawAI tools listed here. They are product interfaces exposed through the `run_drawai_tool` API tool, not shell commands.",
-        "Call `run_drawai_tool` with `tool_id` and an `args` string array. For an unfamiliar tool contract, call `run_drawai_tool` with `tool_id: \"help\"` and `args: [\"<tool_id>\"]` before using it.",
+        "## DrawAI 工具",
+        "只能使用下面列出的 DrawAI tools。它们是通过 `run_drawai_tool` API tool 暴露的产品接口，不是 shell commands。",
+        "调用 `run_drawai_tool` 时传入 `tool_id` 和 `args` string array。使用不熟悉的工具前，先调用 `tool_id: \"help\"` 和 `args: [\"<tool_id>\"]` 查看契约。",
     ]
     for tool in tools:
         lines.extend(
@@ -179,12 +179,12 @@ def _render_drawai_tool_call_prompt_section(tools: Sequence[DrawAITool]) -> str:
                 "",
                 f"### Tool `{tool.tool_id}`",
                 tool.summary,
-                "Parameters:",
+                "参数：",
             ]
         )
         lines.extend(f"- {parameter}" for parameter in tool.parameters)
         if tool.examples:
-            lines.append("Examples:")
+            lines.append("示例：")
             for example in tool.examples:
                 invocation = _tool_call_example(example)
                 lines.append(f"- `{invocation}`")

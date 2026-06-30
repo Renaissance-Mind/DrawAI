@@ -23,7 +23,7 @@ from .agent_prompt_defaults import (
     RUN0_ELEMENT_REFINE_CONSTRAINTS,
     RUN0_ELEMENT_REFINE_TASK,
     SVG_GENERATION_CONSTRAINTS,
-    SVG_GENERATION_TASK,
+    SVG_GENERATION_TASK_ZH,
     normalize_page_spec_processing_types,
     render_page_spec_refine_task,
     render_page_spec_refine_task_zh,
@@ -47,20 +47,20 @@ DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
 SVG_AGENT_TIMEOUT_SECONDS = 7200
 
 TYPE_CONTRACTS = {
-    "image": "Raster image file. Use it as visual evidence; do not rewrite it unless this node declares an image output.",
+    "image": "栅格图像文件。把它作为视觉证据；除非当前 node 声明了 image output，否则不要改写它。",
     "element_candidates": (
-        "Parser candidate elements before fusion/refinement. JSON contains candidates with candidate_id, "
-        "source_parser, element_type, bbox [x, y, width, height], geometry, confidence, optional text, evidence_files, provenance, and raw_ref."
+        "fusion/refinement 之前的 parser candidate elements。JSON 包含 candidate_id、source_parser、"
+        "element_type、bbox [x, y, width, height]、geometry、confidence、optional text、evidence_files、provenance 和 raw_ref。"
     ),
     "element_plans": (
-        "Refined/planned DrawAI elements. JSON contains elements with element_id, source_candidate_ids, element_type, "
-        "bbox [x, y, width, height], geometry, z_order, confidence low|medium|high, processing_intent "
-        "{object_type, processing_type, parameters}, review_status, created_by_stage, and change_reason."
+        "精修/规划后的 DrawAI elements。JSON 包含 element_id、source_candidate_ids、element_type、"
+        "bbox [x, y, width, height]、geometry、z_order、confidence low|medium|high、processing_intent "
+        "{object_type, processing_type, parameters}、review_status、created_by_stage 和 change_reason。"
     ),
     "page_spec": (
-        "Canonical one-page composition model. JSON contains schema drawai.page_spec.v1, page_id, source, canvas, "
-        "optional background, and elements with id, kind, box_px, z_index, role, build instructions including "
-        "processing_type, style, measurement, source_refs, metadata, and optional materialization outputs."
+        "规范化的单页组合模型。JSON 包含 schema drawai.page_spec.v1、page_id、source、canvas、"
+        "可选 background，以及带有 id、kind、box_px、z_index、role、build instructions including "
+        "processing_type、style、measurement、source_refs、metadata 和可选 materialization outputs 的 elements。"
     ),
     "element_analysis": (
         "Legacy Run0 asset/source analysis JSON. JSON contains schema drawai.codex_element_analysis.v1, case_dir, "
@@ -75,10 +75,14 @@ TYPE_CONTRACTS = {
         "Processed asset package collection. JSON contains asset_packages with asset_id, element_id, processor_type, "
         "status pending|running|ok|failed|unsupported, files, metadata, processor_runs, all_results, active_result, editable_payload, and failure."
     ),
-    "semantic_svg": "Editable SVG file with an <svg> root following the DrawAI semantic SVG/PPT profile.",
-    "pptx": "PowerPoint Open XML .pptx package.",
-    "final_outputs": "Output-node manifest listing collected deliverables and optional mirrored paths.",
+    "semantic_svg": "根节点为 <svg> 的可编辑 SVG 文件，遵循 DrawAI semantic SVG/PPT profile。",
+    "pptx": "PowerPoint Open XML .pptx package。",
+    "final_outputs": "Output node manifest，列出收集到的 deliverables 和可选 mirrored paths。",
 }
+
+
+SVG_COMPOSE_GENERATOR_SCRIPT_REPO_PATH = "templates/svg_compose/build_semantic_svg.template.py"
+SVG_COMPOSE_GENERATOR_SCRIPT_OUTPUT_PATH = "output/build_semantic_svg.py"
 
 
 @dataclass(frozen=True)
@@ -316,7 +320,7 @@ def svg_agent_preset() -> AgentPreset:
         preset_id="svg_generation",
         title="SVG Generation",
         provider_id="codex_sdk",
-        task=SVG_GENERATION_TASK,
+        task=SVG_GENERATION_TASK_ZH,
         outputs=(
             AgentOutputDeclaration(
                 port_id="semantic_svg",
@@ -426,14 +430,28 @@ def _render_prompt_text(
         or "<drawai_tool_command_prefix>"
     )
     lines = [
-        "## Agent Runtime Settings",
+        "## Agent 运行上下文",
         f"- Provider: {provider_id}",
-        f"- Workflow run root: {workflow_run_root}",
-        f"- Current node workdir: {node_workdir}",
-        f"- Agent process cwd: {agent_cwd}",
-        f"- Repository root: {repo_root}",
-        f"- Node run manifest path: {node_workdir}/node_run.json",
+        f"- Workflow run root：{workflow_run_root}",
+        f"- 当前 node workdir：{node_workdir}",
+        f"- Agent process cwd：{agent_cwd}",
+        f"- Repository root：{repo_root}",
+        f"- Node run manifest path：{node_workdir}/node_run.json",
     ]
+    generator_script = _svg_compose_generator_script_context(
+        node_id=node_id,
+        inputs=inputs,
+        outputs=outputs,
+        runtime_context=runtime_context,
+    )
+    if generator_script is not None:
+        lines.extend(
+            [
+                f"- SVG 生成脚本模板：{generator_script['template']}",
+                f"- SVG 生成脚本 run-root path：{generator_script['run_root_path']}",
+                f"- SVG 生成脚本 absolute path：{generator_script['absolute_path']}",
+            ]
+        )
     for key, value in options.items():
         if str(key).lower().replace("-", "_") == "api_key":
             lines.append(f"- {key}: [redacted]")
@@ -446,11 +464,10 @@ def _render_prompt_text(
             "## Task",
             task,
             "",
-            "## Connected Input Files",
+            "## 已连接输入文件",
             (
-                "Every connected input is listed below. Open only these files, using the "
-                "path from the Agent cwd when possible. The Format and Type contracts below "
-                "describe how to interpret each file."
+                "每个已连接输入都会列在下面。只打开这些文件，优先使用 Agent cwd 下的相对路径。"
+                "下面的格式和类型契约说明如何理解每个文件。"
             ),
         ]
     )
@@ -459,27 +476,26 @@ def _render_prompt_text(
             source = _source_label(item)
             lines.extend(
                 [
-                    f"- Source: {source}",
-                    f"  Format: {item.get('format_id') or 'unspecified'}",
-                    f"  Type: {item.get('type') or 'unspecified'}",
-                    f"  Run-root path: {item['path']}",
-                    f"  Absolute path: {_input_absolute_path(item['path'], runtime_context)}",
-                    f"  From Agent cwd: {_input_path_from_agent_cwd(item['path'], runtime_context)}",
-                    f"  Description: {item.get('description') or 'No description supplied.'}",
+                    f"- 来源：{source}",
+                    f"  Format：{item.get('format_id') or 'unspecified'}",
+                    f"  Type：{item.get('type') or 'unspecified'}",
+                    f"  Run-root path：{item['path']}",
+                    f"  Absolute path：{_input_absolute_path(item['path'], runtime_context)}",
+                    f"  From Agent cwd：{_input_path_from_agent_cwd(item['path'], runtime_context)}",
+                    f"  说明：{item.get('description') or 'No description supplied.'}",
                 ]
             )
     else:
-        lines.append("- No connected input files were provided.")
+        lines.append("- 没有提供 connected input files。")
 
     lines.extend(
         [
             "",
-            "## Declared Output Files",
+            "## 声明输出文件",
             (
-                "Write each declared output exactly; these are the semantic files consumed by downstream nodes. "
-                "The Agent cwd is the workflow run root, so use the run-root path when creating outputs. "
-                "When the task explicitly asks for render/report/log helper files, keep those auxiliary files "
-                "inside the current node output directory. The harness records declared outputs in node_run.json after the run."
+                "每个声明输出都会列在下面。这些是下游节点消费的语义文件。Agent cwd 是 workflow run root，"
+                "因此创建输出时使用 run-root path。辅助 render、report、log 文件保存在当前 node output directory 内。"
+                "runner 会在运行结束后把声明输出记录到 node_run.json。"
             ),
         ]
     )
@@ -490,15 +506,12 @@ def _render_prompt_text(
         lines.extend(
             [
                 (
-                    "For this provider, when a declared output is a refined version of a connected input file, use "
-                    "`copy_file` from the connected run-root path to the declared output path first, then apply small "
-                    "targeted `edit_file` changes only when you already know the exact old text. After `copy_file`, "
-                    "validate immediately and finalize if validation is ok; do not spend another turn rewriting the "
-                    "whole copied file. A validated copy is an acceptable completion when a full rewrite would delay "
-                    "or risk the run. Create short new files with `write_file`. For any declared JSON, SVG, or log "
-                    f"larger than {MAX_SINGLE_WRITE_CHARS} characters, call `write_file` with `content` set to an "
-                    f"empty string first, then use `append_file` with chunks no larger than {MAX_APPEND_WRITE_CHARS} "
-                    "characters."
+                    "对此 provider，如果声明输出是 connected input file 的精修版本，先用 `copy_file` 从 connected "
+                    "run-root path 复制到声明输出路径，然后只在已经知道精确 old text 时使用小范围 `edit_file`。"
+                    "`copy_file` 后立刻 validate；如果 validation ok 就 finalize，不要再花一轮重写整个已复制文件。"
+                    "当完整重写会拖慢或增加风险时，一个通过 validation 的 copy 可以作为完成结果。短文件用 `write_file` 创建。"
+                    f"任何超过 {MAX_SINGLE_WRITE_CHARS} 字符的 JSON、SVG 或 log，先用空 content 调用 `write_file`，"
+                    f"再用每块不超过 {MAX_APPEND_WRITE_CHARS} 字符的 `append_file` 追加。"
                 ),
             ]
         )
@@ -506,12 +519,10 @@ def _render_prompt_text(
             page_spec_input_path = str(page_spec_input["path"])
             page_spec_output_path = _output_path_from_run_root(node_id, page_spec_output["path"], runtime_context)
             lines.append(
-                "For PageSpec refine with this provider, the first file-producing action MUST be "
-                f"`copy_file` from `{page_spec_input_path}` to `{page_spec_output_path}`. Do not read the full "
-                "connected PageSpec just to rewrite it. After `copy_file`, the runtime validates "
-                "drawai.page_spec.v1 automatically; if validation is ok and you do not already know one exact small "
-                "edit, finalize immediately. Only call `open_file` for small targeted offsets after the copied output "
-                "exists."
+                "对此 provider 的 PageSpec refine，第一步产生文件的 action 必须是 "
+                f"用 `copy_file` 从 `{page_spec_input_path}` 复制到 `{page_spec_output_path}`。"
+                "不要为了重写而读取完整 connected PageSpec。`copy_file` 后 runtime 会自动校验 drawai.page_spec.v1；"
+                "如果 validation ok 且你没有一个明确的小改动，立刻 finalize。只有 copied output 存在后，才为了小范围定位调用 `open_file`。"
             )
         if (
             semantic_svg_output is not None
@@ -535,14 +546,14 @@ def _render_prompt_text(
         final_run_root_path = _output_path_from_run_root(node_id, output["path"], runtime_context)
         lines.extend(
             [
-                f"- Port: {output['port_id']}",
-                f"  Format: {output['format_id']}",
-                f"  Type: {output['type']}",
-                f"  Node-output relative path: {output['path']}",
-                f"  Write path from Agent cwd: {final_run_root_path}",
-                f"  Final run-root path: {final_run_root_path}",
-                f"  Final absolute path: {_output_absolute_path(node_id, output['path'], runtime_context)}",
-                f"  Description: {output['description']}",
+                f"- Port：{output['port_id']}",
+                f"  Format：{output['format_id']}",
+                f"  Type：{output['type']}",
+                f"  Node-output relative path：{output['path']}",
+                f"  Agent cwd 写入路径：{final_run_root_path}",
+                f"  最终 run-root path：{final_run_root_path}",
+                f"  最终 absolute path：{_output_absolute_path(node_id, output['path'], runtime_context)}",
+                f"  说明：{output['description']}",
             ]
         )
 
@@ -550,11 +561,10 @@ def _render_prompt_text(
         lines.extend(
             [
                 "",
-                "## Built-in Script Files",
+                "## 内置脚本文件",
                 (
-                    "These scripts are explicitly available to this Agent node. Use them only when they help produce "
-                    "the declared outputs, and keep all generated files inside the current node output directory unless an "
-                    "output declaration says otherwise."
+                    "这些脚本已显式提供给当前 Agent node。只有当它们有助于生成声明输出时才使用它们；"
+                    "除非输出声明另有要求，所有生成文件都应保存在当前 node output directory 内。"
                 ),
             ]
         )
@@ -565,14 +575,14 @@ def _render_prompt_text(
             )
             lines.extend(
                 [
-                    f"- Script: {script['script_id']}",
-                    f"  Repository path: {script['path']}",
-                    f"  From Agent cwd: {script['from_agent_cwd']}",
-                    f"  Description: {script['description']}",
+                    f"- Script：{script['script_id']}",
+                    f"  Repository path：{script['path']}",
+                    f"  From Agent cwd：{script['from_agent_cwd']}",
+                    f"  说明：{script['description']}",
                 ]
             )
             if usage:
-                lines.append(f"  Usage: {usage}")
+                lines.append(f"  用法：{usage}")
 
     if drawai_tools:
         tool_invocation = "tool_call" if provider_id == DRAWAI_TOOL_AGENT_PROVIDER else "cli"
@@ -587,25 +597,25 @@ def _render_prompt_text(
             ]
         )
 
-    lines.extend(["", "## Type And Format Contracts"])
+    lines.extend(["", "## 类型和格式契约"])
     format_contracts = default_format_contract_descriptions()
     for type_name in _ordered_unique(
         [str(item.get("type") or "") for item in inputs]
         + [str(output.get("type") or "") for output in outputs]
     ):
         lines.append(
-            f"- Type `{type_name}`: {TYPE_CONTRACTS.get(type_name, 'No built-in type description is registered. Follow the node description and connected file contents.')}"
+            f"- Type `{type_name}`：{TYPE_CONTRACTS.get(type_name, '没有注册内置 type 说明。按照 node description 和 connected file contents 处理。')}"
         )
     for format_id in _ordered_unique(
         [str(item.get("format_id") or "") for item in inputs]
         + [str(output.get("format_id") or "") for output in outputs]
     ):
         lines.append(
-            f"- Format `{format_id}`: {format_contracts.get(format_id, 'No built-in format description is registered. Follow the node declaration and validate the file before returning.')}"
+            f"- Format `{format_id}`：{format_contracts.get(format_id, '没有注册内置 format 说明。按照 node declaration 处理，并在返回前校验文件。')}"
         )
 
     if constraints:
-        lines.extend(["", "## Constraints"])
+        lines.extend(["", "## 约束"])
         for constraint in constraints:
             lines.append(f"- {constraint}")
 
@@ -685,6 +695,43 @@ def _output_absolute_path(
             .as_posix()
         )
     return f"<workflow_run_root>/{_output_path_from_run_root(node_id, path_value, runtime_context)}"
+
+
+def _svg_compose_generator_script_context(
+    *,
+    node_id: str,
+    inputs: Sequence[Mapping[str, Any]],
+    outputs: Sequence[Mapping[str, Any]],
+    runtime_context: Mapping[str, str],
+) -> Mapping[str, str] | None:
+    if _first_input_by_type(inputs, "page_spec") is None:
+        return None
+    if _first_output_by_type(outputs, "semantic_svg") is None:
+        return None
+    run_root_path = _output_path_from_run_root(
+        node_id,
+        SVG_COMPOSE_GENERATOR_SCRIPT_OUTPUT_PATH,
+        runtime_context,
+    )
+    absolute_path = _output_absolute_path(
+        node_id,
+        SVG_COMPOSE_GENERATOR_SCRIPT_OUTPUT_PATH,
+        runtime_context,
+    )
+    repo_root = runtime_context.get("repo_root") or "<repository_root>"
+    template_path = (
+        (Path(repo_root) / SVG_COMPOSE_GENERATOR_SCRIPT_REPO_PATH)
+        .expanduser()
+        .resolve(strict=False)
+        .as_posix()
+        if repo_root and not repo_root.startswith("<")
+        else f"{repo_root}/{SVG_COMPOSE_GENERATOR_SCRIPT_REPO_PATH}"
+    )
+    return {
+        "template": template_path,
+        "run_root_path": run_root_path,
+        "absolute_path": absolute_path,
+    }
 
 
 def _relative_from_node_workdir(path: Path, node_workdir: Path) -> str:
@@ -960,11 +1007,14 @@ def _configured_drawai_tools(config: Mapping[str, Any]) -> tuple[str, ...]:
             if not isinstance(raw_tool, str) or not raw_tool.strip():
                 raise ValueError(f"drawai_tools[{index}] must be a non-empty string")
             tool_id = raw_tool.strip()
+            if tool_id in DISABLED_DRAWAI_TOOLS:
+                continue
             tool_ids.append(tool_id)
     return _ordered_unique(tool_ids)
 
 
-PAGE_SPEC_ONLY_DRAWAI_TOOLS = frozenset({"page-spec-assets", "page-spec-svg-draft", "svg-validate"})
+DISABLED_DRAWAI_TOOLS = frozenset({"page-spec-svg-draft"})
+PAGE_SPEC_ONLY_DRAWAI_TOOLS = frozenset({"page-spec-assets", "svg-validate"})
 
 
 def _drawai_tools_for_inputs(

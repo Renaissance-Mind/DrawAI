@@ -57,33 +57,33 @@ def test_run0_agent_prompt_renders_inputs_and_output_contract() -> None:
     assert prompt.provider_id == "codex_sdk"
     assert prompt.preset_id == "run0_element_refine"
     assert "# Run0 Element Refinement" not in prompt.text
-    assert "## Agent Runtime Settings" in prompt.text
-    assert "- Workflow run root: <workflow_run_root>" in prompt.text
-    assert "- Current node workdir: <workflow_run_root>/nodes/run0_agent/runs/<attempt_id>" in prompt.text
+    assert "## Agent 运行上下文" in prompt.text
+    assert "- Workflow run root：<workflow_run_root>" in prompt.text
+    assert "- 当前 node workdir：<workflow_run_root>/nodes/run0_agent/runs/<attempt_id>" in prompt.text
     assert "DrawAI asset post-processing and element-plans task." in prompt.text
     assert "Task 1: refine the connected candidates into minimum independent assets." in prompt.text
-    assert "## Connected Input Files" in prompt.text
+    assert "## 已连接输入文件" in prompt.text
     assert "nodes/input/runs/001/output/image.png" in prompt.text
     assert "Original source image." in prompt.text
     assert "nodes/fusion/runs/001/output/elements.json" in prompt.text
-    assert "Absolute path: <workflow_run_root>/nodes/fusion/runs/001/output/elements.json" in prompt.text
-    assert "From Agent cwd: nodes/fusion/runs/001/output/elements.json" in prompt.text
+    assert "Absolute path：<workflow_run_root>/nodes/fusion/runs/001/output/elements.json" in prompt.text
+    assert "From Agent cwd：nodes/fusion/runs/001/output/elements.json" in prompt.text
     assert "Fused boxes from SAM and OCR." in prompt.text
-    assert "## Declared Output Files" in prompt.text
+    assert "## 声明输出文件" in prompt.text
     assert "output/elements.json" in prompt.text
     assert "nodes/run0_agent/runs/<attempt_id>/output/elements.json" in prompt.text
-    assert "Final absolute path: <workflow_run_root>/nodes/run0_agent/runs/<attempt_id>/output/elements.json" in prompt.text
-    assert "## Built-in Script Files" in prompt.text
+    assert "最终 absolute path：<workflow_run_root>/nodes/run0_agent/runs/<attempt_id>/output/elements.json" in prompt.text
+    assert "## 内置脚本文件" in prompt.text
     assert "assets_visualization.py" in prompt.text
     assert "node_run.json" in prompt.text
-    assert "## DrawAI Tools" in prompt.text
+    assert "## DrawAI 工具" in prompt.text
     assert "Tool `format`" in prompt.text
-    assert "## Type And Format Contracts" in prompt.text
+    assert "## 类型和格式契约" in prompt.text
     assert "Type `image`" in prompt.text
     assert "Type `element_plans`" in prompt.text
     assert "Format `drawai.image.v1`" in prompt.text
     assert "Format `drawai.element_plans.v1`" in prompt.text
-    assert "## Constraints" in prompt.text
+    assert "## 约束" in prompt.text
     assert "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation." in prompt.text
     assert "shell_command" not in prompt.text
 
@@ -110,34 +110,31 @@ def test_svg_agent_prompt_uses_same_agent_contract() -> None:
 
     assert prompt.provider_id == "kimi_cli"
     assert "# SVG Generation" not in prompt.text
-    assert "- Current node workdir: <workflow_run_root>/nodes/svg_agent/runs/<attempt_id>" in prompt.text
-    assert "IMAGE VECTORIZATION TASK" in prompt.text
-    assert "OVERALL SVG/PPT PROFILE" in prompt.text
+    assert "- 当前 node workdir：<workflow_run_root>/nodes/svg_agent/runs/<attempt_id>" in prompt.text
+    assert "你需要完成位图矢量化任务。" in prompt.text
+    assert "SVG/PPT 结构约束" in prompt.text
+    assert "SVG 生成脚本 run-root path：nodes/svg_agent/runs/<attempt_id>/output/build_semantic_svg.py" in prompt.text
+    assert "SVG 生成脚本 absolute path：<workflow_run_root>/nodes/svg_agent/runs/<attempt_id>/output/build_semantic_svg.py" in prompt.text
     assert prompt.outputs[0]["path"] == "output/semantic.svg"
     assert prompt.outputs[0]["format_id"] == "drawai.semantic_svg.v1"
     assert "nodes/asset_prepare/runs/001/output/page_spec.json" in prompt.text
     assert "output/semantic.svg" in prompt.text
-    assert "semantic_0.svg, rendered_0.png, validation_report_0.json" in prompt.text
-    assert "REFINE LOOP / DEFAULT 1 ROUND, MAX 2 ROUNDS" in prompt.text
-    assert "Do not run a third refinement round" in prompt.text
-    assert "A complete valid final SVG is better than an unfinished extra refinement" in prompt.text
-    assert 'data-pb-formula-latex-b64' in prompt.text
-    assert 'data-pb-formula-bbox="x y width height"' in prompt.text
-    assert "Office Math" in prompt.text
-    assert "Do not display raw LaTeX" in prompt.text
-    assert "A formula includes standalone mathematical variables or symbols with subscripts, superscripts, accents, Greek letters, operators, or relation signs." in prompt.text
-    assert "Do not flatten formula structure into plain text such as alphai, xi2, yhat, or theta0." in prompt.text
-    assert "Formula SVG example" in prompt.text
-    assert "label-formula-example" in prompt.text
-    assert "\\alpha_i^2+\\beta_i=c_i" in prompt.text
-    assert "baseline-shift=\"sub\"" in prompt.text
-    assert "label-formula-delta-ae" not in prompt.text
-    assert "\\Delta^\\phi_{AE}" not in prompt.text
+    assert "semantic_<ROUND_INDEX>.svg" in prompt.text
+    assert "rendered_<ROUND_INDEX>.png" in prompt.text
+    assert "validation_report_<ROUND_INDEX>.json" in prompt.text
+    assert "总共最多进行 5 轮迭代" in prompt.text
+    assert "以最后一轮生成并通过校验的 semantic_<ROUND_INDEX>.svg 作为 accepted SVG" in prompt.text
+    assert "把这个文件复制到当前 DAG 声明的最终 SVG 路径" in prompt.text
+    assert "ELEMENT_RENDERERS" in prompt.text
+    assert "draw_svg_<element_id_lower>()" in prompt.text
+    assert "不要直接手改 semantic_*.svg。" in prompt.text
+    assert "后不回写脚本" not in prompt.text
+    assert 'data-pb-role="formula"' in prompt.text
+    assert "不要把公式变成不可编辑图片" in prompt.text
     assert "semantic_3.svg" not in prompt.text
-    assert "Do not look for unconnected OCR, template, layout, request, or parser files." in prompt.text
     assert "OCR boxes JSON" not in prompt.text
     assert "Template IR" not in prompt.text
-    assert "Write each declared output exactly" in prompt.text
+    assert "每个声明输出都会列在下面" in prompt.text
 
 
 def test_svg_agent_prompt_filters_pagespec_tools_for_image_only_inputs() -> None:
@@ -157,12 +154,12 @@ def test_svg_agent_prompt_filters_pagespec_tools_for_image_only_inputs() -> None
         },
     )
 
-    assert "If the connected input list includes no PageSpec" in prompt.text
+    assert "SVG 生成脚本 run-root path：" not in prompt.text
     assert "Tool `format`" in prompt.text
     assert "Tool `page-spec-assets`" not in prompt.text
     assert "Tool `page-spec-svg-draft`" not in prompt.text
     assert "Tool `svg-validate`" not in prompt.text
-    assert "Rendered PNGs and per-round validation reports are optional in image-only runs" in prompt.text
+    assert "page-spec-assets 返回的 href" in prompt.text
 
 
 def test_drawai_tool_agent_prompt_uses_same_agent_contract_with_tool_call_invocation() -> None:
@@ -191,15 +188,15 @@ def test_drawai_tool_agent_prompt_uses_same_agent_contract_with_tool_call_invoca
     )
 
     assert prompt.provider_id == "drawai_tool_agent"
-    assert "IMAGE VECTORIZATION TASK" in prompt.text
-    assert "OVERALL SVG/PPT PROFILE" in prompt.text
+    assert "你需要完成位图矢量化任务。" in prompt.text
+    assert "SVG/PPT 结构约束" in prompt.text
     assert "Materialized PageSpec with crop/crop_nobg assets." in prompt.text
-    assert "Use only the DrawAI tools listed here." in prompt.text
+    assert "只能使用下面列出的 DrawAI tools。" in prompt.text
     assert "run_drawai_tool" in prompt.text
     assert 'run_drawai_tool({"tool_id": "page-spec-assets"' in prompt.text
-    assert 'run_drawai_tool({"tool_id": "page-spec-svg-draft"' in prompt.text
-    assert "do not hand-write a complete SVG" in prompt.text
-    assert "Exact command prefix" not in prompt.text
+    assert 'run_drawai_tool({"tool_id": "page-spec-svg-draft"' not in prompt.text
+    assert "do not hand-write a complete SVG" not in prompt.text
+    assert "Agent cwd 下的精确命令前缀" not in prompt.text
     assert "Tool Runtime Contract" not in prompt.text
     assert "Direct Output Runtime Override" not in prompt.text
 
@@ -347,10 +344,10 @@ def test_page_spec_refine_drawai_tool_agent_prompt_requires_copy_file_first() ->
         },
     )
 
-    assert "the first file-producing action MUST be `copy_file`" in prompt.text
+    assert "第一步产生文件的 action 必须是 用 `copy_file`" in prompt.text
     assert "nodes/page_spec_fuse/runs/001/output/page_spec.json" in prompt.text
     assert "nodes/page_spec_refine/runs/<attempt_id>/output/page_spec.json" in prompt.text
-    assert "Do not read the full connected PageSpec just to rewrite it" in prompt.text
+    assert "不要为了重写而读取完整 connected PageSpec" in prompt.text
 
 
 def test_custom_agent_prompt_uses_configured_output_formats() -> None:

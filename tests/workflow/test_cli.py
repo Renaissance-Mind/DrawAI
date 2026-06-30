@@ -153,7 +153,7 @@ def test_workflow_run_agent_cli_uses_file_backed_execution(tmp_path: Path, capsy
         assert request.workdir == workdir.resolve(strict=False)
         assert "Input manifest path:" not in request.prompt.text
         assert "nodes/input/runs/001/output/image.png" in request.prompt.text
-        assert "## DrawAI Tools" in request.prompt.text
+        assert "## DrawAI 工具" in request.prompt.text
         output_path = request.workdir / "output" / "image.png"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake")

@@ -73,19 +73,19 @@ def test_llm_prompt_embeds_json_inputs_and_attaches_image_content(tmp_path: Path
     )
 
     assert prompt.image_paths == (image_path,)
-    assert "## Connected Input Contents" in prompt.text
-    assert "Image content is attached to this LLM request" in prompt.text
+    assert "## 已连接输入内容" in prompt.text
+    assert "Image content 已附加到这个 LLM request" in prompt.text
     assert '"schema": "drawai.page_spec.v1"' in prompt.text
     assert "Fused PageSpec evidence." in prompt.text
-    assert "Do not read workflow files from disk" in prompt.text
-    assert "Return the page_spec output as JSON content" in prompt.text
+    assert "不要从磁盘读取 workflow files" in prompt.text
+    assert "以 JSON content 返回 page_spec output" in prompt.text
     assert "Write path from Agent cwd" not in prompt.text
-    assert "## Direct Output Runtime Override" in prompt.text
-    assert "ignore any task wording that asks you to run commands" in prompt.text
-    assert "compact valid JSON" in prompt.text
-    assert "do not use raster image elements" in prompt.text
+    assert "## 直接输出运行模式" in prompt.text
+    assert "忽略任何要求你自己运行命令或创建文件的措辞" in prompt.text
+    assert "紧凑且有效的 JSON/SVG" in prompt.text
+    assert "不要使用 raster image elements" in prompt.text
     assert '{"drawai_passthrough_input": true}' in prompt.text
-    assert "large structured input" in prompt.text
+    assert "大型结构化输入" in prompt.text
     assert "extra_body" not in prompt.text
     assert "reasoning" not in prompt.text
 
@@ -280,7 +280,7 @@ def test_execute_llm_prompt_extracts_json_wrapped_svg_and_writes_declared_output
 
     def invoker(**kwargs: Any) -> str:
         assert kwargs["image_paths"] == ()
-        assert "Return the semantic_svg output as SVG content" in kwargs["prompt"]
+        assert "以 SVG content 返回 semantic_svg output" in kwargs["prompt"]
         return json.dumps({"svg": svg})
 
     execute_llm_prompt(

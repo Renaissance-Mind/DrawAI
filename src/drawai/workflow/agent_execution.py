@@ -37,7 +37,12 @@ from drawai.tool_agent_runtime import (
     invoke_drawai_tool_agent,
 )
 
-from .agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
+from .agents import (
+    DEFAULT_AGENT_TIMEOUT_SECONDS,
+    SVG_COMPOSE_GENERATOR_SCRIPT_OUTPUT_PATH,
+    SVG_COMPOSE_GENERATOR_SCRIPT_REPO_PATH,
+    AgentPrompt,
+)
 
 
 GENERIC_AGENT_CLI_PROVIDERS: dict[str, str] = {
@@ -99,6 +104,7 @@ class AgentExecutionError(RuntimeError):
 def execute_agent_prompt(request: AgentExecutionRequest) -> AgentExecutionResult:
     provider_id = request.prompt.provider_id
     request.workdir.mkdir(parents=True, exist_ok=True)
+    _prepare_builtin_agent_scripts(request)
     prompt_path = request.workdir / "prompt.md"
     prompt_path.write_text(request.prompt.text, encoding="utf-8")
     _require_input_files(request)
@@ -912,6 +918,51 @@ def _copy_codex_session_log_snapshot(
 
 def _agent_cwd(request: AgentExecutionRequest) -> Path:
     return request.run_root.expanduser().resolve(strict=False)
+
+
+def _prepare_builtin_agent_scripts(request: AgentExecutionRequest) -> None:
+    if request.prompt.preset_id != "svg_generation":
+        return
+    if not _prompt_items_include_type(request.prompt.inputs, "page_spec"):
+        return
+    semantic_output = _first_prompt_item_by_type(request.prompt.outputs, "semantic_svg")
+    if semantic_output is None:
+        return
+
+    source = _repo_root() / SVG_COMPOSE_GENERATOR_SCRIPT_REPO_PATH
+    target = request.workdir / SVG_COMPOSE_GENERATOR_SCRIPT_OUTPUT_PATH
+    declared_run_root_path = _run_root_relative_path(
+        request,
+        request.workdir / str(semantic_output["path"]),
+    )
+
+    template = source.read_text(encoding="utf-8")
+    assignment = 'DECLARED_FINAL_SVG_RUN_ROOT_PATH = "__DRAWAI_DECLARED_FINAL_SVG_RUN_ROOT_PATH__"'
+    replacement = f"DECLARED_FINAL_SVG_RUN_ROOT_PATH = {json.dumps(declared_run_root_path)}"
+    if assignment not in template:
+        raise AgentExecutionError(f"SVG compose generator template missing path marker: {source}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(template.replace(assignment, replacement), encoding="utf-8")
+
+
+def _prompt_items_include_type(items: Sequence[Mapping[str, Any]], type_name: str) -> bool:
+    return _first_prompt_item_by_type(items, type_name) is not None
+
+
+def _first_prompt_item_by_type(
+    items: Sequence[Mapping[str, Any]],
+    type_name: str,
+) -> Mapping[str, Any] | None:
+    for item in items:
+        if item.get("type") == type_name and isinstance(item.get("path"), str) and item["path"]:
+            return item
+    return None
+
+
+def _run_root_relative_path(request: AgentExecutionRequest, path: Path) -> str:
+    run_root = request.run_root.expanduser().resolve(strict=False)
+    path_abs = path.expanduser().resolve(strict=False)
+    return os.path.relpath(path_abs, run_root).replace(os.sep, "/")
 
 
 def _repo_root() -> Path:

@@ -734,165 +734,105 @@ FINAL CHECK BEFORE ENDING THIS RUN
 - iteration_log.md and iteration_log.jsonl explain every round and stop/continue decision.
 - Keep the final chat response short; files are the source of truth."""
 
-SVG_GENERATION_TASK_ZH = """图像向量化任务
-目标：把一张位图图形转换成可编辑、适合稳定导出到 PPT 的 SVG。
+SVG_GENERATION_TASK_ZH = """任务
+你需要完成位图矢量化任务。
 
-DRAWAI 总体流程
-完整 DrawAI 任务分为三个概念阶段：
-1. 资产解析：SAM/OCR 为单页生成 PageSpec element evidence。
-2. PageSpec 精修和资产准备：精修 PageSpec elements，调整 bboxes，拆分/合并元素，补充缺失元素，决定每个元素的 build.processing_type，并把 crop/crop_nobg 输出 materialize 到 PageSpec bundle 的 element.materialization 中。
-3. 图像可编辑化：把可编辑 SVG primitives/text 与允许的 raster crop assets 组合起来，重建整张图，使其成为可编辑的 SVG/PPT 表达。
+目标：把输入的位图图形转换成可编辑 SVG，并且要尽可能还原输入图像的视觉效果。前面的阶段已经使用一些解析方法解析了输入位图，形成大量元素，并封装成 PageSpec 数据格式。这一阶段要基于原图、PageSpec，以及部分已经提前处理好的元素，组合成最终 SVG。
 
-当前 Agent node 只执行第 3 阶段。不要重做 parsing、refinement 或 asset preparation。使用连接进来的原始图像作为视觉真值。如果连接输入列表中没有 PageSpec，就从一开始按 direct-image path 处理。连接了 materialized PageSpec input 时，把它作为结构化计划，并且只使用其中 element.materialization 输出作为 raster asset sources。你的工作是创建一个完整的一版 SVG，运行 validation，按下面的 bounded refinement rounds 做修正，并始终在 agent timeout 前完成声明的最终 SVG 和日志。
+输入原则
+1. 原始图像是视觉真值，用来判断 layout、颜色、文字位置、插图、装饰、panel、虚线框、标题和局部修复。要尽可能用 SVG 还原原图的所有视觉效果。
+2. PageSpec 是结构计划，用来获取 element id、kind、role、bbox、z_index、text、style、build.processing_type、materialization。
+3. 有部分元素已经经过提前处理，不需要用 SVG 重新绘制，而是需要通过贴图方式拼到 SVG 中。
+4. 如果 PageSpec 没有表达某个可见元素，需要在脚本的 spec-external section 里补出来。
+5. PageSpec 可能出错，包括缺失、冗余、位置错误、类型错误、文字错误等。你需要根据原始图像判断，以还原原始图像为最终目标。PageSpec 只是一个可参考的结构化文件，不是最终视觉真值。
 
-执行模型
-- DrawAI runner 会准备 node work directory 和 connected input files。你必须自己读取这些文件。
-- 你可以使用普通 shell utilities 或简短 local scripts 来检查 connected files 并写入 node-local outputs。涉及 DrawAI-specific behavior 时，不要检查仓库源码、不要导入内部 DrawAI 模块、不要调用内部 Python API；只使用声明的 DrawAI CLI tools 以及它们的 `help` / `format describe` contracts。
-- 声明的 SVG output 是下游节点消费的 semantic output。这个 task 也会有意在同一个 node output directory 内写辅助 SVG/render/report/log 文件；这些辅助文件是允许的 task artifacts，不是额外的 downstream outputs。
-- 你必须创建 intermediate SVGs，检查它们，修订它们，并以声明的最终 SVG 和 logs 收尾。在 PageSpec-connected runs 中，还要用 svg-validate 创建请求的 renders/reports。
-- Run1 和每个 refine round 都可以使用 PageSpec element.materialization 产生的允许 local raster image hrefs，前提是元素 source 是 crop 或 crop_nobg。
-- 如果此节点用于没有 PageSpec input 的 image-only DAG，则直接从图像重建，全部结构使用 editable SVG，不要调用 page-spec-assets，并用 format tool 校验最终 SVG，而不是用 PageSpec-backed svg-validate。
-- Finalization 优先级高于再多做一轮 refinement。如果最新 SVG 已通过 validation 且整体足够 faithful，立刻 finalize。
+SVG 组合流程
+你必须通过修改 Agent 运行上下文中列出的 SVG 生成脚本 run-root path 来生成 SVG。
 
-可用文件和读取逻辑
-本阶段的主要文件：
-- Original/current reference image。把它作为 layout、color、text placement、arrows、icons、images、tables、axes 和 spacing 的视觉真值。
-- Materialized PageSpec JSON（如已连接）。把它作为主要结构化计划：element ids、kind、role、bbox、z_index、text、style、measurement、grouping、build.processing_type 和 materialization outputs。
-- PageSpec materialized assets（如已连接）。使用声明的 DrawAI page-spec-assets tool，从 materialized PageSpec 计算 crop/crop_nobg elements 的允许 local raster hrefs。
-- SVG validation。在 PageSpec-connected runs 中，对每一组 SVG/render/report 使用声明的 DrawAI svg-validate tool。在 image-only runs 中，对最终 SVG 使用 format validate，并把 validation command 记录到 iteration_log.md。
+不要直接手改 semantic_*.svg。
 
-读取顺序：
-1. 从 original image 和连接的 materialized PageSpec（如果存在）开始。它们定义本阶段要复现什么。
-2. 连接 PageSpec input 时，在插入任何 raster image href 前，先用 connected PageSpec 调用 page-spec-assets tool 计算 href。使用 --svg-dir svg，这样最终 SVG 被 mirror 到 svg/semantic.svg 用于 preview 和 PPT export 后 href 仍能解析。Image-only runs 完全跳过此步骤。
-3. 不要寻找未连接的 OCR、template、layout、request 或 parser files。连接 PageSpec 时，OCR/SAM evidence 已经融合进 PageSpec。
-4. reasoning 中保持 request JSON 紧凑。不要把完整 JSON 文件打印到 terminal 或 logs。
+脚本采用 element-id registry 模式：
 
-路径模型
-- Agent process cwd 是 workflow run root。
-- 下面显示的 declared output path 是 node-local final SVG，例如 nodes/svg_compose/runs/001/output/semantic.svg。
-- PageSpec-connected runs 中，把每个辅助文件写在同一个 node output directory 中并靠近 declared output：semantic_0.svg、rendered_0.png、validation_report_0.json、semantic_1.svg、rendered_1.png、validation_report_1.json、optional semantic_2.svg、optional rendered_2.png、optional validation_report_2.json、rendered.png、validation_report_final.json、iteration_log.md 和 iteration_log.jsonl。
-- Image-only runs 中，写 semantic_0.svg；使用 refinement round 时写 semantic_1.svg；只有 validation failed 时才可选写 semantic_2.svg；还要写 semantic.svg、validation_report_final.json、iteration_log.md 和 iteration_log.jsonl。Image-only runs 中 rendered*.png 是可选的。
-- 此节点成功后，DrawAI 会把声明的 final SVG mirror 到 svg/semantic.svg 用于 preview 和 PPT export。你不要自己写这个 mirror。
-- 连接 PageSpec input 时，mirrored SVG 位于 svg/semantic.svg 下；用 page-spec-assets --svg-dir svg 计算 PageSpec asset hrefs，并在你写的每个 SVG 中使用这些 hrefs。用 svg-validate --href-base-dir svg 校验 PageSpec-connected SVGs，这样 validation 使用同一个 canonical href base。
+```python
+ELEMENT_RENDERERS = {
+    "E001": "draw_svg_e001",
+    "E002": ("draw_shape", {"layer": "underlay"}),
+    "E012": ("draw_asset", {"href_key": "active", "preserve_aspect_ratio": "xMidYMid meet"}),
+    "E053": ("draw_text", {"font_size": 28, "fill": "#111827"}),
+    "E006": ("draw_svg_e006", {"bar_color": "#60a5fa"}),
+    "E099": ("skip", {"reason": "duplicate/merged/removed"}),
+}
+```
 
-源策略
-- svg_self_draw：对 text、formulas、arrows、frames、tables、axes、borders、simple charts、simple icons 和 simple diagram components 使用 editable SVG primitives/text。
-- crop：对 screenshots、photos、dense raster texture、heatmaps、complex small icons，或者不值得/无法用 SVG 忠实重画的细节，使用精确 local crop image。
-- crop_nobg：当 foreground object 可分离并应放在重建的 editable SVG background 上时，使用 no-background crop image。
-- 默认遵循 PageSpec build.processing_type labels。只有当原图和当前 render 明确显示其他 source strategy 更 faithful 时，才在 SVG source choice 中 override。把原因记录到 iteration log。
-- 对 PageSpec materialization outputs，只插入 page-spec-assets tool 返回的 hrefs。不要发明 image paths、external URLs、file:// URLs、absolute paths 或 base64 images。
-- 不要用 raster images 覆盖 text、arrows、panels、tables、formulas、axes 或其他应保持 editable 的结构。
+要求：
+1. PageSpec 中每个 element 都必须有一个 ELEMENT_RENDERERS entry。
+2. 简单文字可以共用 draw_text 或 draw_text_auto，但仍要通过 element id 显式登记，并通过参数控制字体大小、颜色、粗细、位置偏移等。
+3. 已提前处理好的图片、插图、复杂装饰、照片、crop、crop_nobg 元素，可以共用 draw_asset，但只能使用 page-spec-assets 返回的 href。
+4. 简单矩形、背景 panel、虚线框、圆角框、普通线条可以共用 draw_shape / draw_connector，并通过参数控制 layer、fill、stroke、rx、stroke_dasharray 等。
+5. 复杂 chart、icon、标题 ribbon、特殊装饰、复杂 diagram、非通用结构，必须写 draw_svg_<element_id_lower>() 这种 case-specific 函数，例如 draw_svg_e006()。
+6. 确认要删除的 element 用 skip，不要省略 registry entry。省略表示漏处理。
+7. 从多个 PageSpec elements 推导出来的背景、分组、横线、整体装饰，放到 draw_derived_from_spec()。
+8. PageSpec 里完全没有的视觉元素，放到 draw_extra_outside_spec()。
 
-RUN1 / 完整第一版
-- 写 semantic_0.svg。
-- 它必须是完整 whole-figure SVG，不是 placeholder map、skeleton、gray-box map 或 asset boxes 列表。
-- 覆盖整个 canvas。
-- 对 svg_self_draw elements 使用 SVG/text。
-- 可用时，对 crop/crop_nobg elements 使用 PageSpec materialization image hrefs。
-- 连接 PageSpec input 时，用 page-spec-assets --svg-dir svg 计算这些 hrefs。尽管 declared SVG output 写在本 node attempt directory 下，hrefs 必须对最终 mirror 到 svg/semantic.svg 的 SVG 有效。Image-only runs 中，除非 image hrefs 已作为 declared inputs 连接进来，否则不要使用 image hrefs。
-- 除非视觉证据显示需要调整，否则保留 PageSpec bboxes。
-- 适当保持主要对象分离和可编辑。
-- 在整张图 layout coherent 之前，避免过度拟合小细节。
-- PageSpec-connected runs 中，用 svg-validate tool 和 --href-base-dir svg 将 semantic_0.svg render/validate 到 rendered_0.png 和 validation_report_0.json。
-- Image-only runs 中，只有未连接 PageSpec input 时才跳过 PageSpec-backed rendering；在 iteration_log.md 中记录这一点，并且结束前仍需运行 format validate --format-id drawai.semantic_svg.v1 --path <declared SVG output path>。
-- 在 iteration_log.md 和 iteration_log.jsonl 中记录 Run1，包括创建了什么、明显问题，以及仍需 source decisions 的 crop/crop_nobg regions。
+任务流程
+1. 每一轮都修改同一个 build_semantic_svg.py，并把 ROUND_INDEX 递增。
+2. 第一轮中，根据真实图像和 PageSpec 填写 ELEMENT_RENDERERS、通用参数和必要的 draw_svg_<element_id>() 函数。
+3. 从第二轮开始，根据真实图像和上一轮的 rendered_<last_round_index>.png 修改 build_semantic_svg.py。根据两者不一致的地方，可以增加、删除、移动、重画、改色、改层级、改贴图、改文字、改字体、改虚线、改圆角、改 panel、改装饰。
+4. 每一轮修改完成后运行脚本。脚本会生成：
+   - semantic_<ROUND_INDEX>.svg
+   - rendered_<ROUND_INDEX>.png
+   - validation_report_<ROUND_INDEX>.json
+   - build_semantic_svg_<ROUND_INDEX>.py
+5. 继续执行第 3 步进行迭代。总共最多进行 5 轮迭代。
+6. 如果你认为当前可编辑 SVG 的渲染图已经能够尽可能完整地复原输入原始图像，可以提前终止迭代。
+7. 只有在你认为新的迭代已经无法进一步提升视觉效果时，才允许提前结束。
+8. 以最后一轮生成并通过校验的 semantic_<ROUND_INDEX>.svg 作为 accepted SVG。把这个文件复制到当前 DAG 声明的最终 SVG 路径，供下游节点使用。
 
-REFINE LOOP / 默认 1 轮，最多 2 轮
-每一轮开始时：
-1. 使用最新 SVG 作为输入。
-2. PageSpec-connected runs 中，用 svg-validate render 它。Image-only runs 中，只有当声明工具中有 renderer 可用时才 render；否则直接检查 SVG structure 并对照原图。
-3. 对比 render 或 SVG structure 与原始图像。
-4. 先检查整张图，再检查局部区域。
-5. 自行决定最高影响的修复。
+校验和停止条件
+每一轮都必须使用 svg-validate 生成对应的 render 和 validation report。
 
-Refinement budget：
-- 默认：Run1 后正好运行一轮 refinement，然后 finalize。
-- 只有当 Run1 已经 validates 且 whole-figure match 明确可接受时，才跳过 refinement round。
-- 只有当最新 validator failed、render blank/broken、required raster hrefs invalid，或存在一个明显可修复且会阻碍 useful PPT 的 high-impact structure issue 时，才运行第二轮 refinement。
-- 不要在此 workflow 中运行第三轮 refinement。保留时间用于 finalization。
-- 对 image-only DAGs，除非 validation failed，否则不要超过一轮 refinement。Image-only runs 没有 PageSpec assets，所以优先保证 coherent editable SVG，而不是穷尽 pixel matching。
+如果 validation 失败，需要先修复失败原因，再继续下一轮或结束。不能在最终 validation 失败时结束。
 
-每轮考虑：
-- Whole-figure layout mismatch：canvas scale、panel positions、major blocks、relative spacing、z-order。
-- Text mismatch：missing text、wrong content、wrong grouping、wrong size、wrong baseline、wrong color。
-- Connector/arrow mismatch：missing arrows、wrong direction、wrong endpoint、wrong arrowhead、wrong layering。
-- Shape/table/axis mismatch：wrong borders、grids、ticks、legends、blocks、fills、strokes。
-- Asset source mismatch：crop/crop_nobg region redrawn badly、missing PageSpec materialization href、wrong crop/no-background choice、image placed at the wrong bbox。
-- Editability regression：text/arrow/table/panel 变成 raster，但本应 editable。
-- PPT stability issue：unsupported SVG feature、unsafe href、invalid image reference、对 SVG-to-PPT conversion 不友好的结构。
-- Validator issue：parse error、blank render、asset_href_not_in_manifest、blocked feature、viewBox mismatch 或 failed report。
+最终结束前必须满足：
+1. 最新一轮 validation_report_<ROUND_INDEX>.json 的 status 是 ok。
+2. 最新一轮 rendered_<ROUND_INDEX>.png 与原始图像在整体视觉上尽可能一致。
+3. 主要文字、插图、背景、panel、标题、装饰、虚线框、答案框、价格标签、图标、局部元素没有明显缺失或错位。
+4. 已提前处理好的元素使用允许的 asset href。
+5. 可编辑结构仍保持可编辑，不能把整页或主要结构 rasterize。
+6. 最终 accepted SVG 已复制到声明的最终 SVG 路径。
 
-允许的 refine actions：
-- 编辑 SVG shapes、text、groups、arrow geometry、fills、strokes、transforms、z-order 和 object IDs。
-- 当原始图像支持时，添加或删除 SVG elements。
-- 对 crop/crop_nobg regions 插入允许的 PageSpec materialization hrefs。
-- 用允许的 crop/crop_nobg image 替换不 faithful 的 SVG approximation。
-- 只有当区域视觉简单且 SVG version faithful 时，才用 editable SVG 替换 crop。
-- 调整 materialized image placement/size 以匹配 refined bboxes 或视觉证据。
-- 根据连接图像和 PageSpec text fields 更正文本。
+SVG/PPT 结构约束
+1. 用 SVG primitives/text 表达 text、formula、panel、arrow、table、axis、simple chart、simple icon。
+2. 只对已经提前处理好的元素、crop、crop_nobg，或视觉复杂且不适合重画的区域使用 raster asset。
+3. 不要 rasterize 整页、文字、箭头、表格、公式、坐标轴或主要结构。
+4. 使用稳定 id，例如 shape-E001、label-E053、image-E188、custom-E183。
+5. SVG 内避免 CSS style block、filter、mask、clipPath、foreignObject、textPath、pattern、base64、external image URL、absolute path、symbol、use。
+6. 优先使用 presentation attributes，例如 fill、stroke、font-size、opacity、stroke-dasharray。
+7. 非编辑 raster 标记 data-pb-editable="false"；可编辑 SVG/text 标记 data-pb-editable="true"。
+8. 公式使用可见 SVG fallback，并标记 data-pb-role="formula"；不要把公式变成不可编辑图片。
 
-每轮输出：
-- PageSpec-connected runs 中，Round 1 写 semantic_1.svg、rendered_1.png 和 validation_report_1.json。
-- PageSpec-connected runs 中，可选 Round 2 写 semantic_2.svg、rendered_2.png 和 validation_report_2.json。
-- Image-only runs 中，使用 Round 1 时写 semantic_1.svg；只有 validation failed 时，可选 Round 2 写 semantic_2.svg。Rendered PNGs 和 per-round validation reports 对 image-only runs 是可选的；validation_report_final.json 仍然必填。
+运行命令
+从 workflow run root 执行脚本。脚本内部需要使用已声明的 DrawAI CLI tools：page-spec-assets 和 svg-validate。不要 import DrawAI 内部 Python API 来替代这些 tools。
 
-每轮结束后，写入 iteration_log.md 和 iteration_log.jsonl：round number、input SVG、output SVG/render/report、发现的问题、做出的改动、asset source changes（如有）、validation status，以及 stop 或 continue decision。
-
-当以下条件全部满足时，在 Run1 或 Round 1 后停止：
-- 最新 validator report 对此 DAG 可用的 validation mode 返回 status=\"ok\"。
-- Whole-figure render coherent，且在当前约束下与原图 broadly close。
-- Text、arrows、panels、tables、axes、images 和 icons 没有明显 missing 或 broken。
-- crop/crop_nobg regions 使用允许的 PageSpec materialization sources，或任何例外都已明确记录。
-- Editable structures 仍保持 editable。
-- 再来一轮很可能只会改善小细节。
-
-FINALIZATION
-- 选择最新可接受 SVG 作为最终结果。
-- 将 accepted final SVG 写到 output/semantic.svg，也就是声明的 node-output path。
-- PageSpec-connected runs 中，用 --href-base-dir svg 将 semantic.svg render/validate 到 rendered.png 和 validation_report_final.json。只有 validation_report_final.json 报告 status=\"ok\" 后才能结束。
-- Image-only runs 中，运行 format validate --format-id drawai.semantic_svg.v1 --path <declared SVG output path>，用 command result 和 status 写 validation_report_final.json，并在 iteration_log.md 中说明没有可用的 PageSpec-backed raster validation。
-- 如果 validation 已经 ok，而时间正花在 minor visual tweaks 上，停止 tweaking 并 finalize。完整有效的 final SVG 比没完成的 extra refinement 更重要。
-
-整体 SVG/PPT PROFILE
-目标是 DrawAI Scientific SVG Profile v1，以便转换成可编辑 PPT。把输入看作可编辑 scientific structure diagram，而不是 bitmap tracing task。推断视觉语言：background、major modules、arrows/connectors、annotations、legends、stroke weights、rounded corners、palette、gradients、typography 和 flow direction。
-- 对 panels/modules/boxes 使用 rect，对 simple nodes/badges/dots 使用 circle/ellipse，对 straight 或 orthogonal connectors 使用 line/polyline，只有 curves/brackets/custom geometry 确实需要时才用 path，对 arrowheads 或 simple closed geometry 使用 polygon，对所有 visible text 和 formulas 使用 text/tspan，并用 g 做 stable grouping。
-- defs 只用于简单 reusable markers 或 supported gradients。核心 semantic objects 优先使用 solid fills。
-- image elements 只能用于 PageSpec materialization 中明确的 local raster assets。
-- 不要输出 CSS style blocks、filters、masks、clipPath、foreignObject、textPath、pattern fills、base64 images、external image URLs、absolute paths、symbol 或 use。
-- 对 fill、stroke、font-size、opacity 和 dash styling，优先使用 direct SVG presentation attributes，而不是 CSS classes。
-- 使用 stable semantic groups，id 前缀为 module-、flow-、annotation-、legend-、panel-、connector-、label-、node-、image-、decorative- 或 background-。
-- 对 numbered/lettered badges，使用简单 circle/ellipse 加居中 editable text。
-- 源图使用 horizontal/vertical flows 时，优先使用 orthogonal connector geometry。把 connectors route 到 module edges，避免穿过 text 或 panel centers。
-- Filled 或 thick block arrows 应是一个 closed shape。Thin connectors 在 SVG-to-PPT conversion 后仍应保持 shaft 和 arrowhead 组合在一起。
-- 在 background panels/modules 之后、raster image assets 之前 render connector arrows。
-- 用 text/tspan 保留 editable text。对 formulas，渲染一个包含 Unicode math characters 和 tspan superscript/subscript 的可见 SVG fallback，同时在 formula group 上保留 original LaTeX source 供 PPT export 使用。
-- Formula 包括带 subscripts、superscripts、accents、Greek letters、operators 或 relation signs 的独立 mathematical variables 或 symbols。即使它们是短 labels、legends 或 isolated variables，也标记为 formula groups。
-- 不要把公式结构 flatten 成 alphai、xi2、yhat 或 theta0 这类 plain text。source 使用 LaTeX，可见 fallback 中用 tspan baseline-shift 表示 subscripts 和 superscripts。
-- Formula groups 必须使用 data-pb-role=\"formula\"、data-pb-editable=\"true\"、stable id、SVG viewBox 坐标中的 data-pb-formula-bbox=\"x y width height\"，以及包含 UTF-8 base64 LaTeX 的 data-pb-formula-latex-b64。只有 LaTeX 完全 XML-escaped 时才使用 data-pb-formula-latex。
-- 不要在 visible SVG text layer 中显示 raw LaTeX。Visible layer 只放 SVG fallback；svg_to_ppt 会读取 hidden LaTeX metadata，并在可能时导出为 editable Office Math。
-- Formula SVG example:
-  <g id="label-formula-example" data-pb-role="formula" data-pb-editable="true" data-pb-formula-bbox="100 112 220 40" data-pb-formula-latex-b64="XGFscGhhX2leMitcYmV0YV9pPWNfaQ==">
-    <text id="label-formula-example-fallback" x="100" y="140" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#111" text-anchor="start" data-pb-role="formula" data-pb-editable="true" data-pb-text-source="visual_inferred" data-pb-orientation="horizontal">&#945;<tspan baseline-shift="sub" font-size="18">i</tspan><tspan baseline-shift="super" font-size="18">2</tspan> + &#946;<tspan baseline-shift="sub" font-size="18">i</tspan> = c<tspan baseline-shift="sub" font-size="18">i</tspan></text>
-    <desc>LaTeX: \\alpha_i^2+\\beta_i=c_i</desc>
-  </g>
-- 用 data-pb-editable=\"false\" 标记 non-editable raster assets，用 data-pb-editable=\"true\" 标记 editable vectors/text。
-
-结束本轮之前的最终检查
-- semantic_0.svg 存在。在 PageSpec-connected runs 中，它也有 render/validation output。
-- 已运行 0-2 轮 refine。如果是 0 轮，说明为什么 Run1 已满足停止条件。如果是 2 轮，说明 validator failure 或 high-impact issue 为什么需要第二轮。
-- semantic.svg 是 accepted final SVG output。PageSpec-connected runs 中，rendered.png 是 accepted final render output；image-only runs 中 rendered.png 可选，但 validation_report_final.json 必填。
-- validation_report_final.json 对此 DAG 可用的 validation mode 返回 status=\"ok\"。
-- iteration_log.md 和 iteration_log.jsonl 解释每一轮以及 stop/continue decision。
-- 最终 chat response 保持简短；文件才是事实来源。"""
+结束前最终检查
+- 每个 PageSpec element 都有 ELEMENT_RENDERERS entry，或者明确 skip。
+- 每轮运行都保存 build_semantic_svg_<ROUND_INDEX>.py 快照。
+- 最新一轮 semantic_<ROUND_INDEX>.svg、rendered_<ROUND_INDEX>.png、validation_report_<ROUND_INDEX>.json 存在。
+- validation_report_<ROUND_INDEX>.json 的 status 是 ok。
+- accepted SVG 已复制到当前 DAG 声明的最终 SVG 路径。
+- iteration_log.md 和 iteration_log.jsonl 简要记录每轮状态和停止原因。
+- 最终回复保持简短；文件才是事实来源。"""
 
 SVG_GENERATION_CONSTRAINTS = (
-    "Use only connected input files listed in this prompt and explicitly declared built-in script files.",
-    "Do not inspect repository source code, import internal DrawAI modules, or call internal DrawAI APIs; use declared DrawAI CLI tools for DrawAI-specific behavior.",
-    "Do not redo parsing or PageSpec refinement; consume the connected materialized PageSpec when present and the original image as evidence.",
-    "Do not use MCP tools, apps, web search, memories, skills, hooks, or multi-agent delegation.",
-    "Do not invent image hrefs, external URLs, file:// URLs, absolute paths, or base64 images.",
-    "Do not rasterize panels, arrows, text, formulas, grids, tables, axes, or whole diagram structure.",
-    "Write the declared final SVG plus task-requested auxiliary render/report/log files inside this node output directory and keep the final chat response short.",
+    "只使用本 prompt 中列出的 connected input files、Agent 运行上下文列出的 SVG 生成脚本，以及显式声明的其它脚本文件。",
+    "不要检查 repository source code，不要 import internal DrawAI modules，不要调用 internal DrawAI APIs；DrawAI-specific 行为只能使用声明的 DrawAI CLI tools。",
+    "不要重做 parsing 或 PageSpec refinement；消费连接进来的 materialized PageSpec 和原始图像。",
+    "不要使用 MCP tools、apps、web search、memories、skills、hooks 或 multi-agent delegation。",
+    "不要发明 image href、external URL、file:// URL、absolute path 或 base64 image。",
+    "不要 rasterize panels、arrows、text、formulas、grids、tables、axes 或整页主要结构。",
+    "必须通过 Agent 运行上下文列出的 build_semantic_svg.py 生成 SVG，并让最终 SVG 可由该脚本复现。",
+    "每轮运行都要保存脚本快照 build_semantic_svg_<ROUND_INDEX>.py。",
+    "最终回复保持简短；文件才是事实来源。",
 )
 
 CUSTOM_AGENT_TASK = """Use the connected input files as context and produce exactly the output files declared by this node configuration.

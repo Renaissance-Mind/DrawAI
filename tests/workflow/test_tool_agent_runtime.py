@@ -135,15 +135,22 @@ def test_agent_execution_uses_shared_agent_prompt_and_allows_manifest_image_href
 
     assert result.provider_id == "drawai_tool_agent"
     assert (workdir / "output" / "semantic.svg").read_text(encoding="utf-8") == svg
+    assert (workdir / "output" / "build_semantic_svg.py").is_file()
+    assert (
+        'DECLARED_FINAL_SVG_RUN_ROOT_PATH = "nodes/svg_compose/runs/001/output/semantic.svg"'
+        in (workdir / "output" / "build_semantic_svg.py").read_text(encoding="utf-8")
+    )
     assert '<image href="nodes/asset_prepare/runs/001/output/assets/crops/plot.png"' in svg
     assert (workdir / "drawai_tool_agent_final_response.txt").read_text(encoding="utf-8") == "wrote SVG with manifest-backed image href"
-    assert "IMAGE VECTORIZATION TASK" in prompt.text
+    assert "你需要完成位图矢量化任务。" in prompt.text
+    assert "SVG 生成脚本 run-root path：nodes/svg_compose/runs/001/output/build_semantic_svg.py" in prompt.text
+    assert "ELEMENT_RENDERERS" in prompt.text
     assert "Materialized PageSpec with crop materialization paths." in prompt.text
     assert "run_drawai_tool" in prompt.text
     assert "copy_file" in prompt.text
     assert "append_file" in prompt.text
-    assert "page-spec-svg-draft" in prompt.text
-    assert "do not hand-write a complete SVG" in prompt.text
+    assert "page-spec-svg-draft" not in prompt.text
+    assert "do not hand-write a complete SVG" not in prompt.text
     assert "Exact command prefix" not in prompt.text
     assert "Tool Runtime Contract" not in prompt.text
     assert "fake-key" not in prompt.text

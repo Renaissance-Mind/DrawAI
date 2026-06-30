@@ -59,7 +59,8 @@ def test_builtin_image_to_pptx_zh_template_reuses_default_flow_with_chinese_agen
     assert "DrawAI PageSpec 精修任务" in page_refine_task
     assert "## Available Processing Operations" in page_refine_task
     assert "DrawAI PageSpec refinement task" not in page_refine_task
-    assert "图像向量化任务" in svg_compose_task
+    assert "你需要完成位图矢量化任务。" in svg_compose_task
+    assert "ELEMENT_RENDERERS" in svg_compose_task
     assert "IMAGE VECTORIZATION TASK" not in svg_compose_task
     assert validate_workflow_template(zh_template).ok
 
@@ -184,7 +185,7 @@ def test_default_template_routes_page_spec_through_assets_and_svg() -> None:
         for edge in template.edges
     }
 
-    assert "page-spec-svg-draft" in nodes["svg_compose"].config["drawai_tools"]
+    assert "page-spec-svg-draft" not in nodes["svg_compose"].config["drawai_tools"]
     assert "page-spec-assets" in nodes["svg_compose"].config["drawai_tools"]
     assert "svg-validate" in nodes["svg_compose"].config["drawai_tools"]
     assert ("input", "image", "sam_parse", "image") in edges
@@ -267,7 +268,8 @@ def test_load_workflow_template_upgrades_legacy_agent_default_prompts(tmp_path: 
 
     assert "DrawAI asset post-processing and element-plans task." in nodes["run0_agent"].config["task"]
     assert nodes["run0_agent"].config["constraints"]
-    assert "IMAGE VECTORIZATION TASK" in nodes["svg_agent"].config["task"]
+    assert "你需要完成位图矢量化任务。" in nodes["svg_agent"].config["task"]
+    assert "ELEMENT_RENDERERS" in nodes["svg_agent"].config["task"]
     assert "prompt_fragments" not in nodes["svg_agent"].config
     assert nodes["svg_agent"].config["constraints"]
 

@@ -17,7 +17,6 @@ from .agent_prompt_defaults import (
     RUN0_ELEMENT_REFINE_CONSTRAINTS,
     RUN0_ELEMENT_REFINE_TASK,
     SVG_GENERATION_CONSTRAINTS,
-    SVG_GENERATION_TASK,
     SVG_GENERATION_TASK_ZH,
     normalize_page_spec_processing_types,
 )
@@ -265,9 +264,9 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
                 config={
                     "preset_id": "svg_generation",
                     "provider_id": "default",
-                    "task": SVG_GENERATION_TASK,
+                    "task": SVG_GENERATION_TASK_ZH,
                     "constraints": list(SVG_GENERATION_CONSTRAINTS),
-                    "drawai_tools": ["format", "page-spec-assets", "page-spec-svg-draft", "svg-validate"],
+                    "drawai_tools": ["format", "page-spec-assets", "svg-validate"],
                     "outputs": [
                         {
                             "port_id": "semantic_svg",
@@ -680,7 +679,7 @@ _LEGACY_AGENT_TASK_TEXTS: dict[str, set[str]] = {
 _AGENT_TASK_DEFAULTS = {
     "run0_element_refine": RUN0_ELEMENT_REFINE_TASK,
     "page_spec_refine": PAGE_SPEC_REFINE_TASK,
-    "svg_generation": SVG_GENERATION_TASK,
+    "svg_generation": SVG_GENERATION_TASK_ZH,
     "custom_agent": CUSTOM_AGENT_TASK,
 }
 

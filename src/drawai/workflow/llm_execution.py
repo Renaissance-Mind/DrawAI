@@ -262,11 +262,11 @@ def _render_llm_prompt_text(
     workflow_run_root = runtime_context.get("workflow_run_root") or "<workflow_run_root>"
     node_workdir = runtime_context.get("node_workdir") or f"{workflow_run_root}/nodes/{node_id}/runs/<attempt_id>"
     lines = [
-        "## LLM Runtime Settings",
+        "## LLM 运行上下文",
         f"- Provider: {provider_id}",
-        f"- Workflow run root: {workflow_run_root}",
-        f"- Current node workdir: {node_workdir}",
-        f"- Node run manifest path: {node_workdir}/node_run.json",
+        f"- Workflow run root：{workflow_run_root}",
+        f"- 当前 node workdir：{node_workdir}",
+        f"- Node run manifest path：{node_workdir}/node_run.json",
     ]
     for key, value in options.items():
         if str(key) in LLM_PROMPT_RUNTIME_OPTION_EXCLUDES:
@@ -276,33 +276,29 @@ def _render_llm_prompt_text(
     lines.extend(
         [
             "",
-            "## Direct Output Runtime Override",
+            "## 直接输出运行模式",
             (
-                "This node runs in LLM direct-output mode: return the declared content in the final assistant "
-                "message only."
+                "这个 node 运行在 LLM direct-output 模式：只在最终 assistant message 中返回声明输出的内容。"
             ),
             (
-                "If the task text mentions writing files, running commands, validation tools, terminal loops, "
-                "or saving paths, treat that as output-quality guidance and ignore any task wording that asks "
-                "you to run commands or create files yourself."
+                "如果 task 文本提到写文件、运行命令、validation tools、terminal loops 或保存路径，"
+                "把它当作输出质量要求；忽略任何要求你自己运行命令或创建文件的措辞。"
             ),
             (
-                "When JSON or SVG is required, return compact valid JSON/SVG directly, with no markdown fence, "
-                "no prose, and no duplicated schema examples."
+                "需要 JSON 或 SVG 时，直接返回紧凑且有效的 JSON/SVG；不要加 markdown fence、说明文字或重复 schema example。"
             ),
             (
-                "For SVG outputs, do not use raster image elements, local file references, or CSS urls. Use editable "
-                "vector shapes and text instead."
+                "对于 SVG 输出，不要使用 raster image elements、local file references 或 CSS urls。改用可编辑 vector shapes 和 text。"
             ),
-            "The DrawAI runner extracts your response, saves it to the declared output path, and validates it after the model call.",
+            "DrawAI runner 会抽取你的回复，保存到声明输出路径，并在 model call 之后校验。",
         ]
     )
     if _has_matching_input_passthrough(inputs, outputs):
         lines.append(
-            'If the declared output should be identical to the unique connected input with the same type/format, return exactly {"drawai_passthrough_input": true}.'
+            '如果声明输出应当与唯一一个 type/format 相同的 connected input 完全一致，直接返回 {"drawai_passthrough_input": true}。'
         )
         lines.append(
-            "Prefer that passthrough sentinel for a large structured input unless you have high-confidence necessary edits."
+            "对于大型结构化输入，除非你非常确定需要修改，否则优先使用这个 passthrough sentinel。"
         )
     lines.extend(
         [
@@ -310,10 +306,10 @@ def _render_llm_prompt_text(
             "## Task",
             task,
             "",
-            "## Connected Input Contents",
+            "## 已连接输入内容",
             (
-                "Do not read workflow files from disk. Every connected text input is embedded below, "
-                "and every connected image input is attached to this LLM request as image content."
+                "不要从磁盘读取 workflow files。每个 connected text input 都嵌入在下面；"
+                "每个 connected image input 都作为 image content 附加到这个 LLM request。"
             ),
         ]
     )
@@ -321,15 +317,15 @@ def _render_llm_prompt_text(
         for index, item in enumerate(inputs, start=1):
             lines.extend(_llm_input_section(index, item, runtime_context))
     else:
-        lines.append("- No connected inputs were provided.")
+        lines.append("- 没有提供 connected inputs。")
 
     lines.extend(
         [
             "",
-            "## Required Direct Outputs",
+            "## 必需直接输出",
             (
-                "Return only the declared output content. Do not create files, mention paths as the answer, "
-                "or include commentary. The DrawAI runner extracts your response and saves it to the declared node output path."
+                "只返回声明输出内容。不要创建文件，不要把路径当作答案，也不要加入说明。"
+                "DrawAI runner 会抽取你的回复并保存到声明的 node output path。"
             ),
         ]
     )
@@ -340,42 +336,41 @@ def _render_llm_prompt_text(
         final_run_root_path = _output_path_from_run_root(node_id, output["path"], runtime_context)
         lines.extend(
             [
-                f"- Port: {output['port_id']}",
-                f"  Format: {output_format}",
-                f"  Type: {output_type}",
-                f"  Node-output relative path: {output['path']}",
-                f"  Final run-root path: {final_run_root_path}",
-                f"  Final absolute path: {_output_absolute_path(node_id, output['path'], runtime_context)}",
-                f"  Instruction: Return the {output['port_id']} output as {output_kind} content.",
-                f"  Description: {output['description']}",
+                f"- Port：{output['port_id']}",
+                f"  Format：{output_format}",
+                f"  Type：{output_type}",
+                f"  Node-output relative path：{output['path']}",
+                f"  最终 run-root path：{final_run_root_path}",
+                f"  最终 absolute path：{_output_absolute_path(node_id, output['path'], runtime_context)}",
+                f"  指令：以 {output_kind} content 返回 {output['port_id']} output。",
+                f"  说明：{output['description']}",
             ]
         )
 
-    lines.extend(["", "## Type And Format Contracts"])
+    lines.extend(["", "## 类型和格式契约"])
     format_contracts = default_format_contract_descriptions()
     for type_name in _ordered_unique(
         [str(item.get("type") or "") for item in inputs]
         + [str(output.get("type") or "") for output in outputs]
     ):
         lines.append(
-            f"- Type `{type_name}`: {TYPE_CONTRACTS.get(type_name, 'No built-in type description is registered. Follow the node description and embedded input content.')}"
+            f"- Type `{type_name}`：{TYPE_CONTRACTS.get(type_name, '没有注册内置 type 说明。按照 node description 和 embedded input content 处理。')}"
         )
     for format_id in _ordered_unique(
         [str(item.get("format_id") or "") for item in inputs]
         + [str(output.get("format_id") or "") for output in outputs]
     ):
         lines.append(
-            f"- Format `{format_id}`: {format_contracts.get(format_id, 'No built-in format description is registered. Follow the output declaration.')}"
+            f"- Format `{format_id}`：{format_contracts.get(format_id, '没有注册内置 format 说明。按照 output declaration 处理。')}"
         )
 
     if drawai_tools:
         lines.extend(
             [
                 "",
-                "## DrawAI Tool Contracts",
+                "## DrawAI 工具契约",
                 (
-                    "These tool names are provided only as format-contract context for the LLM node. "
-                    "Do not call tools; produce the declared direct output content instead."
+                    "这些 tool names 只作为 LLM node 的 format-contract context。不要调用工具；只生成声明的 direct output content。"
                 ),
             ]
         )
@@ -383,7 +378,7 @@ def _render_llm_prompt_text(
             lines.append(f"- {tool_id}")
 
     if constraints:
-        lines.extend(["", "## Constraints"])
+        lines.extend(["", "## 约束"])
         for constraint in constraints:
             lines.append(f"- {constraint}")
 
@@ -410,25 +405,25 @@ def _llm_input_section(
     type_name = str(item.get("type") or "unspecified")
     path_value = str(item.get("path") or "")
     lines = [
-        f"### Input {index}: {source}",
-        f"- Format: {format_id}",
-        f"- Type: {type_name}",
-        f"- Run-root path: {path_value}",
-        f"- Absolute path: {_input_absolute_path(path_value, runtime_context)}",
-        f"- Description: {item.get('description') or 'No description supplied.'}",
+        f"### 输入 {index}：{source}",
+        f"- Format：{format_id}",
+        f"- Type：{type_name}",
+        f"- Run-root path：{path_value}",
+        f"- Absolute path：{_input_absolute_path(path_value, runtime_context)}",
+        f"- 说明：{item.get('description') or 'No description supplied.'}",
     ]
     if _is_image_input(item):
         image_path = _resolve_input_path(path_value, runtime_context)
         mime_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
         image_bytes = image_path.read_bytes() if image_path.is_file() else b""
         lines.append(
-            f"Image content is attached to this LLM request ({mime_type}, {len(image_bytes)} bytes)."
+            f"Image content 已附加到这个 LLM request（{mime_type}, {len(image_bytes)} bytes）。"
         )
         return lines
 
     input_path = _resolve_input_path(path_value, runtime_context)
     content, fence_language = _read_input_content(input_path, format_id=format_id)
-    lines.extend(["Content:", f"```{fence_language}", content.rstrip("\n"), "```"])
+    lines.extend(["内容：", f"```{fence_language}", content.rstrip("\n"), "```"])
     return lines
 
 
