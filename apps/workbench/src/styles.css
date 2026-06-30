@@ -5736,6 +5736,62 @@ button.asset-status-unsupported {
   white-space: nowrap;
 }
 
+.node-artifact-node-nav {
+  grid-area: title;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(150px, 1fr) 30px;
+  align-items: center;
+  gap: 3px;
+}
+
+.node-artifact-node-nav select {
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--ink);
+  padding: 0 28px 0 10px;
+  font-size: 13px;
+  font-weight: 760;
+  outline: none;
+}
+
+.node-artifact-node-nav select:hover,
+.node-artifact-node-nav select:focus {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.node-artifact-nav-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  padding: 0;
+  font-size: 22px;
+  font-weight: 520;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.node-artifact-nav-button:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.07);
+  color: var(--ink);
+}
+
+.node-artifact-nav-button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
 .node-artifact-output-switch {
   grid-area: mode;
   min-width: 180px;
@@ -5801,6 +5857,10 @@ button.asset-status-unsupported {
 .node-artifact-output-switch button strong {
   font-size: 11px;
   font-weight: 760;
+}
+
+.toolbar-note.is-error {
+  color: #b42318;
 }
 
 .home-button {
@@ -6623,7 +6683,8 @@ button.asset-status-unsupported {
     grid-area: home;
   }
 
-  .editor-banner-controls > .editor-title {
+  .editor-banner-controls > .editor-title,
+  .editor-banner-controls > .node-artifact-node-nav {
     grid-area: title;
   }
 

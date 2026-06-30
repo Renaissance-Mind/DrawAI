@@ -174,6 +174,7 @@ type SvgSelectionOverlay = { left: number; top: number; width: number; height: n
 type TaskContextMenuState = { caseId: string; caseName: string; x: number; y: number };
 type BatchContextMenuState = { batchId: string; batchName: string; caseCount: number; running: boolean; x: number; y: number };
 type TaskDialogTarget = { batchId: string; name: string };
+type NodeArtifactNavigationItem = { node_id: string; label: string; detail: string };
 type WorkbenchSettingsNavItem = { id: WorkbenchSettingsCategory; label: string; icon: WorkbenchSettingsCategory };
 type WorkbenchSettingsNavSection = { label?: string; items: WorkbenchSettingsNavItem[] };
 type UploadEngineMode = Extract<BatchExecutionMode, "agent" | "llm">;
@@ -1410,7 +1411,10 @@ export default function App() {
         <WorkflowNodeArtifactWorkspace
           viewer={nodeArtifactViewer}
           activeCase={activeCase}
+          workflowTemplateId={activeBatch?.batch.workflow_template_id || ""}
+          workflowNodes={caseProgress?.workflow_nodes || []}
           onBackToBoard={() => setActiveView("board")}
+          onSelectNode={(nodeId) => openWorkflowNodeArtifactCanvas(nodeArtifactViewer.case_id, nodeId)}
         />
       ) : activeView === "editor" ? (
         <EditorWorkspace
@@ -4362,16 +4366,71 @@ function nodeArtifactCanInlinePreview(artifact: WorkflowNodeArtifact): boolean {
   return ["svg", "image", "json", "jsonl", "markdown", "text", "validation_report", "script"].includes(artifact.kind);
 }
 
+function workflowNodeArtifactNavigationItems(
+  template: WorkflowTemplate | null,
+  workflowNodes: WorkflowNodeMetadata[],
+  viewer: WorkflowNodeViewer
+): NodeArtifactNavigationItem[] {
+  const items: NodeArtifactNavigationItem[] = [];
+  const seen = new Set<string>();
+
+  if (template) {
+    buildWorkflowPreviewLayout(template).nodes.forEach(({ node }) => {
+      if (seen.has(node.node_id)) return;
+      seen.add(node.node_id);
+      items.push({
+        node_id: node.node_id,
+        label: node.title || node.node_id,
+        detail: node.node_type
+      });
+    });
+  }
+
+  if (items.length === 0) {
+    workflowNodes
+      .slice()
+      .sort((a, b) => a.node_id.localeCompare(b.node_id))
+      .forEach((node) => {
+        if (seen.has(node.node_id)) return;
+        seen.add(node.node_id);
+        items.push({
+          node_id: node.node_id,
+          label: node.provider_label || node.node_id,
+          detail: node.node_type
+        });
+      });
+  }
+
+  if (!seen.has(viewer.node_id)) {
+    items.push({
+      node_id: viewer.node_id,
+      label: viewer.title || viewer.node_id,
+      detail: String(viewer.node_run?.node_type || viewer.kind || "node")
+    });
+  }
+
+  return items;
+}
+
 function WorkflowNodeArtifactWorkspace({
   viewer,
   activeCase,
-  onBackToBoard
+  workflowTemplateId,
+  workflowNodes,
+  onBackToBoard,
+  onSelectNode
 }: {
   viewer: WorkflowNodeViewer;
   activeCase: CaseDetail | null;
+  workflowTemplateId: string;
+  workflowNodes: WorkflowNodeMetadata[];
   onBackToBoard: () => void;
+  onSelectNode: (nodeId: string) => void | Promise<void>;
 }) {
   const editorRef = useRef<HTMLElement | null>(null);
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [nodeNavLoadingId, setNodeNavLoadingId] = useState("");
+  const [nodeNavError, setNodeNavError] = useState("");
   const [zoom, setZoom] = useState(0.72);
   const [selectedElementId, setSelectedElementId] = useState(viewer.elements[0]?.element_id || "");
   const [elementFilter, setElementFilter] = useState<V2ElementFilter>(EMPTY_V2_ELEMENT_FILTER);
@@ -4394,6 +4453,14 @@ function WorkflowNodeArtifactWorkspace({
     return items;
   }, [viewer.asset_packages]);
   const statusFallback = isAssetPackageViewer ? "pending" : viewer.kind;
+  const template = templates.find((item) => item.template_id === workflowTemplateId) || templates.find((item) => item.template_id === "default_drawai_dag") || null;
+  const nodeNavItems = useMemo(
+    () => workflowNodeArtifactNavigationItems(template, workflowNodes, viewer),
+    [template, workflowNodes, viewer]
+  );
+  const selectedNodeIndex = nodeNavItems.findIndex((item) => item.node_id === viewer.node_id);
+  const previousNode = selectedNodeIndex > 0 ? nodeNavItems[selectedNodeIndex - 1] : null;
+  const nextNode = selectedNodeIndex >= 0 && selectedNodeIndex < nodeNavItems.length - 1 ? nodeNavItems[selectedNodeIndex + 1] : null;
   const filteredElements = useMemo(
     () => filterV2Elements(viewer.elements, elementFilter, isAssetPackageViewer ? assetPackageByElementId : null, statusFallback),
     [viewer.elements, elementFilter, isAssetPackageViewer, assetPackageByElementId, statusFallback]
@@ -4447,11 +4514,41 @@ function WorkflowNodeArtifactWorkspace({
   }, []);
 
   useEffect(() => {
+    let canceled = false;
+    listWorkflowTemplates()
+      .then((response) => {
+        if (canceled) return;
+        setTemplates(response.templates);
+      })
+      .catch((err) => {
+        if (canceled) return;
+        setNodeNavError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [workflowTemplateId]);
+
+  useEffect(() => {
     setZoom(0.72);
     setSelectedElementId(viewer.elements[0]?.element_id || "");
     setElementFilter(EMPTY_V2_ELEMENT_FILTER);
     setSelectedArtifactId(defaultWorkflowNodeArtifactId(viewer));
+    setNodeNavLoadingId("");
   }, [viewer.case_id, viewer.node_id, viewer.attempt_id, viewer.source_path, viewer.primary_artifact_id]);
+
+  async function selectWorkflowNode(nodeId: string) {
+    if (!nodeId || nodeId === viewer.node_id || nodeNavLoadingId) return;
+    setNodeNavLoadingId(nodeId);
+    setNodeNavError("");
+    try {
+      await onSelectNode(nodeId);
+    } catch (err) {
+      setNodeNavError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNodeNavLoadingId((current) => (current === nodeId ? "" : current));
+    }
+  }
 
   useEffect(() => {
     if (!filteredElements.length) return;
@@ -4483,15 +4580,41 @@ function WorkflowNodeArtifactWorkspace({
           <button className="home-button" title="返回任务" aria-label="返回任务" onClick={onBackToBoard}>
             <HomeIcon />
           </button>
-          <div className="editor-title">
-            <div>
-              <strong>{activeCase?.case.name || viewer.title || viewer.node_id}</strong>
-              <span>
-                {viewer.node_id} · {nodeViewerKindLabel(viewer.kind)} · {viewer.attempt_id ? `run ${viewer.attempt_id}` : "not run"} · {filteredElements.length}/{viewer.elements.length} 框
-              </span>
-            </div>
+          <div className="node-artifact-node-nav" aria-label="DAG 节点切换">
+            <button
+              type="button"
+              className="node-artifact-nav-button"
+              aria-label="上一个节点"
+              title={previousNode ? `上一个：${previousNode.label}` : "已经是第一个节点"}
+              disabled={!previousNode || Boolean(nodeNavLoadingId)}
+              onClick={() => previousNode && void selectWorkflowNode(previousNode.node_id)}
+            >
+              ‹
+            </button>
+            <select
+              value={viewer.node_id}
+              aria-label="选择 DAG 节点"
+              disabled={Boolean(nodeNavLoadingId)}
+              onChange={(event) => void selectWorkflowNode(event.target.value)}
+            >
+              {nodeNavItems.map((item) => (
+                <option key={item.node_id} value={item.node_id}>
+                  {item.label} · {item.node_id}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="node-artifact-nav-button"
+              aria-label="下一个节点"
+              title={nextNode ? `下一个：${nextNode.label}` : "已经是最后一个节点"}
+              disabled={!nextNode || Boolean(nodeNavLoadingId)}
+              onClick={() => nextNode && void selectWorkflowNode(nextNode.node_id)}
+            >
+              ›
+            </button>
           </div>
-          {artifactItems.length > 0 ? (
+          {artifactItems.length > 1 && (
             <div className="node-artifact-output-switch" role="tablist" aria-label="节点产物">
               {artifactItems.map((artifact) => (
                 <button
@@ -4508,8 +4631,6 @@ function WorkflowNodeArtifactWorkspace({
                 </button>
               ))}
             </div>
-          ) : (
-            <div className="artifact-kind-pill">暂无产物</div>
           )}
           <div className="editor-toolbar">
             {selectedArtifact?.kind === "agent_log" ? (
@@ -4523,9 +4644,11 @@ function WorkflowNodeArtifactWorkspace({
                 statusFallback={statusFallback}
                 showStatus={isAssetPackageViewer}
               />
+            ) : nodeNavError ? (
+              <div className="toolbar-note is-error">{nodeNavError}</div>
             ) : (
               <div className="toolbar-note">
-                {artifactItems.length} 个产物{selectedArtifact ? ` · ${nodeArtifactKindLabel(selectedArtifact.kind)} · ${selectedArtifact.label}` : ""}
+                {selectedArtifact ? `${nodeArtifactKindLabel(selectedArtifact.kind)} · ${selectedArtifact.label}` : "暂无产物"}
               </div>
             )}
           </div>
