@@ -95,6 +95,7 @@ import {
   latestWorkflowNodeRunForNode,
   workflowNodeExtraInfoRows
 } from "./workflowNodeDisplay";
+import { defaultWorkflowNodeArtifactViewMode } from "./nodeArtifactViewMode";
 import {
   buildUploadConfirmation,
   isSupportedUpload,
@@ -4322,7 +4323,7 @@ function WorkflowNodeArtifactWorkspace({
   const [zoom, setZoom] = useState(0.72);
   const [selectedElementId, setSelectedElementId] = useState(viewer.elements[0]?.element_id || "");
   const [elementFilter, setElementFilter] = useState<V2ElementFilter>(EMPTY_V2_ELEMENT_FILTER);
-  const [viewMode, setViewMode] = useState<NodeArtifactViewMode>("artifact");
+  const [viewMode, setViewMode] = useState<NodeArtifactViewMode>(() => defaultWorkflowNodeArtifactViewMode(viewer));
   const isAssetPackageViewer = viewer.kind === "asset_packages";
   const assetPackageByElementId = useMemo(() => {
     const items = new Map<string, V2AssetPackage>();
@@ -4388,7 +4389,7 @@ function WorkflowNodeArtifactWorkspace({
     setZoom(0.72);
     setSelectedElementId(viewer.elements[0]?.element_id || "");
     setElementFilter(EMPTY_V2_ELEMENT_FILTER);
-    setViewMode("artifact");
+    setViewMode(defaultWorkflowNodeArtifactViewMode(viewer));
   }, [viewer.case_id, viewer.node_id, viewer.attempt_id, viewer.source_path]);
 
   useEffect(() => {
