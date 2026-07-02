@@ -9272,6 +9272,7 @@ function stateLabel(state: PipelineNodeState): string {
     running: "运行中",
     done: "完成",
     failed: "失败",
+    blocked: "阻塞",
     review: "待确认",
     stale: "需更新",
     breakpoint: "断点"

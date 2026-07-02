@@ -3291,6 +3291,13 @@ select:focus {
   background: #fff7f6;
 }
 
+.dag-run-node.blocked {
+  border-color: rgba(100, 116, 139, 0.68);
+  border-style: dashed;
+  background: #f8fafc;
+  color: #475569;
+}
+
 .dag-run-node.stale {
   border-color: #7c3aed;
 }
@@ -3342,6 +3349,11 @@ button.dag-run-node.breakpoint.active {
 button.dag-run-node.failed.active {
   border-color: var(--danger);
   background: #fff7f6;
+}
+
+button.dag-run-node.blocked.active {
+  border-color: rgba(71, 85, 105, 0.76);
+  background: #f8fafc;
 }
 
 button.dag-run-node.stale.active {
@@ -3566,6 +3578,12 @@ button.dag-run-node.running.active {
   border-color: rgba(197, 106, 8, 0.24);
   background: rgba(245, 158, 11, 0.1);
   color: var(--amber);
+}
+
+.dag-node-detail-head em.blocked {
+  border-color: rgba(100, 116, 139, 0.28);
+  background: rgba(100, 116, 139, 0.1);
+  color: #475569;
 }
 
 .dag-node-detail dl {

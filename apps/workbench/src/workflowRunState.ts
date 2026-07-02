@@ -1,8 +1,8 @@
 import type { ArtifactRecord, CaseProgressFile, CaseRecord, StageRunRecord, WorkflowNodeRunRecord } from "./types";
 import type { WorkflowNode } from "./workflowTypes";
 
-export type DagRunNodeState = "waiting" | "running" | "done" | "failed" | "review" | "stale" | "breakpoint";
-export type DagRunEdgeState = "waiting" | "running" | "done" | "failed" | "breakpoint";
+export type DagRunNodeState = "waiting" | "running" | "done" | "failed" | "blocked" | "review" | "stale" | "breakpoint";
+export type DagRunEdgeState = "waiting" | "running" | "done" | "breakpoint";
 
 export type WorkflowStageRuntimeState = {
   stage: string;
@@ -31,9 +31,9 @@ const PIPELINE_STAGE_ORDER = [
 ] as const;
 
 export function dagRunEdgeState(sourceState: DagRunNodeState, targetState: DagRunNodeState): DagRunEdgeState {
-  if (sourceState === "failed" || targetState === "failed") return "failed";
   if (sourceState === "breakpoint" || targetState === "breakpoint") return "breakpoint";
   if (targetState === "running") return "running";
+  if (sourceState === "done" && (targetState === "failed" || targetState === "blocked")) return "done";
   if (sourceState === "done" && targetState === "done") return "done";
   return "waiting";
 }
@@ -52,6 +52,12 @@ export function uniqueErrorDetails(...values: string[]): string[] {
     items.push(text);
   }
   return items;
+}
+
+function workflowNodeRunErrorMessage(run?: WorkflowNodeRunRecord | null): string {
+  if (!run) return "";
+  const diskRun = run as WorkflowNodeRunRecord & { error?: string };
+  return diskRun.error_message || diskRun.error || "";
 }
 
 export function currentCaseRecord(detailCase: CaseRecord, progressCase?: CaseRecord | null): CaseRecord {
@@ -221,20 +227,17 @@ export function workflowNodeRuntimeState(
 ): WorkflowStageRuntimeState {
   const stage = workflowStageForNode(node);
   const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
-  const nodeFailureError =
-    latestNodeRun?.status === "failed" || latestNodeRun?.status === "blocked"
-      ? latestNodeRun.error_message
-      : "";
+  const nodeRunError = workflowNodeRunErrorMessage(latestNodeRun);
   if (current.status === "failed" && stage && stageMatchesNode(current.stage, stage)) {
     return {
       state: "failed",
       stage,
       meta: latestNodeRun?.status === "blocked" ? "阻塞" : "失败",
-      error: nodeFailureError || current.error_message
+      error: nodeRunError || current.error_message
     };
   }
   if (current.status === "failed" && latestNodeRun?.status === "running") {
-    return { state: "failed", stage, meta: "失败", error: current.error_message };
+    return { state: "blocked", stage, meta: "阻塞", error: "" };
   }
   if (current.workflow_breakpoint_node_id === node.node_id) {
     return { state: "breakpoint", stage, meta: current.status === "assets_review" && current.stage === node.node_id ? "断点暂停" : "已设置断点", error: "" };
@@ -247,10 +250,10 @@ export function workflowNodeRuntimeState(
       return { state: "running", stage, meta: durationText(latestNodeRun.started_at, ""), error: "" };
     }
     if (latestNodeRun.status === "failed") {
-      return { state: "failed", stage, meta: "失败", error: latestNodeRun.error_message };
+      return { state: "failed", stage, meta: "失败", error: nodeRunError };
     }
     if (latestNodeRun.status === "blocked") {
-      return { state: "failed", stage, meta: "阻塞", error: latestNodeRun.error_message };
+      return { state: "blocked", stage, meta: "阻塞", error: "" };
     }
   }
   if (node.node_type === "human_review") {
@@ -265,7 +268,7 @@ export function workflowNodeRuntimeState(
       return { stage, state: "done", meta: "人工确认已完成或下游已解锁", error: "" };
     }
     if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "plan_assets")) {
-      return { stage, state: "failed", meta: "失败", error: current.error_message };
+      return { stage, state: "blocked", meta: "阻塞", error: "" };
     }
     return { stage, state: "waiting", meta: "等待上游资产处理", error: "" };
   }
@@ -275,7 +278,7 @@ export function workflowNodeRuntimeState(
       return { stage, state: "done", meta: "输出文件已准备", error: "" };
     }
     if (current.status === "failed" && stageIsAfterOrEqual(current.stage, "export")) {
-      return { stage, state: "failed", meta: "失败", error: current.error_message };
+      return { stage, state: "blocked", meta: "阻塞", error: "" };
     }
     return { stage, state: "waiting", meta: "等待 SVG / PPT 输出", error: "" };
   }
@@ -332,7 +335,13 @@ export function workflowStageForNode(node: WorkflowNode): string {
 }
 
 export function stageMatchesNode(stageName: string, nodeStage: string): boolean {
-  return canonicalPipelineStage(stageName) === canonicalPipelineStage(nodeStage);
+  const normalizedStage = stageName.trim();
+  const normalizedNodeStage = nodeStage.trim();
+  if (!normalizedStage || !normalizedNodeStage) return false;
+  if (normalizedStage === normalizedNodeStage) return true;
+  const canonicalStage = canonicalPipelineStage(normalizedStage);
+  const canonicalNodeStage = canonicalPipelineStage(normalizedNodeStage);
+  return Boolean(canonicalStage && canonicalNodeStage && canonicalStage === canonicalNodeStage);
 }
 
 export function canonicalPipelineStage(stage: string): (typeof PIPELINE_STAGE_ORDER)[number] | "" {

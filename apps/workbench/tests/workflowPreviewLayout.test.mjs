@@ -84,12 +84,13 @@ test("running edge animation only applies to edges entering the running node", a
   assert.equal(dagRunEdgeState("done", "done"), "done");
 });
 
-test("failed DAG edges stay failed instead of running or done", async () => {
+test("failed DAG edges do not inherit failed node state", async () => {
   const { dagRunEdgeState } = await loadTsModule("../src/workflowRunState.ts");
 
-  assert.equal(dagRunEdgeState("done", "failed"), "failed");
-  assert.equal(dagRunEdgeState("failed", "waiting"), "failed");
-  assert.equal(dagRunEdgeState("failed", "done"), "failed");
+  assert.equal(dagRunEdgeState("done", "failed"), "done");
+  assert.equal(dagRunEdgeState("failed", "waiting"), "waiting");
+  assert.equal(dagRunEdgeState("failed", "done"), "waiting");
+  assert.equal(dagRunEdgeState("done", "blocked"), "done");
 });
 
 test("breakpoint DAG edges use the breakpoint state", async () => {
@@ -97,6 +98,14 @@ test("breakpoint DAG edges use the breakpoint state", async () => {
 
   assert.equal(dagRunEdgeState("done", "breakpoint"), "breakpoint");
   assert.equal(dagRunEdgeState("breakpoint", "waiting"), "breakpoint");
+});
+
+test("workflow stage matching does not treat unrelated unknown stages as equal", async () => {
+  const { stageMatchesNode } = await loadTsModule("../src/workflowRunState.ts");
+
+  assert.equal(stageMatchesNode("page_spec_refine", "page_spec_refine"), true);
+  assert.equal(stageMatchesNode("page_spec_refine", "sam_parse"), false);
+  assert.equal(stageMatchesNode("page_spec_refine", "ocr_parse"), false);
 });
 
 test("failed case status overrides a stale running workflow node record", async () => {
@@ -141,7 +150,39 @@ test("failed case status overrides a stale running workflow node record", async 
   assert.equal(state.error, "RuntimeError: SVG compose failed");
 });
 
-test("failed case status turns unrelated stale running node records red", async () => {
+test("failed workflow node does not mark successful sibling nodes failed", async () => {
+  const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
+  const state = workflowNodeRuntimeState(
+    {
+      ...node("sam_parse", "processor"),
+      config: { processor_id: "sam_parse", stage: "sam_parse" }
+    },
+    caseRecord({
+      status: "failed",
+      stage: "page_spec_refine",
+      phase: "workflow",
+      errorMessage: "RuntimeError: Workflow DAG failed: page_spec_refine"
+    }),
+    [],
+    [
+      workflowNodeRun({
+        nodeId: "sam_parse",
+        status: "ok",
+        attemptId: "001",
+        startedAt: "2026-07-02T06:09:00Z",
+        endedAt: "2026-07-02T06:10:00Z",
+        errorMessage: ""
+      })
+    ],
+    [],
+    []
+  );
+
+  assert.equal(state.state, "done");
+  assert.notEqual(state.state, "failed");
+});
+
+test("failed case status turns unrelated stale running node records blocked", async () => {
   const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
   const node = {
     node_id: "page_spec_refine",
@@ -176,9 +217,42 @@ test("failed case status turns unrelated stale running node records red", async 
     []
   );
 
-  assert.equal(state.state, "failed");
-  assert.equal(state.meta, "失败");
-  assert.equal(state.error, "Workbench restarted while this case was running");
+  assert.equal(state.state, "blocked");
+  assert.equal(state.meta, "阻塞");
+  assert.equal(state.error, "");
+});
+
+test("blocked workflow node runs do not render as failed nodes", async () => {
+  const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
+  const state = workflowNodeRuntimeState(
+    {
+      ...node("asset_prepare", "processor"),
+      config: { processor_id: "asset_prepare" }
+    },
+    caseRecord({
+      status: "failed",
+      stage: "page_spec_refine",
+      phase: "workflow",
+      errorMessage: "RuntimeError: Workflow DAG failed: page_spec_refine"
+    }),
+    [],
+    [
+      workflowNodeRun({
+        nodeId: "asset_prepare",
+        status: "blocked",
+        attemptId: "002",
+        startedAt: "2026-07-02T06:28:19Z",
+        endedAt: "2026-07-02T06:28:19Z",
+        errorMessage: ""
+      })
+    ],
+    [],
+    []
+  );
+
+  assert.equal(state.state, "blocked");
+  assert.equal(state.meta, "阻塞");
+  assert.equal(state.error, "");
 });
 
 test("failed detail case is not overwritten by stale running progress", async () => {
