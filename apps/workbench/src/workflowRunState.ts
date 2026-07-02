@@ -42,6 +42,18 @@ export function errorDetailText(value: string): string {
   return value;
 }
 
+export function uniqueErrorDetails(...values: string[]): string[] {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const value of values) {
+    const text = errorDetailText(value).trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    items.push(text);
+  }
+  return items;
+}
+
 export function currentCaseRecord(detailCase: CaseRecord, progressCase?: CaseRecord | null): CaseRecord {
   if (!progressCase || progressCase.case_id !== detailCase.case_id) return detailCase;
   if (
@@ -209,8 +221,17 @@ export function workflowNodeRuntimeState(
 ): WorkflowStageRuntimeState {
   const stage = workflowStageForNode(node);
   const latestNodeRun = latestWorkflowNodeRun(nodeRuns, node.node_id);
+  const nodeFailureError =
+    latestNodeRun?.status === "failed" || latestNodeRun?.status === "blocked"
+      ? latestNodeRun.error_message
+      : "";
   if (current.status === "failed" && stage && stageMatchesNode(current.stage, stage)) {
-    return { state: "failed", stage, meta: "失败", error: current.error_message };
+    return {
+      state: "failed",
+      stage,
+      meta: latestNodeRun?.status === "blocked" ? "阻塞" : "失败",
+      error: nodeFailureError || current.error_message
+    };
   }
   if (current.status === "failed" && latestNodeRun?.status === "running") {
     return { state: "failed", stage, meta: "失败", error: current.error_message };

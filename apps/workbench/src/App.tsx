@@ -85,6 +85,7 @@ import {
   latestStageRun,
   mergedStageRuns,
   stageMatchesNode,
+  uniqueErrorDetails,
   workflowNodeRuntimeState,
   workflowStageSpecState,
   type DagRunNodeState
@@ -4079,6 +4080,7 @@ function DagRunPanel({
   const breakpointMutationPending = caseActionPendingId === currentCase.case_id;
   const rerunDisabled = !primaryRerunAction || actionPending;
   const rerunNeedsChoice = rerunActions.length > 1;
+  const detailErrors = uniqueErrorDetails(selectedView?.error || "", viewerError);
   const breakpointNodeId = currentCase.workflow_breakpoint_node_id || "";
   const casePausedAtBreakpoint = Boolean(breakpointNodeId && currentCase.status === "assets_review" && currentCase.stage === breakpointNodeId);
   const needsReviewContinue = currentCase.status === "assets_review" && !casePausedAtBreakpoint && canRunFromAssets;
@@ -4317,8 +4319,9 @@ function DagRunPanel({
                 <div><dt>Inputs</dt><dd>{selectedView.node.inputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
                 <div><dt>Outputs</dt><dd>{selectedView.node.outputs.map((portItem) => portItem.types.join("/")).join(", ") || "-"}</dd></div>
               </dl>
-              {selectedView.error && <ErrorDetail message={selectedView.error} />}
-              {viewerError && <ErrorDetail message={viewerError} />}
+              {detailErrors.map((message) => (
+                <ErrorDetail key={message} message={message} />
+              ))}
             </>
           ) : (
             <EmptyState label="还没有 Workflow 节点" />

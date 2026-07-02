@@ -204,6 +204,47 @@ test("failed detail case is not overwritten by stale running progress", async ()
   assert.equal(state.error_message, "Workbench restarted while this case was running");
 });
 
+test("failed workflow node shows node error instead of outer DAG wrapper", async () => {
+  const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
+  const innerError = "AgentExecutionError: claude_cli Agent run failed: Agent CLI failed with returncode=1. stderr tail:";
+  const nodeState = workflowNodeRuntimeState(
+    {
+      ...node("page_spec_refine", "agent"),
+      config: { preset_id: "page_spec_refine" }
+    },
+    caseRecord({
+      status: "failed",
+      stage: "refine_elements",
+      phase: "workflow",
+      errorMessage: `RuntimeError: Workflow DAG failed: page_spec_refine: ${innerError}`
+    }),
+    [],
+    [
+      workflowNodeRun({
+        nodeId: "page_spec_refine",
+        status: "failed",
+        attemptId: "001",
+        startedAt: "2026-06-23T04:02:00Z",
+        endedAt: "2026-06-23T04:03:00Z",
+        errorMessage: innerError
+      })
+    ],
+    [],
+    []
+  );
+
+  assert.equal(nodeState.state, "failed");
+  assert.equal(nodeState.error, innerError);
+});
+
+test("error detail list drops duplicate viewer errors", async () => {
+  const { uniqueErrorDetails } = await loadTsModule("../src/workflowRunState.ts");
+  const error = "RuntimeError: Workflow DAG failed: page_spec_refine";
+
+  assert.deepEqual(uniqueErrorDetails(error, error), [error]);
+  assert.deepEqual(uniqueErrorDetails(error, "  ", "Different error"), [error, "Different error"]);
+});
+
 test("workflow breakpoint node renders as breakpoint status", async () => {
   const { workflowNodeRuntimeState } = await loadTsModule("../src/workflowRunState.ts");
   const node = {
