@@ -407,8 +407,7 @@ def _kimi_invocation(command: list[str], *, model_name: str, prompt: str) -> _Ag
 def _claude_command(command: list[str], *, model_name: str, fast: bool = False) -> list[str]:
     if model_name and "--model" not in command:
         command.extend(["--model", model_name])
-    if fast and "--bare" not in command:
-        command.append("--bare")
+    # Claude Code bare mode skips keychain/OAuth auth; only use it when explicitly configured.
     if "--print" not in command and "-p" not in command:
         command.append("--print")
     if "--permission-mode" not in command and "--dangerously-skip-permissions" not in command:
