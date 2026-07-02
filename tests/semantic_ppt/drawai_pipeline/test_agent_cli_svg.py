@@ -110,7 +110,7 @@ def test_agent_cli_svg_runner_accepts_stdout_svg_when_file_is_missing(monkeypatc
     assert trace_events[-1]["source"] == "stdout"
 
 
-def test_agent_cli_svg_runner_builds_claude_preset(monkeypatch, tmp_path: Path):
+def test_agent_cli_svg_runner_builds_claude_preset_without_implicit_bare(monkeypatch, tmp_path: Path):
     image_path = tmp_path / "input.png"
     output_svg = tmp_path / "semantic.svg"
     Image.new("RGB", (2, 2), "white").save(image_path)
@@ -143,7 +143,6 @@ def test_agent_cli_svg_runner_builds_claude_preset(monkeypatch, tmp_path: Path):
         "claude",
         "--model",
         "sonnet",
-        "--bare",
         "--print",
         "--permission-mode",
         "bypassPermissions",
@@ -152,6 +151,7 @@ def test_agent_cli_svg_runner_builds_claude_preset(monkeypatch, tmp_path: Path):
         "--input-format",
         "text",
     ]
+    assert "--bare" not in calls[0]["command"]
     assert "Internal DrawAI Claude CLI SVG generation task" in calls[0]["input"]
 
 
