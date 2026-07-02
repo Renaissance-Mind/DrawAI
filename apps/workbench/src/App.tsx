@@ -95,6 +95,7 @@ import {
   latestWorkflowNodeRunForNode,
   workflowNodeExtraInfoRows
 } from "./workflowNodeDisplay";
+import { workflowNodeRerunActions, type WorkflowNodeRerunAction } from "./workflowRerunActions";
 import { defaultWorkflowNodeArtifactId, selectableWorkflowNodeArtifacts } from "./nodeArtifactSelection";
 import {
   buildUploadConfirmation,
@@ -4053,14 +4054,31 @@ function DagRunPanel({
   const files = progress?.files || [];
   const layout = useMemo(() => (template ? buildWorkflowPreviewLayout(template) : null), [template]);
   const views = useMemo(() => buildDagNodeViews(template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files), [template, layout, currentDetail, stageRuns, nodeRuns, nodeMetadataById, files]);
-  const selectedView = views.find((item) => item.node.node_id === selectedNodeId) || views.find((item) => item.state === "running") || views.find((item) => item.state === "review") || views[0] || null;
+  const selectedView =
+    views.find((item) => item.node.node_id === selectedNodeId) ||
+    views.find((item) => item.state === "running") ||
+    views.find((item) => item.state === "review") ||
+    views.find((item) => item.state === "failed") ||
+    views[0] ||
+    null;
   const viewByNodeId = useMemo(() => new Map(views.map((view) => [view.node.node_id, view])), [views]);
   const selectedRerunStage = workflowStageRerunStage(selectedView?.stage || "");
+  const rerunActions = useMemo(
+    () =>
+      workflowNodeRerunActions({
+        stage: selectedRerunStage,
+        nodeId: selectedView?.node.node_id || "",
+        nodeState: selectedView?.state || ""
+      }),
+    [selectedRerunStage, selectedView?.node.node_id, selectedView?.state]
+  );
+  const primaryRerunAction = rerunActions[0] || null;
   const actionPending = runInProgress || caseActionPendingId === currentCase.case_id;
   const cancelPending = caseCancelPendingIds.includes(currentCase.case_id);
   const cancelEnabled = isTerminableCase(currentCase) && !cancelPending;
   const breakpointMutationPending = caseActionPendingId === currentCase.case_id;
-  const rerunDisabled = !selectedRerunStage || actionPending;
+  const rerunDisabled = !primaryRerunAction || actionPending;
+  const rerunNeedsChoice = rerunActions.length > 1;
   const breakpointNodeId = currentCase.workflow_breakpoint_node_id || "";
   const casePausedAtBreakpoint = Boolean(breakpointNodeId && currentCase.status === "assets_review" && currentCase.stage === breakpointNodeId);
   const needsReviewContinue = currentCase.status === "assets_review" && !casePausedAtBreakpoint && canRunFromAssets;
@@ -4090,9 +4108,9 @@ function DagRunPanel({
     }
   }
 
-  function rerunSelectedStage() {
-    if (!selectedRerunStage || actionPending) return;
-    void onRerunStage(currentCase, selectedRerunStage, selectedView?.node.node_id || "");
+  function rerunSelectedAction(action: WorkflowNodeRerunAction | null) {
+    if (!action || actionPending) return;
+    void onRerunStage(currentCase, action.stage as WorkbenchRerunStage, action.nodeId || "");
   }
 
   function toggleBreakpoint() {
@@ -4236,22 +4254,27 @@ function DagRunPanel({
             <ViewResultIcon />
             <span>{viewerLoadingNodeId === selectedView?.node.node_id ? "加载中" : "查看结果"}</span>
           </button>
-          <div className="dag-action-dropdown">
-            <button type="button" className="dag-action-button" disabled={rerunDisabled}>
-              {actionPending ? <ButtonSpinner /> : <RetryIcon />}
-              <span>重新运行</span>
-            </button>
-            <div className="dag-action-menu" role="menu">
-              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
-                <span>重跑当前阶段</span>
-                <em>{selectedRerunStage ? `仅从 ${humanize(selectedRerunStage)} 发起` : "当前节点暂无可重跑阶段"}</em>
+          {rerunNeedsChoice ? (
+            <div className="dag-action-dropdown">
+              <button type="button" className="dag-action-button" disabled={rerunDisabled}>
+                {actionPending ? <ButtonSpinner /> : <RetryIcon />}
+                <span>重试</span>
               </button>
-              <button type="button" role="menuitem" disabled={rerunDisabled} onClick={rerunSelectedStage}>
-                <span>从此阶段运行到结束</span>
-                <em>{selectedRerunStage ? "清理后续过期结果并恢复流水线" : "当前节点暂无可恢复阶段"}</em>
-              </button>
+              <div className="dag-action-menu" role="menu">
+                {rerunActions.map((action) => (
+                  <button type="button" key={action.kind} role="menuitem" disabled={rerunDisabled} onClick={() => rerunSelectedAction(action)}>
+                    <span>{workflowRerunActionLabel(action)}</span>
+                    <em>{workflowRerunActionDescription(action)}</em>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <button type="button" className="dag-action-button" disabled={rerunDisabled} onClick={() => rerunSelectedAction(primaryRerunAction)}>
+              {actionPending ? <ButtonSpinner /> : <RetryIcon />}
+              <span>{primaryRerunAction ? workflowRerunActionLabel(primaryRerunAction) : "重试"}</span>
+            </button>
+          )}
           <button
             type="button"
             className={`dag-action-button${breakpointActive ? " active" : ""}`}
@@ -9251,6 +9274,16 @@ function stateLabel(state: PipelineNodeState): string {
     breakpoint: "断点"
   };
   return labels[state];
+}
+
+function workflowRerunActionLabel(action: WorkflowNodeRerunAction): string {
+  if (action.kind === "failed_node") return "从失败节点重试";
+  return "重新重试";
+}
+
+function workflowRerunActionDescription(action: WorkflowNodeRerunAction): string {
+  if (action.kind === "failed_node") return `保留上游成功结果，从 ${action.nodeId || "失败节点"} 继续`;
+  return `从 ${humanize(action.stage)} 重新运行`;
 }
 
 function initialBoardMode(): BoardMode {
