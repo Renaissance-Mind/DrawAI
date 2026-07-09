@@ -35,22 +35,25 @@ def test_parse_args_accepts_agent_cli_invoker_and_command():
 
 
 def test_parse_args_accepts_acp_agent_invoker_and_command():
-    args = parse_args(
-        [
-            "case",
-            "--invoker",
-            "acp_agent",
-            "--acp-agent",
-            "kimi",
-            "--acp-agent-command",
-            "kimi",
-            "acp",
-        ]
-    )
+    for agent, command in {
+        "kimi": ["kimi", "acp"],
+        "openhands": ["openhands", "acp", "--always-approve"],
+    }.items():
+        args = parse_args(
+            [
+                "case",
+                "--invoker",
+                "acp_agent",
+                "--acp-agent",
+                agent,
+                "--acp-agent-command",
+                *command,
+            ]
+        )
 
-    assert args.invoker == "acp_agent"
-    assert args.acp_agent == "kimi"
-    assert args.acp_agent_command == ["kimi", "acp"]
+        assert args.invoker == "acp_agent"
+        assert args.acp_agent == agent
+        assert args.acp_agent_command == command
 
 
 def test_invoke_agent_cli_element_analysis_writes_output_via_cli(monkeypatch, tmp_path: Path):

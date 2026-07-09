@@ -1550,6 +1550,7 @@ def _run_attempt(
     text_rendering: str = "model_text",
 ) -> dict[str, Any]:
     pre_validation_issues: list[dict[str, Any]] = []
+    invoker_file_recovery: dict[str, Any] | None = None
     attempt_dir = response_path.parent
     prompt_path = attempt_dir / "prompt.txt"
     request_context_path = attempt_dir / "request_context.json"
@@ -1655,10 +1656,19 @@ def _run_attempt(
         )
         raw_response = invoker(**request)
     except Exception as exc:  # pragma: no cover - defensive path for real runtime failures.
-        raw_response = ""
-        pre_validation_issues.append(
-            _issue("invoker_error", "SVG generation invoker raised an exception.", repr(exc))
-        )
+        recovered_svg = _complete_svg_file_text(svg_path)
+        if recovered_svg is not None:
+            raw_response = recovered_svg
+            invoker_file_recovery = {
+                "status": "ok",
+                "source": str(svg_path),
+                "error": repr(exc),
+            }
+        else:
+            raw_response = ""
+            pre_validation_issues.append(
+                _issue("invoker_error", "SVG generation invoker raised an exception.", repr(exc))
+            )
 
     raw_text = _coerce_response_text(raw_response)
     if not response_path.exists():
@@ -1726,6 +1736,8 @@ def _run_attempt(
     report = _merge_validation_issues(report, pre_validation_issues)
     if manifest_asset_injection is not None:
         report["manifest_asset_injection"] = manifest_asset_injection
+    if invoker_file_recovery is not None:
+        report["invoker_file_recovery"] = invoker_file_recovery
     if native_backfill_href_repair is not None:
         report["native_backfill_href_repair"] = native_backfill_href_repair
     if intermediate_manifest_asset_injections:
@@ -1793,6 +1805,18 @@ def _extract_svg_text(raw_response: str) -> str | None:
     inline = _INLINE_SVG_RE.search(raw_response)
     if inline:
         return inline.group(1).strip()
+    return None
+
+
+def _complete_svg_file_text(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+    if text.startswith("<svg") and text.endswith("</svg>"):
+        return text
     return None
 
 

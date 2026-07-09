@@ -380,6 +380,7 @@ model_runtime:
         ("cline", ("cline", "--acp")),
         ("copilot", ("copilot", "--acp", "--stdio")),
         ("hermes", ("hermes", "acp")),
+        ("openhands", ("openhands", "acp", "--always-approve")),
     ],
 )
 def test_config_accepts_supported_acp_agent_presets(

@@ -1,0 +1,8 @@
+OpenHands icon
+
+Source: @lobehub/icons-static-svg 1.91.0
+URL: https://unpkg.com/@lobehub/icons-static-svg@1.91.0/icons/openhands.svg
+Upstream repository: https://github.com/lobehub/lobe-icons
+
+The icon is distributed under the MIT License included in
+LICENSE.lobe-icons.txt in this directory.

@@ -1770,6 +1770,32 @@ def test_svg_generation_loop_missing_svg_retries_with_feedback(tmp_path: Path):
     assert "xml_parse_error" in report_codes
 
 
+def test_svg_generation_loop_preserves_file_output_when_invoker_tail_fails(tmp_path: Path):
+    figure, reference, box_ir = _make_inputs(tmp_path)
+
+    def file_backed_invoker(*, output_svg_path, **kwargs):
+        Path(output_svg_path).write_text(VALID_SVG, encoding="utf-8")
+        raise RuntimeError("protocol tail failed after file write")
+
+    result = run_svg_generation_loop(
+        box_ir=box_ir,
+        figure_path=figure,
+        reference_image_path=reference,
+        asset_manifest={"assets": []},
+        output_dir=tmp_path / "svg",
+        max_attempts=1,
+        invoker=file_backed_invoker,
+    )
+
+    report = json.loads(
+        (tmp_path / "svg" / "attempts" / "001" / "validation_report.json").read_text(encoding="utf-8")
+    )
+    assert result["status"] == "ok"
+    assert (tmp_path / "svg" / "semantic.svg").read_text(encoding="utf-8") == VALID_SVG
+    assert report["invoker_file_recovery"]["status"] == "ok"
+    assert "protocol tail failed" in report["invoker_file_recovery"]["error"]
+
+
 def test_svg_generation_loop_exhaustion_raises_and_keeps_reports(tmp_path: Path):
     figure, reference, box_ir = _make_inputs(tmp_path)
 

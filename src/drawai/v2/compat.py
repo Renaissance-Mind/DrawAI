@@ -174,6 +174,7 @@ def _box_ir_geometry(
 def _asset_manifest_record(package: AssetPackage | Mapping[str, Any]) -> dict[str, Any]:
     payload = package.to_dict() if isinstance(package, AssetPackage) else dict(package)
     active_result = payload.get("active_result") if isinstance(payload.get("active_result"), Mapping) else {}
+    active_metadata = active_result.get("metadata") if isinstance(active_result.get("metadata"), Mapping) else {}
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else {}
     path = active_result.get("path") if isinstance(active_result, Mapping) else None
     files = payload.get("files") if isinstance(payload.get("files"), list) else []
@@ -190,6 +191,9 @@ def _asset_manifest_record(package: AssetPackage | Mapping[str, Any]) -> dict[st
     if isinstance(path, str) and path:
         record["path"] = path
         record["svg_href"] = _svg_href(path)
+    crop_bbox = active_metadata.get("crop_bbox_xyxy")
+    if isinstance(crop_bbox, (list, tuple)) and len(crop_bbox) == 4:
+        record["bbox"] = list(crop_bbox)
     if isinstance(active_result, Mapping):
         for key in ("width", "height"):
             if key in active_result:
@@ -249,9 +253,12 @@ def _merge_diagnostics(box_ir: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _svg_href(path: str) -> str:
-    if path.startswith("svg_to_ppt/assets/"):
-        return path.removeprefix("svg_to_ppt/")
-    return path
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("../"):
+        return normalized
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return f"../{normalized}"
 
 
 def _jsonable(value: Any) -> Any:

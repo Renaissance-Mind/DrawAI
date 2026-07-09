@@ -196,6 +196,103 @@ model_runtime:
 
 OpenClaw 和 Hermes 的 prompt 会作为 CLI 参数传入；DrawAI 的 trace 只记录 `<prompt:... chars>` 占位，不会把完整 prompt 写进命令日志。
 
+## OpenHands ACP 后端
+
+OpenHands 通过 ACP JSON-RPC stdio 接入 DrawAI，而不是解析 headless CLI 文本。内置 preset 为 `openhands`，Workbench provider id 为 `openhands_acp`，默认启动命令是：
+
+```text
+openhands acp --always-approve
+```
+
+### 安装当前已验证版本
+
+截至当前验证，PyPI 上的 OpenHands CLI/SDK 组合不会把 subscription 标记完整序列化到 `agent_settings.json`，进程重启后会丢失订阅模式。下面的官方仓库 source pin 包含该持久化修复，且已经通过真实订阅调用和 DrawAI ACP 调用验证：
+
+```bash
+uv tool install --force --python 3.12 \
+  'openhands @ git+https://github.com/OpenHands/OpenHands-CLI.git@2df8a2835d3f1bd2f2eadf5a7a2e1ad0dfb0d271'
+
+uv pip install --python "$(uv tool dir)/openhands/bin/python" \
+  --force-reinstall --no-deps \
+  'openhands-sdk @ git+https://github.com/OpenHands/software-agent-sdk.git@53155aa636738c2c6eed445f928de83a181034f8#subdirectory=openhands-sdk' \
+  'openhands-tools @ git+https://github.com/OpenHands/software-agent-sdk.git@53155aa636738c2c6eed445f928de83a181034f8#subdirectory=openhands-tools' \
+  'openhands-workspace @ git+https://github.com/OpenHands/software-agent-sdk.git@53155aa636738c2c6eed445f928de83a181034f8#subdirectory=openhands-workspace'
+
+openhands acp --help
+```
+
+上游正式版本包含 subscription 序列化修复后，可以改回普通的 `uv tool install openhands --python 3.12`。
+
+### 使用 ChatGPT/Codex 订阅授权
+
+OpenHands 需要自己的 OAuth grant。可以选择与 `codex login status` 对应的同一个 ChatGPT 账号，但不要复制或软链接 `~/.codex/auth.json`。以下命令会打开 OpenAI 登录页，把 OpenHands 凭据写入 `~/.openhands/auth/`，并通过 `AgentStore` 持久化默认 Agent：
+
+```bash
+OPENHANDS_PYTHON="$(uv tool dir)/openhands/bin/python"
+OPENHANDS_SUPPRESS_BANNER=1 "$OPENHANDS_PYTHON" - <<'PY'
+from openhands.sdk import LLM
+from openhands_cli.stores import AgentStore
+from openhands_cli.utils import get_default_cli_agent
+
+llm = LLM.subscription_login(vendor="openai", model="gpt-5.4-mini")
+AgentStore().save(get_default_cli_agent(llm))
+print(llm.model, llm.auth_type, llm.is_subscription)
+PY
+```
+
+模型可用性取决于 ChatGPT 账号和 Codex 网关。完整 DrawAI 端到端验证使用 `gpt-5.4-mini`；同一账号也完成过 `gpt-5.5` 单轮调用，但更容易触发订阅用量限制。如果网关返回 model not supported，应从本机 `~/.codex/models_cache.json` 和当前 OpenHands 注册表的交集中选择型号，并重新保存 Agent。可用下面的真实单轮调用检查授权、模型和持久化状态：
+
+```bash
+OPENHANDS_SUPPRESS_BANNER=1 openhands --headless --json --always-approve \
+  -t 'Reply with exactly OPENHANDS_SUBSCRIPTION_OK. Do not modify files.'
+```
+
+### DrawAI 配置
+
+下面是已经对完整 `drawai run` 验证过的单回合配置。它保留真实 SAM3/OCR、资产处理、SVG 校验、渲染和 PPTX 导出，只把 SVG 模型阶段切换到 OpenHands ACP：
+
+```yaml
+v2:
+  enabled: true
+  refine:
+    enabled: false
+svg:
+  generation_backend: acp_agent
+  staged_generation: false
+  visual_review_rounds: []
+model_runtime:
+  provider: acp-agent
+  connection_id: openhands
+  timeout_seconds: 3600
+  max_concurrent: 1
+  acp:
+    agent: openhands
+```
+
+`v2.refine.enabled: false` 表示这条单命令不等待外部预生成的 run0 refine JSON；`staged_generation: false` 和空 review rounds 把订阅模型调用收敛为一个真实 SVG 生成回合。需要最高重建质量时可以恢复分阶段生成与视觉 review，但会消耗更多订阅额度。run0 分析脚本同样接受 `--acp-agent openhands`，并可把 `openhands acp --always-approve` 作为 `--acp-agent-command` 的剩余参数传入。
+
+未显式设置 `model_runtime.acp.command` 时，DrawAI 使用 preset 中的 `openhands acp --always-approve`。如需固定绝对路径或添加 OpenHands 参数，可写完整命令数组：
+
+```yaml
+model_runtime:
+  provider: acp-agent
+  connection_id: openhands
+  acp:
+    agent: openhands
+    command:
+      - /absolute/path/to/openhands
+      - acp
+      - --always-approve
+```
+
+`--always-approve` 只用于允许 OpenHands 在隔离任务目录中无人值守地写入 DrawAI 要求的 SVG/JSON 产物；ACP trace 仍会保存协议请求、响应和 Agent 通知，便于审计真实执行路径。
+
+### OpenHands ACP 大文件兼容行为
+
+OpenHands 当前的 stdio 启动器使用较小的默认单行缓冲区，而 ACP 图片块会把本地图片编码成很大的单行 base64 JSON。DrawAI 的 `openhands` preset 因此保留图片能力，但不内联图片块：受控 prompt 提供绝对本地图片路径，OpenHands 使用自己的图片/file editor 能力读取它。trace 中会记录 `inline_image_blocks: false`。其他 ACP provider 的内联图片行为不变。
+
+OpenHands 的交互终端也不适合承载整份长 SVG here-doc。DrawAI 会明确要求 OpenHands 使用 `file_editor` 写 SVG/JSON，只用短终端命令运行 `xmllint` 或项目提供的 validator。这个路径已经用 22 KB SVG 压力测试和完整图片流程验证，不需要修改 OpenHands 的 site-packages。
+
 ## Workbench
 
 完整本机 Workbench：

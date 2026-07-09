@@ -62,8 +62,10 @@ icon set; no placeholder or hand-drawn substitute is used.
 
 OpenHands uses its native subscription mode:
 
-1. Install OpenHands with `uv tool install openhands --python 3.12`.
-2. Call `LLM.subscription_login(vendor="openai", ...)` using the same ChatGPT account
+1. Install a compatible OpenHands CLI/SDK build. Until the subscription
+   serialization fix reaches a stable release, use the verified official source
+   pins documented in `docs/zh-CN/runtime-options.md`.
+2. Call `LLM.subscription_login(vendor="openai", model="gpt-5.4-mini")` using the same ChatGPT account
    that `codex login status` reports as logged in.
 3. Persist an OpenHands CLI Agent whose LLM has `auth_type="subscription"`.
 4. Keep OpenHands credentials under `~/.openhands/auth/` and Codex credentials under
@@ -78,8 +80,12 @@ For each DrawAI agent task:
 
 1. DrawAI starts `openhands acp --always-approve` over stdio.
 2. DrawAI initializes ACP and opens a session rooted at the stage workspace.
-3. DrawAI sends the controlled prompt and local image blocks.
-4. OpenHands uses its subscription-backed Codex model and its own tools.
+3. DrawAI sends the controlled prompt with absolute local image paths. The OpenHands
+   preset does not inline base64 image blocks, avoiding the server's small default
+   stdio line buffer while retaining real local-image inspection.
+4. OpenHands uses its subscription-backed Codex model and its own tools. DrawAI's
+   controlled prompt requires `file_editor` for SVG/JSON output and reserves the
+   terminal for short inspection or validator commands.
 5. DrawAI validates required files, records ACP trace/stdout/stderr, and continues the
    pipeline.
 
@@ -100,6 +106,7 @@ Automated verification covers:
 
 - preset support, label, executable, and exact default command;
 - config parsing for `model_runtime.acp.agent: openhands`;
+- OpenHands-specific path-based image delivery and `file_editor` output guidance;
 - Workbench discovery and generated case configuration;
 - Workbench icon coverage and bundled asset existence;
 - the complete Python and Workbench test suites.
@@ -111,6 +118,10 @@ Real verification covers:
 - a full local DrawAI run of the named JPEG with OpenHands selected;
 - successful pipeline summary and required SVG, rendered PNG, and PPTX artifacts;
 - SVG/XML validity, PNG visual inspection, and PPTX ZIP/slide/media checks.
+
+The verified full run used `openai/gpt-5.4-mini` in one model generation round. It
+proves subscription authentication, ACP execution, and editable artifact export; the
+fidelity of a reconstruction remains a model and generation-mode quality choice.
 
 ## Success Criteria
 

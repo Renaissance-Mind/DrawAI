@@ -18,7 +18,7 @@
 - Modify: `tests/workbench/test_workflow_api.py`
 - Modify: `src/drawai/acp_agent_presets.py`
 
-- [ ] **Step 1: Add failing preset and config expectations**
+- [x] **Step 1: Add failing preset and config expectations**
 
 Add `openhands` to the expected command maps and parameterized config cases:
 
@@ -32,7 +32,7 @@ Add the Workbench tuple:
 ("openhands_acp", "openhands", ("openhands", "acp", "--always-approve"))
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -45,7 +45,7 @@ uv run pytest \
 
 Expected: failures show that `openhands`/`openhands_acp` is not registered.
 
-- [ ] **Step 3: Register the preset**
+- [x] **Step 3: Register the preset**
 
 Add this value to `ACP_AGENT_PRESETS`:
 
@@ -57,12 +57,20 @@ Add this value to `ACP_AGENT_PRESETS`:
     executable="openhands",
     default_command=("openhands", "acp", "--always-approve"),
     description="OpenHands Agent Client Protocol provider for file-backed Agent tasks.",
+    inline_image_blocks=False,
 ),
 ```
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: all selected tests pass.
+
+- [x] **Step 5: Cover OpenHands transport and file-output constraints**
+
+Keep local image paths in the controlled prompt while omitting inline base64 image
+blocks for OpenHands. Require OpenHands to write SVG/JSON through `file_editor`
+instead of long terminal here-doc commands, and preserve other ACP presets' inline
+image behavior.
 
 ### Task 2: Add the real Workbench provider icon with TDD
 
@@ -72,11 +80,11 @@ Run the Step 2 command. Expected: all selected tests pass.
 - Create: `apps/workbench/public/agent-icons/openhands.svg`
 - Create or modify: `apps/workbench/public/agent-icons/NOTICE.openhands-logo.txt`
 
-- [ ] **Step 1: Add the failing icon coverage expectation**
+- [x] **Step 1: Add the failing icon coverage expectation**
 
 Add `openhands_acp` to `EXPECTED_AGENT_PROVIDER_IDS`.
 
-- [ ] **Step 2: Run the exact test and verify RED**
+- [x] **Step 2: Run the exact test and verify RED**
 
 Run:
 
@@ -87,7 +95,7 @@ node --test tests/agentProviderPresentation.test.mjs
 
 Expected: `openhands_acp` has no icon mapping.
 
-- [ ] **Step 3: Add an upstream-sourced icon and mapping**
+- [x] **Step 3: Add an upstream-sourced icon and mapping**
 
 Add this mapping:
 
@@ -100,7 +108,7 @@ openhands_acp: {
 
 Bundle the upstream icon and record its source/license in the notice file.
 
-- [ ] **Step 4: Run Workbench tests and build**
+- [x] **Step 4: Run Workbench tests and build**
 
 Run:
 
@@ -119,25 +127,26 @@ Expected: 0 failing tests and a successful TypeScript/Vite build.
 - Modify: `README-en.md`
 - Modify: `docs/zh-CN/runtime-options.md`
 
-- [ ] **Step 1: Document first-class support in both READMEs**
+- [x] **Step 1: Document first-class support in both READMEs**
 
 Keep the bilingual feature lists aligned and name `OpenHands ACP` alongside the
 other supported agents.
 
-- [ ] **Step 2: Add exact runtime configuration instructions**
+- [x] **Step 2: Add exact runtime configuration instructions**
 
 Document:
 
 ```bash
-uv tool install openhands --python 3.12
-openhands
+uv tool install --force --python 3.12 \
+  'openhands @ git+https://github.com/OpenHands/OpenHands-CLI.git@2df8a2835d3f1bd2f2eadf5a7a2e1ad0dfb0d271'
+openhands acp --help
 ```
 
 Explain that OpenHands must be configured with its own subscription OAuth grant for
 the same ChatGPT account, and that DrawAI launches
 `openhands acp --always-approve`.
 
-- [ ] **Step 3: Check documentation consistency**
+- [x] **Step 3: Check documentation consistency**
 
 Run:
 
@@ -155,35 +164,36 @@ are present without tokens or machine-specific secrets.
 - External state: `~/.openhands/auth/`
 - External state: `~/.openhands/agent_settings.json`
 
-- [ ] **Step 1: Install and inspect OpenHands**
+- [x] **Step 1: Install and inspect OpenHands**
 
 Run:
 
 ```bash
-uv tool install openhands --python 3.12
+uv tool install --force --python 3.12 \
+  'openhands @ git+https://github.com/OpenHands/OpenHands-CLI.git@2df8a2835d3f1bd2f2eadf5a7a2e1ad0dfb0d271'
 openhands --version
 openhands acp --help
 ```
 
 Expected: the CLI and ACP command are available.
 
-- [ ] **Step 2: Create a native subscription LLM grant**
+- [x] **Step 2: Create a native subscription LLM grant**
 
 Use the OpenHands tool environment to call:
 
 ```python
-LLM.subscription_login(vendor="openai", model="gpt-5.2-codex")
+LLM.subscription_login(vendor="openai", model="gpt-5.4-mini")
 ```
 
 Authorize the same ChatGPT account reported by `codex login status`. Do not copy
 `~/.codex/auth.json` tokens.
 
-- [ ] **Step 3: Persist an OpenHands CLI Agent**
+- [x] **Step 3: Persist an OpenHands CLI Agent**
 
 Create the default CLI Agent from the subscription LLM and save it through
 `openhands_cli.stores.AgentStore` to `~/.openhands/agent_settings.json`.
 
-- [ ] **Step 4: Verify subscription mode and a real model turn**
+- [x] **Step 4: Verify subscription mode and a real model turn**
 
 Load the saved Agent and assert:
 
@@ -200,13 +210,19 @@ Then run one real headless OpenHands prompt and require exit code 0.
 - Input: `/Users/chunqiu/Downloads/飞书20260608-121219.jpg`
 - Output: `/Users/chunqiu/Downloads/drawai-openhands-e2e/`
 
-- [ ] **Step 1: Build an external OpenHands base config**
+- [x] **Step 1: Build an external OpenHands base config**
 
 Copy the runtime values from `configs/drawai/config.yaml` and override:
 
 ```yaml
+v2:
+  enabled: true
+  refine:
+    enabled: false
 svg:
   generation_backend: acp_agent
+  staged_generation: false
+  visual_review_rounds: []
 model_runtime:
   provider: acp-agent
   connection_id: openhands
@@ -218,7 +234,7 @@ model_runtime:
     command: [openhands, acp, --always-approve]
 ```
 
-- [ ] **Step 2: Run the full local pipeline**
+- [x] **Step 2: Run the full local pipeline**
 
 Run:
 
@@ -229,18 +245,18 @@ uv run drawai run /Users/chunqiu/Downloads/飞书20260608-121219.jpg \
   --runtime-root /Users/chunqiu/.drawai \
   --base-config /Users/chunqiu/Downloads/drawai-openhands-e2e/openhands.yaml \
   --out /Users/chunqiu/Downloads/drawai-openhands-e2e/runs \
-  --run-name openhands_acp_real
+  --run-name openhands_acp_final_verified
 ```
 
 Expected: exit code 0 and pipeline status `ok`.
 
-- [ ] **Step 3: Audit real artifacts**
+- [x] **Step 3: Audit real artifacts**
 
 Require a complete semantic SVG, rendered PNG, and PPTX. Parse the SVG as XML,
 inspect the rendered PNG, run `unzip -t` on the PPTX, and verify at least one slide
 with `python-pptx`.
 
-- [ ] **Step 4: Confirm OpenHands was actually used**
+- [x] **Step 4: Confirm OpenHands was actually used**
 
 Inspect execution manifests and ACP traces. Require provider id `openhands_acp` or
 ACP agent `openhands`, the real `openhands acp --always-approve` command, and
@@ -251,7 +267,7 @@ non-empty model/agent events.
 **Files:**
 - All modified repository files
 
-- [ ] **Step 1: Run the full Python suite**
+- [x] **Step 1: Run the full Python suite**
 
 ```bash
 uv run pytest -q
@@ -259,7 +275,7 @@ uv run pytest -q
 
 Expected: 0 failures.
 
-- [ ] **Step 2: Run Workbench tests and build again**
+- [x] **Step 2: Run Workbench tests and build again**
 
 ```bash
 cd apps/workbench
@@ -269,7 +285,7 @@ npm run build
 
 Expected: 0 failures and a successful build.
 
-- [ ] **Step 3: Review repository state**
+- [x] **Step 3: Review repository state**
 
 ```bash
 git diff --check
@@ -279,7 +295,7 @@ git diff --stat
 
 Expected: only the intended provider, presentation, icon, tests, and docs changes.
 
-- [ ] **Step 4: Commit the implementation**
+- [x] **Step 4: Commit the implementation**
 
 ```bash
 git add src tests apps/workbench README.md README-en.md docs

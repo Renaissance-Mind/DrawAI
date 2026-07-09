@@ -35,6 +35,7 @@ from drawai.codex_python_sdk_svg import (  # noqa: E402
     controlled_codex_config_overrides,
 )
 from drawai.codex_cli import resolve_codex_executable  # noqa: E402
+from drawai.acp_agent_presets import SUPPORTED_ACP_AGENTS  # noqa: E402
 from drawai.config import load_drawai_config  # noqa: E402
 from drawai.asset_geometry import geometry_crop, normalize_asset_geometry  # noqa: E402
 from drawai.acp_agent import invoke_acp_agent_text  # noqa: E402
@@ -113,15 +114,15 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--acp-agent",
-        choices=("kimi", "custom"),
+        choices=tuple(sorted(SUPPORTED_ACP_AGENTS)),
         default="kimi",
         help="ACP agent preset used when --invoker acp_agent is selected.",
     )
     parser.add_argument(
         "--acp-agent-command",
-        nargs="+",
+        nargs=argparse.REMAINDER,
         default=[],
-        help="Base ACP server command used when --invoker acp_agent is selected.",
+        help="Base ACP server command used when --invoker acp_agent is selected; this option must be last.",
     )
     parser.add_argument(
         "--skip-existing",

@@ -60,6 +60,10 @@ export const AGENT_PROVIDER_ICONS: Record<string, AgentProviderIcon> = {
     accent_color: "#111827",
     icon_url: "/agent-icons/hermes-agent.svg"
   },
+  openhands_acp: {
+    accent_color: "#111827",
+    icon_url: "/agent-icons/openhands.svg"
+  },
   claude_cli: {
     accent_color: "#d97757",
     icon_url: "/agent-icons/claude-code.svg"

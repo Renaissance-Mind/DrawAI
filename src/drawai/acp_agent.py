@@ -19,6 +19,7 @@ from .acp_agent_presets import (
     SUPPORTED_ACP_AGENTS,
     acp_agent_default_command,
     acp_agent_from_value,
+    acp_agent_inline_image_blocks,
     acp_agent_label,
 )
 
@@ -151,6 +152,7 @@ class AcpAgentSession:
         task_name: str,
     ) -> "_AcpPromptResult":
         command = _acp_agent_command(self.runtime_config, self.agent)
+        inline_image_blocks = acp_agent_inline_image_blocks(self.agent)
         model_runtime._append_trace(
             self.trace_path,
             {
@@ -163,6 +165,7 @@ class AcpAgentSession:
                 "timeout_seconds": self.timeout_seconds,
                 "prompt_chars": len(prompt),
                 "image_paths": [str(path) for path in image_paths],
+                "inline_image_blocks": inline_image_blocks,
             },
         )
         client = _AcpJsonRpcClient(
@@ -177,7 +180,10 @@ class AcpAgentSession:
         )
         started_at = time.monotonic()
         try:
-            result = client.run_prompt(prompt=prompt, image_paths=image_paths)
+            result = client.run_prompt(
+                prompt=prompt,
+                image_paths=image_paths if inline_image_blocks else (),
+            )
         finally:
             client.close()
         model_runtime._append_trace(
@@ -786,6 +792,7 @@ def _controlled_prompt(
 ) -> str:
     label = _agent_label(agent)
     image_block = "\n".join(f"- {path}" for path in image_paths) or "- none"
+    output_guidance = _agent_output_guidance(agent)
     if output_svg_path is None:
         return (
             f"Internal DrawAI {label} task.\n"
@@ -793,6 +800,7 @@ def _controlled_prompt(
             f"Use the ACP client filesystem and terminal capabilities directly inside this workspace. "
             "Do not use MCP tools, apps, web search, memories, hooks, or multi-agent delegation. "
             "Write DrawAI outputs only inside the workspace root unless this prompt explicitly names another output path.\n\n"
+            f"{output_guidance}"
             "Local image paths available for visual inspection:\n"
             f"{image_block}\n\n"
             f"{prompt}"
@@ -808,6 +816,7 @@ def _controlled_prompt(
         f"Use the ACP client filesystem and terminal capabilities directly inside this workspace. "
         "Do not use MCP tools, apps, web search, memories, hooks, or multi-agent delegation. "
         "Write DrawAI outputs only inside the workspace root unless this prompt explicitly names another output path.\n\n"
+        f"{output_guidance}"
         "Local image paths available for visual inspection:\n"
         f"{image_block}\n\n"
         "Write the SVG file yourself. Output contract:\n"
@@ -816,6 +825,16 @@ def _controlled_prompt(
         "- The SVG output file must contain exactly one complete SVG document, starting with <svg and ending with </svg>.\n"
         "- Keep the final chat response short; the SVG file is the source of truth.\n\n"
         f"{prompt}"
+    )
+
+
+def _agent_output_guidance(agent: str) -> str:
+    if agent != "openhands":
+        return ""
+    return (
+        "OpenHands output writing rule: use the file_editor tool for output files. "
+        "Do not write SVG or JSON through terminal here-docs, shell redirection, or terminal commands containing file contents. "
+        "Use short terminal commands only to inspect or validate files after file_editor has written them.\n\n"
     )
 
 

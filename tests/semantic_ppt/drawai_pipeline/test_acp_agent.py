@@ -25,6 +25,7 @@ ACP_AGENT_COMMANDS = {
     "cline": ("cline", "--acp"),
     "copilot": ("copilot", "--acp", "--stdio"),
     "hermes": ("hermes", "acp"),
+    "openhands": ("openhands", "acp", "--always-approve"),
 }
 
 
@@ -40,6 +41,7 @@ ACP_AGENT_LABELS = {
     "cline": "Cline ACP",
     "copilot": "GitHub Copilot ACP",
     "hermes": "Hermes ACP",
+    "openhands": "OpenHands ACP",
 }
 
 
@@ -234,3 +236,35 @@ def test_acp_agent_text_invocation_allows_declared_json_output(tmp_path: Path) -
 
     assert text == "wrote requested output\n"
     assert json.loads(output_path.read_text(encoding="utf-8")) == {"ok": True}
+
+
+def test_openhands_acp_uses_local_image_paths_without_inline_base64(tmp_path: Path) -> None:
+    image_path = tmp_path / "large-reference.jpg"
+    image_path.write_bytes(b"not-a-real-jpeg" * 10_000)
+    output_path = tmp_path / "output" / "result.json"
+    log_path = tmp_path / "fake_acp.jsonl"
+
+    text = invoke_acp_agent_text(
+        image_paths=image_path,
+        prompt="Inspect the local reference image.",
+        task_name="test.acp.openhands-local-image",
+        runtime_config={
+            "provider": "acp-agent",
+            "connection_id": "openhands",
+            "timeout_seconds": 5,
+            "acp": {
+                "agent": "openhands",
+                "command": [sys.executable, "-c", FAKE_ACP_SERVER, str(log_path), str(output_path)],
+            },
+        },
+        isolated_cwd=tmp_path,
+    )
+
+    assert text == "wrote requested output\n"
+    messages = [json.loads(line)["from_client"] for line in log_path.read_text(encoding="utf-8").splitlines() if "from_client" in line]
+    prompt_request = next(message for message in messages if message.get("method") == "session/prompt")
+    blocks = prompt_request["params"]["prompt"]
+    assert [block["type"] for block in blocks] == ["text"]
+    assert str(image_path) in blocks[0]["text"]
+    assert "use the file_editor tool" in blocks[0]["text"]
+    assert "Do not write SVG or JSON through terminal here-docs" in blocks[0]["text"]

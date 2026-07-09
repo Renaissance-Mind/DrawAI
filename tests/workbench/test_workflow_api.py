@@ -143,6 +143,7 @@ def test_workbench_workflow_provider_api_lists_provider_scoped_limits(tmp_path: 
         "cline_acp",
         "copilot_acp",
         "hermes_acp",
+        "openhands_acp",
     ):
         assert providers[provider_id]["resource_key"] == f"agent_provider:{provider_id}"
     assert providers["drawai_tool_agent"]["label"] == "内置 Agent"
@@ -165,6 +166,7 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     cline = _write_executable(bin_dir / "cline", "echo 'cline 1.2.3'\n")
     copilot = _write_executable(bin_dir / "copilot", "echo 'copilot 1.2.3'\n")
     hermes = _write_executable(bin_dir / "hermes", "echo 'hermes 1.2.3'\n")
+    openhands = _write_executable(bin_dir / "openhands", "echo 'openhands 1.2.3'\n")
     monkeypatch.setenv("PATH", str(bin_dir))
     client = _client(tmp_path)
 
@@ -188,6 +190,7 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     assert agents["cline_acp"]["command"] == [str(cline), "--acp"]
     assert agents["copilot_acp"]["command"] == [str(copilot), "--acp", "--stdio"]
     assert agents["hermes_acp"]["command"] == [str(hermes), "acp"]
+    assert agents["openhands_acp"]["command"] == [str(openhands), "acp", "--always-approve"]
     assert agents["drawai_tool_agent"]["available"] is True
     assert agents["drawai_tool_agent"]["label"] == "内置 Agent"
     assert agents["drawai_tool_agent"]["kind"] == "api"
@@ -1254,6 +1257,7 @@ def test_submitted_case_keeps_agent_and_processor_settings_snapshot(
         ("cline_acp", "cline", ("cline", "--acp")),
         ("copilot_acp", "copilot", ("copilot", "--acp", "--stdio")),
         ("hermes_acp", "hermes", ("hermes", "acp")),
+        ("openhands_acp", "openhands", ("openhands", "acp", "--always-approve")),
     ],
 )
 def test_create_batch_applies_saved_workbench_acp_agent_to_case_config(

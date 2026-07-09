@@ -29,7 +29,7 @@ For open-source stability, DrawAI currently keeps some still-under-validation ca
 - [x] Support asset redrawing with GPT-Image-2
 - [ ] Support more complex generation modes, including image-generation skills
 - [ ] Support skill-based usage
-- [x] Support other agents and models (already supports `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`)
+- [x] Support other agents and models (already supports `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`, and `OpenHands ACP`)
 
 > Note: Because mask and redraw capabilities are currently reduced in the open-source path, robustness on full-image complex backgrounds is lower than the internal target. Support is being added rapidly.
 
@@ -99,7 +99,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
 - Node.js 20.19+ or 22.12+ for the Workbench frontend
-- Working Codex/OpenAI authentication, or a configured agent CLI such as Kimi (`kimi`), Claude (`claude`), Codex (`codex exec`), OpenClaw (`openclaw agent`), or Hermes (`hermes chat`), for run0 asset analysis and SVG generation
+- Working Codex/OpenAI authentication, or a configured Agent CLI/ACP Agent such as Kimi (`kimi`), Claude (`claude`), Codex (`codex exec`), OpenClaw (`openclaw agent`), Hermes (`hermes chat`), or OpenHands (`openhands acp`), for run0 asset analysis and SVG generation
 - >8 GB disk space for model weights and the installed runtime environment
 
 The default local runtime directory is:
@@ -110,7 +110,7 @@ The default local runtime directory is:
 
 It is not tracked by git. Model downloads use ModelScope by default. See [runtime options](docs/zh-CN/runtime-options.md) for Hugging Face downloads, manual model paths, Torch backend selection, custom ports, and other advanced settings.
 
-### Choose Codex SDK Or Agent CLI
+### Choose Codex SDK, Agent CLI, Or ACP Agent
 
 The default config continues to use the Codex Python SDK. To use a direct CLI instead, switch the SVG backend and runtime provider to `agent_cli`, then choose `kimi`, `claude`, `codex`, `openclaw`, `hermes`, or a custom command under `model_runtime.cli`:
 
@@ -127,6 +127,20 @@ model_runtime:
 ```
 
 The Agent CLI path is used for both run0 asset analysis and SVG generation. No config change is needed when staying on the Codex SDK. For Claude, Codex, OpenClaw, or Hermes CLI, change `agent` and `command` to the corresponding command, for example `claude`, `codex exec`, `openclaw agent`, or `hermes chat`.
+
+OpenHands connects over the ACP JSON-RPC stdio protocol. After installing OpenHands and completing its own ChatGPT subscription authorization, select the built-in `openhands` preset; its default command is `openhands acp --always-approve`:
+
+```yaml
+svg:
+  generation_backend: acp_agent
+model_runtime:
+  provider: acp-agent
+  connection_id: openhands
+  acp:
+    agent: openhands
+```
+
+OpenHands keeps separate OAuth credentials under `~/.openhands`; do not copy `~/.codex/auth.json`. See the [runtime options](docs/zh-CN/runtime-options.md#openhands-acp-后端) for the currently verified install, authorization, and compatibility commands.
 
 <a id="outputs"></a>
 ## 📦 Output Locations

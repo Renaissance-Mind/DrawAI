@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from drawai.rmbg_client import RmbgResult
+from drawai.v2.compat import write_asset_manifest_compat
 from drawai.v2.packages import read_asset_package
 from drawai.v2.processors import (
     ChartRebuildReservedProcessor,
@@ -96,6 +97,18 @@ def test_crop_processor_writes_asset_package_result(tmp_path: Path) -> None:
     assert package["active_result"]
     assert (tmp_path / package["active_result"]["path"]).exists()
     assert package["active_result"]["metadata"]["crop_bbox_xyxy"] == [2, 2, 14, 14]
+
+
+def test_crop_asset_manifest_uses_svg_relative_href_and_bbox(tmp_path: Path) -> None:
+    source_path = _write_figure(tmp_path)
+
+    CropProcessor().process(tmp_path, _plan("crop"), source_image_path=source_path)
+    manifest = write_asset_manifest_compat(tmp_path, [read_asset_package(tmp_path, "E001")])
+
+    asset = manifest["assets"][0]
+    assert asset["path"].startswith("elements/E001/results/")
+    assert asset["svg_href"] == f"../{asset['path']}"
+    assert asset["bbox"] == [2, 2, 14, 14]
 
 
 def test_crop_processor_records_relative_source_refs_on_failure(tmp_path: Path) -> None:

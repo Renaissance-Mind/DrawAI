@@ -21,6 +21,7 @@ const EXPECTED_AGENT_PROVIDER_IDS = [
   "cline_acp",
   "copilot_acp",
   "hermes_acp",
+  "openhands_acp",
   "claude_cli",
   "openclaw_cli",
   "hermes_cli",

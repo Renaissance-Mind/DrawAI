@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 - [x] 支持用 GPT-Image-2 重绘素材
 - [ ] 支持更复杂的生成模式（各种图像生成 Skill 等）
 - [ ] 支持以 Skills 方式使用
-- [x] 支持其他 Agent 和模型（已支持 `codex cli`、`claude`、`kimi-code`、`OpenClaw`、`Hermes`）
+- [x] 支持其他 Agent 和模型（已支持 `codex cli`、`claude`、`kimi-code`、`OpenClaw`、`Hermes`、`OpenHands ACP`）
 
 > 备注：由于目前删减了 Mask 和重绘能力，对于全图复杂背景的鲁棒性有下降，目前正在火速支持中。
 
@@ -99,7 +99,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
 - Node.js 20.19+ 或 22.12+，仅 Workbench 前端需要
-- 可用的 Codex/OpenAI 认证，或已登录/配置的 Agent CLI，例如 Kimi（`kimi`）、Claude（`claude`）、Codex（`codex exec`）、OpenClaw（`openclaw agent`）或 Hermes（`hermes chat`），用于 run0 资产分析和 SVG 生成阶段
+- 可用的 Codex/OpenAI 认证，或已登录/配置的 Agent CLI/ACP Agent，例如 Kimi（`kimi`）、Claude（`claude`）、Codex（`codex exec`）、OpenClaw（`openclaw agent`）、Hermes（`hermes chat`）或 OpenHands（`openhands acp`），用于 run0 资产分析和 SVG 生成阶段
 - >8GB 磁盘空间以保存模型和安装环境
 
 模型和运行时默认放在：
@@ -110,7 +110,7 @@ uv run drawai run /path/to/your/image.png --local --device mps
 
 它不会被提交到 git。模型下载默认走 ModelScope；如果你希望用 Hugging Face、手动模型目录、不同 Torch 后端或自定义端口，请看[运行参数文档](docs/zh-CN/runtime-options.md)。
 
-### 选择 Codex SDK 或 Agent CLI
+### 选择 Codex SDK、Agent CLI 或 ACP Agent
 
 默认配置继续使用 Codex Python SDK。要改用直接 CLI，把配置中的 SVG backend 和 runtime provider 切到 `agent_cli`，再在 `model_runtime.cli` 里选择 `kimi`、`claude`、`codex`、`openclaw`、`hermes` 或自定义命令：
 
@@ -127,6 +127,20 @@ model_runtime:
 ```
 
 Agent CLI 路径会同时用于 run0 资产分析和 SVG 生成；继续使用 Codex SDK 时无需改动默认配置。Claude/Codex/OpenClaw/Hermes CLI 只需要把 `agent` 和 `command` 换成对应命令，例如 `claude`、`codex exec`、`openclaw agent` 或 `hermes chat`。
+
+OpenHands 通过 ACP 的 JSON-RPC stdio 协议接入。安装并完成 OpenHands 自己的 ChatGPT 订阅授权后，可使用内置 `openhands` preset；默认命令为 `openhands acp --always-approve`：
+
+```yaml
+svg:
+  generation_backend: acp_agent
+model_runtime:
+  provider: acp-agent
+  connection_id: openhands
+  acp:
+    agent: openhands
+```
+
+OpenHands 使用 `~/.openhands` 中的独立 OAuth 凭据，不应复制 `~/.codex/auth.json`。当前已验证的安装、授权与兼容版本命令见[运行参数文档](docs/zh-CN/runtime-options.md#openhands-acp-后端)。
 
 <a id="outputs"></a>
 ## 📦 输出结果在哪里

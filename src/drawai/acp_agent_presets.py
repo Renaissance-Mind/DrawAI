@@ -13,6 +13,7 @@ class AcpAgentPreset:
     description: str
     default_max_concurrent: int = 1
     supports_images: bool = True
+    inline_image_blocks: bool = True
 
 
 ACP_AGENT_PRESETS: dict[str, AcpAgentPreset] = {
@@ -104,6 +105,15 @@ ACP_AGENT_PRESETS: dict[str, AcpAgentPreset] = {
         default_command=("hermes", "acp"),
         description="Hermes Agent Client Protocol provider for file-backed Agent tasks.",
     ),
+    "openhands": AcpAgentPreset(
+        agent_id="openhands",
+        provider_id="openhands_acp",
+        label="OpenHands ACP",
+        executable="openhands",
+        default_command=("openhands", "acp", "--always-approve"),
+        description="OpenHands Agent Client Protocol provider for file-backed Agent tasks.",
+        inline_image_blocks=False,
+    ),
 }
 
 ACP_AGENT_BY_PROVIDER_ID: dict[str, AcpAgentPreset] = {
@@ -133,3 +143,8 @@ def acp_agent_default_command(agent_id: str) -> tuple[str, ...]:
 def acp_agent_label(agent_id: str) -> str:
     preset = ACP_AGENT_PRESETS.get(agent_id)
     return preset.label if preset is not None else "ACP Agent"
+
+
+def acp_agent_inline_image_blocks(agent_id: str) -> bool:
+    preset = ACP_AGENT_PRESETS.get(agent_id)
+    return preset.inline_image_blocks if preset is not None else True
