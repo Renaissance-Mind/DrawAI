@@ -37,10 +37,6 @@ from .pptx_notes import (
     markdown_to_plain_text,
     create_notes_slide_xml, create_notes_slide_rels_xml,
 )
-
-
-_PPTX_TEMP_ROOT_ENV = "DRAWAI_PPTX_TEMP_ROOT"
-_PPTX_TEMP_CLEANUP_DELAYS = (0.0, 0.1, 0.25, 0.5, 1.0)
 from .pptx_narration import (
     AUDIO_CONTENT_TYPES,
     AUDIO_REL_TYPE,
@@ -68,6 +64,10 @@ except ImportError:
     create_transition_xml = None
     create_sequence_timing_xml = None
     pick_animation_effect = None
+
+
+_PPTX_TEMP_ROOT_ENV = "DRAWAI_PPTX_TEMP_ROOT"
+_PPTX_TEMP_CLEANUP_DELAYS = (0.0, 0.1, 0.25, 0.5, 1.0)
 
 
 def _append_relationship(
