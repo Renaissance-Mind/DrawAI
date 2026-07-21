@@ -495,6 +495,8 @@ v2:
 | `DRAWAI_WORKBENCH_WORKSPACE` | Workbench 数据目录 |
 | `DRAWAI_CODEX_INHERIT_HOST_CONFIG` | 设为 `1` 时，受控 Codex 子进程继承 host Codex `config.toml` 里的 `model_provider`、`model` 以及 provider 的 `name`/`wire_api`/`base_url`/`env_key`/`requires_openai_auth` 配置 |
 | `DRAWAI_CODEX_MODEL` | 覆盖继承到受控 Codex 子进程的模型名，例如 CCswitch 中可用的 `gpt-5.5` |
+| `DRAWAI_BROWSER_PROFILE_TEMP_ROOT` | 覆盖 SVG 浏览器渲染使用的临时 profile 根目录；Windows 默认使用 `%LOCALAPPDATA%\DrawAI\t`，退出时会重试清理 |
+| `DRAWAI_PPTX_TEMP_ROOT` | 覆盖 SVG-to-PPTX 编译 staging 根目录；Windows 默认使用 `%LOCALAPPDATA%\DrawAI\t` 和短目录名，避免深层输出路径触发 `WinError 206` |
 | `OPENAI_API_KEY` | Codex/OpenAI 认证方式之一 |
 | `HF_TOKEN` | Hugging Face 下载 gated repo 时使用 |
 

@@ -4,7 +4,35 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import drawai.svg_to_ppt as svg_to_ppt
+from drawai._vendor.svg_pptx_converter.svg_to_pptx import pptx_builder
 from drawai.svg_to_ppt import SvgToPptCompiler, prepare_svg_for_ppt_input
+
+
+def test_pptx_work_dir_uses_user_local_short_root_on_windows(monkeypatch, tmp_path):
+    local_app_data = tmp_path / "local"
+    output = tmp_path / "deep" / "output" / "result.pptx"
+    monkeypatch.delenv("DRAWAI_PPTX_TEMP_ROOT", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    work_dir = pptx_builder._create_writable_work_dir(output, platform_name="nt")
+    try:
+        assert work_dir.parent == local_app_data / "DrawAI" / "t"
+        assert work_dir.name.startswith("p-")
+        assert len(work_dir.name) < 32
+    finally:
+        pptx_builder._cleanup_work_dir(work_dir)
+
+
+def test_pptx_work_dir_allows_temp_root_override(monkeypatch, tmp_path):
+    configured = tmp_path / "configured-short-root"
+    output = tmp_path / "output" / "result.pptx"
+    monkeypatch.setenv("DRAWAI_PPTX_TEMP_ROOT", str(configured))
+
+    work_dir = pptx_builder._create_writable_work_dir(output, platform_name="nt")
+    try:
+        assert work_dir.parent == configured
+    finally:
+        pptx_builder._cleanup_work_dir(work_dir)
 
 
 def test_prepare_svg_for_ppt_input_renames_reserved_background_id(tmp_path):
