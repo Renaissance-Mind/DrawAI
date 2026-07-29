@@ -21,7 +21,7 @@ from drawai.rmbg_client import RmbgResult
 from drawai.v2.packages import write_asset_package, write_element_plan
 from drawai.v2.schema import AssetPackage, ElementPlan, ProcessingIntent, RUN_PACKAGE_SCHEMA
 from drawai.workflow.agent_execution import AgentExecutionRequest, AgentExecutionResult
-from drawai.workflow.templates import user_workflow_template_path
+from drawai.workflow.templates import SIMPLE_WORKFLOW_TEMPLATE_ID, user_workflow_template_path
 import drawai.workbench.api as workbench_api
 from drawai.workbench.api import create_app
 from drawai.workbench.models import WorkbenchSettings
@@ -412,19 +412,8 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
     assert store.get_batch(batch.batch_id).status == "completed"
 
 
-@pytest.mark.parametrize(
-    ("template_id", "expected_parser_stages"),
-    (
-        ("ablation_no_ocr", ["sam_parse"]),
-        ("ablation_no_sam3", ["ocr_parse"]),
-        ("ablation_no_ocr_no_sam3", []),
-    ),
-)
-def test_runner_executes_builtin_parser_ablation_topologies(
-    tmp_path: Path,
-    template_id: str,
-    expected_parser_stages: list[str],
-) -> None:
+def test_runner_executes_builtin_simple_topology(tmp_path: Path) -> None:
+    template_id = SIMPLE_WORKFLOW_TEMPLATE_ID
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)
     source = tmp_path / "source.png"
@@ -470,7 +459,7 @@ def test_runner_executes_builtin_parser_ablation_topologies(
     updated = store.get_case(case.case_id)
     assert updated.status == "completed"
     assert observed_stages[0] == "prepare"
-    assert sorted(observed_stages[1:]) == expected_parser_stages
+    assert observed_stages[1:] == []
     page_spec_path = (
         Path(updated.run_root)
         / "nodes"
@@ -482,8 +471,7 @@ def test_runner_executes_builtin_parser_ablation_topologies(
     )
     page_spec = json.loads(page_spec_path.read_text(encoding="utf-8"))
     assert page_spec["schema"] == "drawai.page_spec.v1"
-    if template_id == "ablation_no_ocr_no_sam3":
-        assert page_spec["elements"] == []
+    assert page_spec["elements"] == []
 
 
 def test_runner_auto_run_approves_and_reconstructs(tmp_path: Path) -> None:
