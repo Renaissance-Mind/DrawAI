@@ -7,6 +7,7 @@ import pytest
 
 from drawai.workflow.schema import WorkflowNode, WorkflowPort, WorkflowTemplate
 from drawai.workflow.templates import (
+    PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS,
     copy_builtin_template_to_workspace,
     copy_builtin_template,
     default_drawai_workflow_template,
@@ -28,6 +29,34 @@ def test_default_drawai_workflow_template_validates() -> None:
     assert template.name == "Image-to-PPTX"
     assert result.ok
     assert result.errors == ()
+
+
+@pytest.mark.parametrize(
+    ("template_id", "present_parsers", "fuse_processor"),
+    (
+        ("ablation_no_ocr", {"sam_parse"}, "page_spec_fuse"),
+        ("ablation_no_sam3", {"ocr_parse"}, "page_spec_fuse"),
+        ("ablation_no_ocr_no_sam3", set(), "page_spec_seed"),
+    ),
+)
+def test_builtin_parser_ablation_templates_keep_the_default_downstream_flow(
+    template_id: str,
+    present_parsers: set[str],
+    fuse_processor: str,
+) -> None:
+    template = load_workflow_template_by_id(".", template_id)
+    nodes = {node.node_id: node for node in template.nodes}
+
+    assert template_id in PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS
+    assert validate_workflow_template(template).ok
+    assert {node_id for node_id in ("sam_parse", "ocr_parse") if node_id in nodes} == present_parsers
+    assert nodes["page_spec_fuse"].config["processor_id"] == fuse_processor
+    assert {"page_spec_refine", "asset_prepare", "svg_compose", "svg_to_ppt"} <= nodes.keys()
+
+    internal_payload = template.to_dict()
+    internal_payload.pop("template_id")
+    internal_payload.pop("name")
+    assert "ablation" not in json.dumps(internal_payload, ensure_ascii=False).lower()
 
 
 def test_builtin_image_to_pptx_zh_template_reuses_default_flow_with_chinese_agent_tasks() -> None:

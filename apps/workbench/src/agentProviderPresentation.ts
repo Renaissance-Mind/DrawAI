@@ -68,6 +68,10 @@ export const AGENT_PROVIDER_ICONS: Record<string, AgentProviderIcon> = {
     accent_color: "#d97757",
     icon_url: "/agent-icons/claude-code.svg"
   },
+  claude_agent_sdk: {
+    accent_color: "#d97757",
+    icon_url: "/agent-icons/claude-code.svg"
+  },
   openclaw_cli: {
     accent_color: "#3168f5",
     icon_url: "/agent-icons/openclaw.svg"

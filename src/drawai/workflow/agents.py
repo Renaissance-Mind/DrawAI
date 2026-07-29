@@ -237,6 +237,14 @@ def default_agent_provider_registry() -> dict[str, AgentProviderSpec]:
             executable="claude",
             description="Claude CLI provider for file-backed Agent nodes.",
         ),
+        "claude_agent_sdk": AgentProviderSpec(
+            provider_id="claude_agent_sdk",
+            label="Claude Code SDK",
+            kind="sdk",
+            resource_key="agent_provider:claude_agent_sdk",
+            default_max_concurrent=5,
+            description="Claude Agent SDK provider for file-backed Agent nodes.",
+        ),
         "openclaw_cli": AgentProviderSpec(
             provider_id="openclaw_cli",
             label="OpenClaw CLI",
@@ -950,7 +958,16 @@ def _validate_agent_config(config: Mapping[str, Any]) -> None:
             or timeout <= 0
         ):
             raise ValueError("timeout_seconds must be positive")
-    for field_name in ("model", "profile", "provider_id", "base_url", "api_key", "api_key_env", "wire_api"):
+    for field_name in (
+        "model",
+        "profile",
+        "provider_id",
+        "api_preset_id",
+        "base_url",
+        "api_key",
+        "api_key_env",
+        "wire_api",
+    ):
         if field_name in config and not isinstance(config[field_name], str):
             raise ValueError(f"{field_name} must be a string")
     for field_name in ("max_output_tokens", "max_iterations"):
@@ -983,6 +1000,7 @@ def _agent_options(config: Mapping[str, Any]) -> Mapping[str, Any]:
         "profile",
         "timeout_seconds",
         "reasoning_effort",
+        "api_preset_id",
         "base_url",
         "api_key",
         "api_key_env",

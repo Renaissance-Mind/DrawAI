@@ -19,7 +19,12 @@ SETTINGS_SCHEMA = "drawai.workbench.agent_settings.v1"
 DEFAULT_AGENT_PROVIDER_ID = "codex_sdk"
 DEFAULT_LLM_PROVIDER_ID = "openai_compatible"
 DEFAULT_LLM_WIRE_API = "chat_completions"
-SUPPORTED_LLM_WIRE_APIS = ("chat_completions", "responses")
+SUPPORTED_LLM_WIRE_APIS = ("chat_completions", "responses", "anthropic")
+API_PRESET_TYPE_TO_WIRE_API = {
+    "llm_chat_completions": "chat_completions",
+    "llm_responses": "responses",
+    "llm_anthropic": "anthropic",
+}
 VERSION_TIMEOUT_SECONDS = 8
 
 
@@ -31,6 +36,7 @@ class WorkbenchAgentDefinition:
     workflow_provider_id: str
     pipeline_agent: str
     default_command: tuple[str, ...] = ()
+    api_preset_types: tuple[str, ...] = ()
     description: str = ""
 
 
@@ -103,6 +109,15 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
         default_command=("claude",),
         description="Claude CLI provider for local Agent stages.",
     ),
+    "claude_agent_sdk": WorkbenchAgentDefinition(
+        provider_id="claude_agent_sdk",
+        label="Claude Code SDK",
+        kind="sdk",
+        workflow_provider_id="claude_agent_sdk",
+        pipeline_agent="",
+        api_preset_types=("llm_anthropic",),
+        description="Claude Agent SDK provider using an Anthropic-compatible LLM preset.",
+    ),
     "openclaw_cli": WorkbenchAgentDefinition(
         provider_id="openclaw_cli",
         label="OpenClaw CLI",
@@ -127,6 +142,7 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
         kind="api",
         workflow_provider_id=DRAWAI_TOOL_AGENT_PROVIDER,
         pipeline_agent="",
+        api_preset_types=("llm_chat_completions", "llm_responses"),
         description="OpenAI-compatible API provider with DrawAI-owned file and tool loop.",
     ),
 }
@@ -193,8 +209,20 @@ def normalize_workbench_agent_settings(
     timeout_seconds = _settings_timeout_seconds(data.get("timeout_seconds"))
     llm_model = str(data.get("llm_model") or "").strip()
     llm_base_url = str(data.get("llm_base_url") or "").strip().rstrip("/")
-    if require_selected_api_preset and provider_id == DRAWAI_TOOL_AGENT_PROVIDER and (not llm_model or not llm_base_url):
-        raise ValueError("内置 Agent 需要选择 API 预设")
+    definition = AGENT_DEFINITIONS[provider_id]
+    if require_selected_api_preset and definition.api_preset_types:
+        if not llm_model or not llm_base_url:
+            raise ValueError(f"{definition.label} 需要选择 API 预设（兼容的 LLM API）")
+        supported_wire_apis = tuple(
+            API_PRESET_TYPE_TO_WIRE_API[preset_type]
+            for preset_type in definition.api_preset_types
+        )
+        if llm_wire_api not in supported_wire_apis:
+            supported = ", ".join(definition.api_preset_types)
+            raise ValueError(
+                f"{definition.label} 不支持 {llm_wire_api!r} API 预设；"
+                f"请选择以下类型之一：{supported}"
+            )
     return WorkbenchAgentSettings(
         selected_provider_id=provider_id,
         model=str(data.get("model") or "").strip(),
@@ -247,6 +275,21 @@ def apply_workbench_agent_settings_to_node_config(
     definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     config = dict(node_config)
     config["provider_id"] = definition.workflow_provider_id
+    if definition.provider_id == "claude_agent_sdk":
+        if settings.llm_api_preset_id:
+            config["api_preset_id"] = settings.llm_api_preset_id
+        config["model"] = settings.llm_model or settings.model
+        config["base_url"] = settings.llm_base_url
+        if settings.llm_api_key:
+            config["api_key"] = settings.llm_api_key
+        if settings.llm_api_key_env:
+            config["api_key_env"] = settings.llm_api_key_env
+        config["wire_api"] = settings.llm_wire_api
+        if settings.reasoning_effort:
+            config["reasoning_effort"] = settings.reasoning_effort
+        if settings.timeout_seconds:
+            config["timeout_seconds"] = settings.timeout_seconds
+        return config
     if definition.provider_id == DRAWAI_TOOL_AGENT_PROVIDER:
         if settings.llm_api_preset_id:
             config["api_preset_id"] = settings.llm_api_preset_id
@@ -279,6 +322,11 @@ def apply_workbench_llm_settings_to_node_config(
     node_config: Mapping[str, Any],
     settings: WorkbenchAgentSettings,
 ) -> dict[str, Any]:
+    if settings.llm_wire_api == "anthropic":
+        raise ValueError(
+            "Anthropic-compatible presets run through the Claude Code SDK Agent, "
+            "not direct LLM mode"
+        )
     config = dict(node_config)
     config["provider_id"] = DEFAULT_LLM_PROVIDER_ID
     if settings.llm_api_preset_id:
@@ -305,6 +353,15 @@ def workbench_agent_runtime_options(settings: WorkbenchAgentSettings) -> dict[st
     definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     command = resolved_agent_command(settings.selected_provider_id)
     options: dict[str, Any] = {"fast": True} if settings.fast else {}
+    if definition.provider_id == "claude_agent_sdk":
+        if settings.llm_base_url:
+            options["base_url"] = settings.llm_base_url
+        if settings.llm_api_key:
+            options["api_key"] = settings.llm_api_key
+        if settings.llm_api_key_env:
+            options["api_key_env"] = settings.llm_api_key_env
+        options["wire_api"] = settings.llm_wire_api
+        return options
     if definition.kind == "acp":
         if command:
             options["acp_agent_command"] = command
@@ -335,6 +392,17 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["connection_id"] = "codex-python-sdk-controlled"
         if settings.model:
             runtime_config["model_name"] = settings.model
+    elif definition.provider_id == "claude_agent_sdk":
+        runtime_config["provider"] = "claude-agent-sdk"
+        runtime_config["connection_id"] = "claude-agent-sdk"
+        runtime_config["model_name"] = settings.llm_model or settings.model
+        runtime_config["api_preset_id"] = settings.llm_api_preset_id
+        runtime_config["base_url"] = settings.llm_base_url
+        runtime_config["wire_api"] = settings.llm_wire_api
+        if settings.llm_api_key:
+            runtime_config["api_key"] = settings.llm_api_key
+        if settings.llm_api_key_env:
+            runtime_config["api_key_env"] = settings.llm_api_key_env
     elif definition.provider_id == DRAWAI_TOOL_AGENT_PROVIDER:
         svg_config["generation_backend"] = "tool_agent"
         runtime_config["provider"] = DRAWAI_TOOL_AGENT_PROVIDER
@@ -379,6 +447,11 @@ def _apply_workbench_llm_settings_to_config_payload(
     payload: dict[str, Any],
     settings: WorkbenchAgentSettings,
 ) -> None:
+    if settings.llm_wire_api == "anthropic":
+        raise ValueError(
+            "Anthropic-compatible presets run through the Claude Code SDK Agent, "
+            "not direct LLM mode"
+        )
     svg_config = _mapping_child(payload, "svg")
     runtime_config = _mapping_child(payload, "model_runtime")
     svg_config["generation_backend"] = "responses"
@@ -425,7 +498,7 @@ def resolved_agent_command(provider_id: str) -> list[str]:
 
 
 def _discover_agent(definition: WorkbenchAgentDefinition) -> dict[str, Any]:
-    if definition.kind == "sdk":
+    if definition.provider_id == "codex_sdk":
         package_available = importlib.util.find_spec("openai_codex") is not None
         auth = _codex_auth_status()
         status = "ok" if package_available and auth["available"] else "missing"
@@ -444,6 +517,34 @@ def _discover_agent(definition: WorkbenchAgentDefinition) -> dict[str, Any]:
             "auth": auth,
             "workflow_provider_id": definition.workflow_provider_id,
             "pipeline_agent": definition.pipeline_agent,
+            "api_preset_types": list(definition.api_preset_types),
+            "description": definition.description,
+        }
+    if definition.provider_id == "claude_agent_sdk":
+        package_available = importlib.util.find_spec("claude_agent_sdk") is not None
+        status = "ok" if package_available else "missing"
+        return {
+            "provider_id": definition.provider_id,
+            "label": definition.label,
+            "kind": definition.kind,
+            "available": package_available,
+            "status": status,
+            "detail": (
+                "Claude Agent SDK package is available."
+                if package_available
+                else "Claude Agent SDK package is not installed."
+            ),
+            "fix": "" if package_available else "Install claude-agent-sdk.",
+            "executable_path": "",
+            "command": [],
+            "version": "",
+            "auth": {
+                "available": True,
+                "detail": "Authentication comes from the selected LLM API preset.",
+            },
+            "workflow_provider_id": definition.workflow_provider_id,
+            "pipeline_agent": definition.pipeline_agent,
+            "api_preset_types": list(definition.api_preset_types),
             "description": definition.description,
         }
     if definition.kind == "api":
@@ -461,6 +562,7 @@ def _discover_agent(definition: WorkbenchAgentDefinition) -> dict[str, Any]:
             "auth": {"available": True, "detail": "Set an API key or API key environment variable."},
             "workflow_provider_id": definition.workflow_provider_id,
             "pipeline_agent": definition.pipeline_agent,
+            "api_preset_types": list(definition.api_preset_types),
             "description": definition.description,
         }
     command = resolved_agent_command(definition.provider_id)
@@ -482,6 +584,7 @@ def _discover_agent(definition: WorkbenchAgentDefinition) -> dict[str, Any]:
         "auth": _codex_auth_status() if definition.provider_id == "codex_cli" else {"available": True, "detail": ""},
         "workflow_provider_id": definition.workflow_provider_id,
         "pipeline_agent": definition.pipeline_agent,
+        "api_preset_types": list(definition.api_preset_types),
         "description": definition.description,
     }
 

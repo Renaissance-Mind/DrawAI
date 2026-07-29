@@ -17,10 +17,12 @@ def test_default_agent_provider_registry_keeps_provider_resource_limits_separate
     registry = default_agent_provider_registry()
 
     assert registry["codex_sdk"].provider_id == "codex_sdk"
+    assert registry["claude_agent_sdk"].provider_id == "claude_agent_sdk"
     assert registry["kimi_cli"].provider_id == "kimi_cli"
     assert registry["drawai_tool_agent"].provider_id == "drawai_tool_agent"
     assert registry["drawai_tool_agent"].label == "内置 Agent"
     assert registry["codex_sdk"].resource_key == "agent_provider:codex_sdk"
+    assert registry["claude_agent_sdk"].resource_key == "agent_provider:claude_agent_sdk"
     assert registry["kimi_cli"].resource_key == "agent_provider:kimi_cli"
     assert registry["drawai_tool_agent"].resource_key == "agent_provider:drawai_tool_agent"
     assert registry["codex_sdk"].default_max_concurrent != registry["kimi_cli"].default_max_concurrent

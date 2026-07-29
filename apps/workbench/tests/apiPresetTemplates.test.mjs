@@ -15,11 +15,22 @@ test("API preset templates include common OpenAI-compatible providers", async ()
   assert.equal(templatesById.get("ollama")?.base_url, "http://localhost:11434/v1");
 });
 
+test("API preset templates include Claude Code SDK gateways", async () => {
+  const { API_PRESET_TEMPLATES } = await loadTemplateModule();
+  const templatesById = new Map(API_PRESET_TEMPLATES.map((template) => [template.id, template]));
+
+  assert.equal(templatesById.get("anthropic_claude_code")?.type, "llm_anthropic");
+  assert.equal(templatesById.get("kimi_coding_claude_code")?.base_url, "https://api.kimi.com/coding");
+  assert.equal(templatesById.get("minimax_claude_code")?.base_url, "https://api.minimaxi.com/anthropic");
+  assert.equal(templatesById.get("xiaomi_claude_code")?.base_url, "https://token-plan-cn.xiaomimimo.com/anthropic");
+  assert.equal(templatesById.get("openrouter_claude_code")?.base_url, "https://openrouter.ai/api");
+});
+
 test("API preset templates include local provider icons", async () => {
   const { API_PRESET_TEMPLATES } = await loadTemplateModule();
 
   for (const template of API_PRESET_TEMPLATES) {
-    assert.match(template.icon_url, /^\/provider-icons\/.+\.(?:svg|png)$/);
+    assert.match(template.icon_url, /^\/(?:provider-icons|agent-icons)\/.+\.(?:svg|png)$/);
     assert.equal(existsSync(new URL(`../public${template.icon_url}`, import.meta.url)), true, template.icon_url);
   }
 });

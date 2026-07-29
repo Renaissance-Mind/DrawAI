@@ -412,6 +412,80 @@ def test_runner_default_workflow_completes_without_asset_review(tmp_path: Path) 
     assert store.get_batch(batch.batch_id).status == "completed"
 
 
+@pytest.mark.parametrize(
+    ("template_id", "expected_parser_stages"),
+    (
+        ("ablation_no_ocr", ["sam_parse"]),
+        ("ablation_no_sam3", ["ocr_parse"]),
+        ("ablation_no_ocr_no_sam3", []),
+    ),
+)
+def test_runner_executes_builtin_parser_ablation_topologies(
+    tmp_path: Path,
+    template_id: str,
+    expected_parser_stages: list[str],
+) -> None:
+    store = WorkbenchStore(tmp_path / "workspace")
+    base_config = _base_config(tmp_path)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (24, 24), "white").save(source)
+    batch = store.create_batch(
+        name=template_id,
+        input_mode="local_dir",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=False,
+        config_path=base_config,
+        workflow_template_id=template_id,
+    )
+    case_root = store.runs_root / batch.batch_id / "case_seed"
+    config_path = create_case_config(
+        base_config_path=base_config,
+        source_image=source,
+        output_dir=case_root,
+        target_path=case_root / "drawai.config.yaml",
+    )
+    case = store.create_case(
+        batch_id=batch.batch_id,
+        name="source.png",
+        source_image_path=source,
+        config_path=config_path,
+    )
+    observed_stages: list[str] = []
+
+    def recording_stage_executor(case_record, stage: str) -> None:
+        observed_stages.append(stage)
+        _deterministic_stage_executor(case_record, stage)
+
+    runner = WorkbenchRunner(
+        store,
+        _settings(tmp_path, base_config),
+        stage_executor=recording_stage_executor,
+        agent_executor=_deterministic_agent_executor,
+    )
+
+    runner.submit_batch(batch.batch_id)
+    runner.wait_for_idle(timeout=5)
+    runner.shutdown()
+
+    updated = store.get_case(case.case_id)
+    assert updated.status == "completed"
+    assert observed_stages[0] == "prepare"
+    assert sorted(observed_stages[1:]) == expected_parser_stages
+    page_spec_path = (
+        Path(updated.run_root)
+        / "nodes"
+        / "page_spec_fuse"
+        / "runs"
+        / "001"
+        / "output"
+        / "page_spec.json"
+    )
+    page_spec = json.loads(page_spec_path.read_text(encoding="utf-8"))
+    assert page_spec["schema"] == "drawai.page_spec.v1"
+    if template_id == "ablation_no_ocr_no_sam3":
+        assert page_spec["elements"] == []
+
+
 def test_runner_auto_run_approves_and_reconstructs(tmp_path: Path) -> None:
     store = WorkbenchStore(tmp_path / "workspace")
     base_config = _base_config(tmp_path)

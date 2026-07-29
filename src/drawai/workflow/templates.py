@@ -30,6 +30,14 @@ from .schema import (
 from .validation import validate_workflow_template
 
 DEFAULT_WORKFLOW_TEMPLATE_ID = "default_drawai_dag"
+ABLATION_NO_PADDLEOCR_WORKFLOW_TEMPLATE_ID = "ablation_no_ocr"
+ABLATION_NO_SAM3_WORKFLOW_TEMPLATE_ID = "ablation_no_sam3"
+ABLATION_NO_PADDLEOCR_NO_SAM3_WORKFLOW_TEMPLATE_ID = "ablation_no_ocr_no_sam3"
+PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS = (
+    ABLATION_NO_PADDLEOCR_WORKFLOW_TEMPLATE_ID,
+    ABLATION_NO_SAM3_WORKFLOW_TEMPLATE_ID,
+    ABLATION_NO_PADDLEOCR_NO_SAM3_WORKFLOW_TEMPLATE_ID,
+)
 IMAGE_TO_PPTX_ZH_WORKFLOW_TEMPLATE_ID = "image_to_pptx_zh"
 PROCESSOR_TEST_WORKFLOW_TEMPLATE_ID = "processor_test_page_spec_assets"
 PROCESSOR_TEST_PAGE_SPEC_PROCESSING_TYPES = (
@@ -41,6 +49,7 @@ PROCESSOR_TEST_PAGE_SPEC_PROCESSING_TYPES = (
 )
 _BUILTIN_TEMPLATE_IDS = (
     DEFAULT_WORKFLOW_TEMPLATE_ID,
+    *PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS,
     IMAGE_TO_PPTX_ZH_WORKFLOW_TEMPLATE_ID,
     PROCESSOR_TEST_WORKFLOW_TEMPLATE_ID,
 )
@@ -361,6 +370,92 @@ def default_drawai_workflow_template() -> WorkflowTemplate:
     )
 
 
+def parser_ablation_workflow_template(template_id: str) -> WorkflowTemplate:
+    if template_id not in PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS:
+        raise ValueError(f"unknown parser ablation workflow template: {template_id}")
+
+    remove_ocr = template_id in {
+        ABLATION_NO_PADDLEOCR_WORKFLOW_TEMPLATE_ID,
+        ABLATION_NO_PADDLEOCR_NO_SAM3_WORKFLOW_TEMPLATE_ID,
+    }
+    remove_sam3 = template_id in {
+        ABLATION_NO_SAM3_WORKFLOW_TEMPLATE_ID,
+        ABLATION_NO_PADDLEOCR_NO_SAM3_WORKFLOW_TEMPLATE_ID,
+    }
+    base = default_drawai_workflow_template()
+    removed_node_ids = {
+        node_id
+        for node_id, remove in (("ocr_parse", remove_ocr), ("sam_parse", remove_sam3))
+        if remove
+    }
+    nodes: list[WorkflowNode] = []
+    for node in base.nodes:
+        if node.node_id in removed_node_ids:
+            continue
+        if node.node_id != "page_spec_fuse":
+            nodes.append(node)
+            continue
+        retained_inputs = tuple(
+            port
+            for port in node.inputs
+            if not (
+                (port.port_id == "ocr_page_spec" and remove_ocr)
+                or (port.port_id == "sam_page_spec" and remove_sam3)
+            )
+        )
+        if retained_inputs:
+            nodes.append(replace(node, inputs=retained_inputs))
+            continue
+        nodes.append(
+            replace(
+                node,
+                title="PageSpec Initialize",
+                inputs=(
+                    _input(
+                        "image",
+                        "Image",
+                        ("image",),
+                        formats=("drawai.image.v1",),
+                        description="Original page image used to initialize the page canvas.",
+                    ),
+                ),
+                config={"processor_id": "page_spec_seed", "stage": "fuse_elements"},
+            )
+        )
+
+    edges = tuple(
+        edge
+        for edge in base.edges
+        if edge.source_node_id not in removed_node_ids
+        and edge.target_node_id not in removed_node_ids
+        and not (
+            edge.target_node_id == "page_spec_fuse"
+            and (
+                (edge.target_port_id == "ocr_page_spec" and remove_ocr)
+                or (edge.target_port_id == "sam_page_spec" and remove_sam3)
+            )
+        )
+    )
+    if remove_ocr and remove_sam3:
+        edges = (*edges, _edge("input", "image", "page_spec_fuse", "image"))
+
+    names = {
+        ABLATION_NO_PADDLEOCR_WORKFLOW_TEMPLATE_ID: "Ablation: No PaddleOCR",
+        ABLATION_NO_SAM3_WORKFLOW_TEMPLATE_ID: "Ablation: No SAM3",
+        ABLATION_NO_PADDLEOCR_NO_SAM3_WORKFLOW_TEMPLATE_ID: (
+            "Ablation: No PaddleOCR or SAM3"
+        ),
+    }
+    return replace(
+        base,
+        template_id=template_id,
+        name=names[template_id],
+        description="Built-in PageSpec-first image reconstruction workflow.",
+        nodes=tuple(nodes),
+        edges=edges,
+    )
+
+
 def processor_test_page_spec_assets_workflow_template() -> WorkflowTemplate:
     base = default_drawai_workflow_template()
     keep_node_ids = {
@@ -507,6 +602,10 @@ def user_workflow_template_path(workspace: str | Path, template_id: str) -> Path
 def builtin_workflow_templates() -> tuple[WorkflowTemplate, ...]:
     return (
         default_drawai_workflow_template(),
+        *(
+            parser_ablation_workflow_template(template_id)
+            for template_id in PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS
+        ),
         image_to_pptx_zh_workflow_template(),
         processor_test_page_spec_assets_workflow_template(),
     )
@@ -613,6 +712,8 @@ def workflow_template_from_dict(payload: Mapping[str, Any]) -> WorkflowTemplate:
 def _builtin_workflow_template(template_id: str) -> WorkflowTemplate:
     if template_id == DEFAULT_WORKFLOW_TEMPLATE_ID:
         return default_drawai_workflow_template()
+    if template_id in PARSER_ABLATION_WORKFLOW_TEMPLATE_IDS:
+        return parser_ablation_workflow_template(template_id)
     if template_id == IMAGE_TO_PPTX_ZH_WORKFLOW_TEMPLATE_ID:
         return image_to_pptx_zh_workflow_template()
     if template_id == PROCESSOR_TEST_WORKFLOW_TEMPLATE_ID:

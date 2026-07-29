@@ -8,6 +8,9 @@ test("detail save closes API preset and image generation dialogs after a success
   assert.match(source, /type SaveSettingsOptions = \{/);
   assert.match(source, /closeDetailOnSuccess\?: boolean/);
   assert.match(source, /closeSettingsDetail\(\{ discardApiDraft: false \}\)/);
-  assert.match(source, /saveSettings\(\{ closeDetailOnSuccess: settingsCategory === "api" \|\| settingsCategory === "imagegen" \}\)/);
+  assert.match(
+    source,
+    /saveSettings\(\{[\s\S]*?agentSettingsOverride:[\s\S]*?closeDetailOnSuccess: settingsCategory === "api" \|\| settingsCategory === "imagegen"/
+  );
   assert.match(source, /saveSettings\(\{ agentSettingsOverride: nextDraft \}\)/);
 });

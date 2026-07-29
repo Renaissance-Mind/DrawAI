@@ -23,6 +23,7 @@ const EXPECTED_AGENT_PROVIDER_IDS = [
   "hermes_acp",
   "openhands_acp",
   "claude_cli",
+  "claude_agent_sdk",
   "openclaw_cli",
   "hermes_cli",
   "drawai_tool_agent"

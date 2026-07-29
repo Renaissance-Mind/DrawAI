@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from drawai.acp_agent_presets import ACP_AGENT_BY_PROVIDER_ID
 from drawai.acp_agent import AcpAgentError, invoke_acp_agent_text
@@ -54,6 +56,13 @@ ACP_AGENT_PROVIDERS: dict[str, str] = {
     provider_id: preset.agent_id for provider_id, preset in ACP_AGENT_BY_PROVIDER_ID.items()
 }
 CODEX_FAST_SERVICE_TIER = "priority"
+CLAUDE_AGENT_SDK_PROVIDER_ID = "claude_agent_sdk"
+CLAUDE_SDK_TEXT_ONLY_READ_MODELS = frozenset(
+    {
+        "mimo-v2.5-pro",
+        "tencent/hy3:free",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,8 @@ def execute_agent_prompt(request: AgentExecutionRequest) -> AgentExecutionResult
     _write_execution_request_manifest(request, prompt_path)
     if provider_id == "codex_sdk":
         result = _execute_codex_sdk_agent(request, prompt_path=prompt_path)
+    elif provider_id == CLAUDE_AGENT_SDK_PROVIDER_ID:
+        result = _execute_claude_agent_sdk(request, prompt_path=prompt_path)
     elif provider_id == "codex_cli":
         result = _execute_codex_cli_agent(request, prompt_path=prompt_path)
     elif provider_id == "kimi_cli":
@@ -299,6 +310,317 @@ def _execute_codex_sdk_agent(
         trace_path=trace_path,
         session_log_path=session_log_path,
     )
+
+
+def _execute_claude_agent_sdk(
+    request: AgentExecutionRequest,
+    *,
+    prompt_path: Path,
+) -> AgentExecutionResult:
+    sdk = _load_claude_agent_sdk()
+    options = dict(request.prompt.options)
+    model = str(options.get("model") or "").strip()
+    base_url = str(options.get("base_url") or "").strip().rstrip("/")
+    wire_api = str(options.get("wire_api") or "").strip().lower()
+    api_key_env = str(options.get("api_key_env") or "").strip()
+    inline_api_key = str(options.get("api_key") or "").strip()
+    api_key = inline_api_key or (os.environ.get(api_key_env, "") if api_key_env else "")
+    if not model:
+        raise AgentExecutionError(
+            "Claude Code SDK requires an explicit model",
+            prompt_path=prompt_path,
+        )
+    if not base_url:
+        raise AgentExecutionError(
+            "Claude Code SDK requires an explicit base URL",
+            prompt_path=prompt_path,
+        )
+    if wire_api and wire_api != "anthropic":
+        raise AgentExecutionError(
+            "Claude Code SDK requires an Anthropic-compatible LLM preset",
+            prompt_path=prompt_path,
+        )
+    if not api_key:
+        credential_detail = (
+            f"environment {api_key_env}" if api_key_env else "the selected LLM preset"
+        )
+        raise AgentExecutionError(
+            f"Claude Code SDK credential is missing from {credential_detail}",
+            prompt_path=prompt_path,
+        )
+
+    trace_path = request.workdir / "claude_agent_sdk_trace.jsonl"
+    stdout_path = request.workdir / "claude_agent_sdk_final_response.txt"
+    stderr_path = request.workdir / "claude_agent_sdk_error.txt"
+    timeout_seconds = _timeout_seconds(options)
+    started_at = time.monotonic()
+    sdk_stderr: list[str] = []
+    sdk_environment = _claude_sdk_environment(
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+    )
+    option_values: dict[str, Any] = {
+        "cwd": str(_agent_cwd(request)),
+        "model": model,
+        "env": sdk_environment,
+        "setting_sources": [],
+        "system_prompt": {"type": "preset", "preset": "claude_code"},
+        "tools": {"type": "preset", "preset": "claude_code"},
+        "permission_mode": "bypassPermissions",
+        "max_buffer_size": 16 * 1024 * 1024,
+        "stderr": sdk_stderr.append,
+    }
+    route = _claude_sdk_route(base_url)
+    reasoning_effort = _claude_sdk_reasoning_effort(options.get("reasoning_effort"))
+    if route == "kimi_coding":
+        option_values["thinking"] = {"type": "adaptive"}
+        option_values["effort"] = reasoning_effort or "high"
+    elif reasoning_effort:
+        option_values["effort"] = reasoning_effort
+    if model in CLAUDE_SDK_TEXT_ONLY_READ_MODELS:
+        option_values["disallowed_tools"] = ["Read"]
+    sdk_options = sdk.ClaudeAgentOptions(**option_values)
+    _append_trace(
+        trace_path,
+        {
+            "type": "agent_request",
+            "provider_id": CLAUDE_AGENT_SDK_PROVIDER_ID,
+            "node_id": request.node_id,
+            "cwd": str(_agent_cwd(request)),
+            "prompt_path": str(prompt_path),
+            "input_paths": [str(path) for path in _input_paths(request)],
+            "declared_outputs": list(request.prompt.outputs),
+            "model": model,
+            "base_url": base_url,
+            "api_preset_id": str(options.get("api_preset_id") or ""),
+            "credential_source": "inline" if inline_api_key else "environment",
+            "credential_env": api_key_env,
+            "setting_sources": [],
+            "permission_mode": "bypassPermissions",
+            "reasoning_effort": reasoning_effort,
+            "timeout_seconds": timeout_seconds,
+        },
+    )
+    try:
+        final_response, result_message, assistant_errors, stream_error = asyncio.run(
+            asyncio.wait_for(
+                _consume_claude_agent_query(
+                    sdk,
+                    prompt=request.prompt.text,
+                    options=sdk_options,
+                    trace_path=trace_path,
+                    node_id=request.node_id,
+                ),
+                timeout=timeout_seconds,
+            )
+        )
+        if result_message is not None and bool(
+            getattr(result_message, "is_error", False)
+        ):
+            details: list[str] = []
+            if assistant_errors:
+                details.append(f"assistant_error={','.join(assistant_errors)}")
+            api_error_status = getattr(result_message, "api_error_status", None)
+            if api_error_status is not None:
+                details.append(f"api_error_status={api_error_status}")
+            result_errors = getattr(result_message, "errors", None)
+            if result_errors:
+                details.append(f"errors={result_errors}")
+            if final_response:
+                details.append(f"result={final_response}")
+            if stream_error is not None:
+                details.append(
+                    f"stream_error={type(stream_error).__name__}: {stream_error}"
+                )
+            raise RuntimeError(
+                "Claude Code SDK result failed: " + "; ".join(details)
+            )
+        if stream_error is not None:
+            raise stream_error
+    except Exception as exc:
+        error_text = f"{type(exc).__name__}: {exc}"
+        if sdk_stderr:
+            error_text = f"{error_text}\n" + "\n".join(sdk_stderr)
+        safe_error = _redact_secret_text(error_text, (api_key,))
+        stderr_path.write_text(safe_error + "\n", encoding="utf-8")
+        _append_trace(
+            trace_path,
+            {
+                "type": "agent_error",
+                "provider_id": CLAUDE_AGENT_SDK_PROVIDER_ID,
+                "node_id": request.node_id,
+                "duration_ms": int((time.monotonic() - started_at) * 1000),
+                "error": safe_error,
+            },
+        )
+        raise AgentExecutionError(
+            f"Claude Code SDK run failed: {safe_error}",
+            prompt_path=prompt_path,
+            stdout_path=stdout_path if stdout_path.exists() else None,
+            stderr_path=stderr_path,
+            trace_path=trace_path,
+            exit_code=1,
+        ) from exc
+
+    stdout_path.write_text(final_response, encoding="utf-8")
+    _append_trace(
+        trace_path,
+        {
+            "type": "agent_response",
+            "provider_id": CLAUDE_AGENT_SDK_PROVIDER_ID,
+            "node_id": request.node_id,
+            "duration_ms": int((time.monotonic() - started_at) * 1000),
+            "output_paths": [
+                str(_declared_output_path(request, output))
+                for output in request.prompt.outputs
+            ],
+        },
+    )
+    return AgentExecutionResult(
+        provider_id=CLAUDE_AGENT_SDK_PROVIDER_ID,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path if stderr_path.exists() else None,
+        trace_path=trace_path,
+        exit_code=0,
+    )
+
+
+async def _consume_claude_agent_query(
+    sdk: Any,
+    *,
+    prompt: str,
+    options: Any,
+    trace_path: Path,
+    node_id: str,
+) -> tuple[str, Any | None, tuple[str, ...], Exception | None]:
+    assistant_text: list[str] = []
+    assistant_errors: list[str] = []
+    result_message: Any | None = None
+    stream_error: Exception | None = None
+    try:
+        async for message in sdk.query(prompt=prompt, options=options):
+            if isinstance(message, sdk.AssistantMessage):
+                blocks = getattr(message, "content", ())
+                assistant_error = str(getattr(message, "error", "") or "")
+                if assistant_error and assistant_error not in assistant_errors:
+                    assistant_errors.append(assistant_error)
+                assistant_text.extend(
+                    str(block.text)
+                    for block in blocks
+                    if isinstance(block, sdk.TextBlock)
+                )
+                _append_trace(
+                    trace_path,
+                    {
+                        "type": "assistant_message",
+                        "provider_id": CLAUDE_AGENT_SDK_PROVIDER_ID,
+                        "node_id": node_id,
+                        "model": str(getattr(message, "model", "") or ""),
+                        "error": assistant_error,
+                        "usage": getattr(message, "usage", None),
+                    },
+                )
+            elif isinstance(message, sdk.ResultMessage):
+                result_message = message
+                _append_trace(
+                    trace_path,
+                    {
+                        "type": "result_message",
+                        "provider_id": CLAUDE_AGENT_SDK_PROVIDER_ID,
+                        "node_id": node_id,
+                        "subtype": str(getattr(message, "subtype", "") or ""),
+                        "is_error": bool(getattr(message, "is_error", False)),
+                        "session_id": str(getattr(message, "session_id", "") or ""),
+                        "duration_ms": int(getattr(message, "duration_ms", 0) or 0),
+                        "usage": getattr(message, "usage", None),
+                        "errors": getattr(message, "errors", None),
+                        "api_error_status": getattr(
+                            message, "api_error_status", None
+                        ),
+                    },
+                )
+    except Exception as exc:
+        stream_error = exc
+    result_text = (
+        str(getattr(result_message, "result", "") or "")
+        if result_message is not None
+        else ""
+    )
+    return (
+        result_text or "\n".join(assistant_text),
+        result_message,
+        tuple(assistant_errors),
+        stream_error,
+    )
+
+
+def _claude_sdk_environment(
+    *,
+    base_url: str,
+    model: str,
+    api_key: str,
+) -> dict[str, str]:
+    route = _claude_sdk_route(base_url)
+    environment = {
+        "ANTHROPIC_BASE_URL": base_url,
+        "ANTHROPIC_AUTH_TOKEN": api_key,
+    }
+    if route in {"anthropic", "kimi_coding"}:
+        environment.update(
+            {
+                "ANTHROPIC_API_KEY": api_key,
+                "ANTHROPIC_AUTH_TOKEN": "",
+            }
+        )
+    if route in {"kimi_coding", "openrouter"}:
+        environment.update(
+            {
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": model,
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": model,
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": model,
+                "CLAUDE_CODE_SUBAGENT_MODEL": model,
+            }
+        )
+    if route == "kimi_coding":
+        environment["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "262144"
+    if route == "openrouter":
+        environment["ANTHROPIC_API_KEY"] = ""
+    return environment
+
+
+def _claude_sdk_route(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path.rstrip("/")
+    if host == "api.anthropic.com":
+        return "anthropic"
+    if host == "api.kimi.com" and path == "/coding":
+        return "kimi_coding"
+    if host == "openrouter.ai" and path == "/api":
+        return "openrouter"
+    return "anthropic_gateway"
+
+
+def _claude_sdk_reasoning_effort(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "none": "low",
+        "minimal": "low",
+        "xhigh": "max",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _load_claude_agent_sdk() -> Any:
+    try:
+        import claude_agent_sdk
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "claude-agent-sdk is required for the Claude Code SDK provider"
+        ) from exc
+    return claude_agent_sdk
 
 
 def _execute_drawai_tool_agent(
@@ -1100,6 +1422,14 @@ def _redact_sensitive_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
         key_text = str(key)
         normalized = key_text.lower().replace("-", "_")
         redacted[key_text] = "[redacted]" if "api_key" in normalized else item
+    return redacted
+
+
+def _redact_secret_text(value: str, secrets: Sequence[str]) -> str:
+    redacted = value
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[redacted]")
     return redacted
 
 

@@ -60,16 +60,23 @@ test("settings overview engine and Agent cards use provider icons and bottom-ali
   assert.match(css, /\.settings-model-action\s*\{[\s\S]*?align-self:\s*end;/);
 });
 
-test("settings Agent panel exposes the built-in Agent API preset selector", () => {
+test("settings Agent panel exposes provider-compatible API preset selectors", () => {
   const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
   const presentationSource = readFileSync(new URL("../src/agentProviderPresentation.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 
   assert.match(presentationSource, /drawai_tool_agent:\s*\{[\s\S]*?icon_url:\s*"\/drawai_image\.png"/);
-  assert.match(source, /const DRAWAI_TOOL_AGENT_PROVIDER_ID = "drawai_tool_agent";/);
-  assert.match(source, /const selectedAgentUsesApiPreset = selectedAgent\?\.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID;/);
+  assert.match(source, /const selectedAgentApiPresetTypes = selectedAgent\?\.api_preset_types \|\| \[\];/);
+  assert.match(source, /selectedAgentApiPresetTypes\.includes\(preset\.type\)/);
+  assert.match(source, /agent\.api_preset_types\.length > 0 && !hasCompatiblePreset/);
+  assert.match(source, /function isLlmApiPreset\(preset: ApiPreset\): boolean \{[\s\S]*?"llm_anthropic"/);
   assert.match(source, /<span>API 预设<\/span>[\s\S]*?value=\{selectedLlmPresetId\}/);
-  assert.match(source, /throw new Error\("内置 Agent 需要选择 API 预设"\);/);
+  assert.match(source, /<span>推理强度<\/span>[\s\S]*?value=\{draft\.reasoning_effort\}/);
+  assert.match(source, /settingsCategory === "agent" && selectedAgent[\s\S]*?selected_provider_id: selectedAgent\.provider_id/);
+  assert.match(source, /需要选择兼容的 LLM API 预设/);
   assert.match(source, /agentRuntimeLabel\(agent\)/);
+  assert.match(css, /\.settings-llm-summary\s*\{[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;/);
+  assert.match(css, /\.settings-model-action\s*\{[\s\S]*?white-space:\s*nowrap;/);
 });
 
 let selectionModulePromise;
@@ -94,6 +101,7 @@ function agent(overrides) {
     auth: { available: true, detail: "" },
     workflow_provider_id: "codex_sdk",
     pipeline_agent: "codex-python-sdk-controlled",
+    api_preset_types: [],
     description: "",
     ...overrides
   };

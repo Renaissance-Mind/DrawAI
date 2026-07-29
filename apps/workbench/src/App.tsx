@@ -216,7 +216,6 @@ type RuntimeStatusRow = {
   activity: RuntimeActivityStatus;
 };
 const IMAGEGEN_SETTINGS_STORAGE_KEY = "drawai.imagegen.connection";
-const DRAWAI_TOOL_AGENT_PROVIDER_ID = "drawai_tool_agent";
 const PPTX_EXPORT_POLL_INTERVAL_MS = 1000;
 const PPTX_EXPORT_TIMEOUT_MS = 180_000;
 const WORKBENCH_SETTINGS_NAV_SECTIONS: WorkbenchSettingsNavSection[] = [
@@ -1995,9 +1994,9 @@ function WorkbenchSettingsCenter({
 
   const agents = response?.agents || [];
   const sortedAgents = sortWorkbenchAgentsForDisplay(agents);
-  const presetTypes = apiResponse?.preset_types || ["images_api", "llm_chat_completions", "llm_responses"];
+  const presetTypes = apiResponse?.preset_types || ["images_api", "llm_chat_completions", "llm_responses", "llm_anthropic"];
   const selectedApiPreset = apiDrafts[selectedApiPresetIndex] || null;
-  const llmPresets = apiDrafts.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
+  const llmPresets = apiDrafts.filter(isLlmApiPreset);
   const selectedLlmPreset = llmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
   const selectedLlmPresetIcon = selectedLlmPreset
     ? apiPresetIconForPreset(selectedLlmPreset, apiPresetResolvedLogo(apiPresetLogoUrls, selectedLlmPreset))
@@ -2025,7 +2024,16 @@ function WorkbenchSettingsCenter({
     currentAgent ||
     sortedAgents[0] ||
     null;
-  const selectedAgentUsesApiPreset = selectedAgent?.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID;
+  const selectedAgentApiPresetTypes = selectedAgent?.api_preset_types || [];
+  const selectedAgentUsesApiPreset = selectedAgentApiPresetTypes.length > 0;
+  const selectedAgentLlmPresets = llmPresets.filter((preset) => selectedAgentApiPresetTypes.includes(preset.type));
+  const selectedAgentLlmPreset = selectedAgentLlmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
+  const selectedAgentLlmPresetIcon = selectedAgentLlmPreset
+    ? apiPresetIconForPreset(selectedAgentLlmPreset, apiPresetResolvedLogo(apiPresetLogoUrls, selectedAgentLlmPreset))
+    : null;
+  const selectedAgentLlmPresetIndex = selectedAgentLlmPreset
+    ? apiDrafts.findIndex((preset) => preset.id === selectedAgentLlmPreset.id)
+    : -1;
   const agentPickerChoices = workbenchAgentPickerChoices(sortedAgents, draft.selected_provider_id);
   const selectAgentProvider = (providerId: string): WorkbenchAgentSettings => {
     const nextDraft = { ...draft, selected_provider_id: providerId };
@@ -2215,16 +2223,22 @@ function WorkbenchSettingsCenter({
         ...sourceDraft,
         llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
       });
-      if (selectedLlmPreset) {
-        agentPayload.llm_api_preset_id = selectedLlmPreset.id;
-        agentPayload.llm_model = selectedLlmPreset.model;
-        agentPayload.llm_base_url = selectedLlmPreset.base_url;
-        agentPayload.llm_api_key = selectedLlmPreset.api_key;
-        agentPayload.llm_api_key_env = selectedLlmPreset.api_key_env;
-        agentPayload.llm_wire_api = selectedLlmPreset.type === "llm_responses" ? "responses" : "chat_completions";
+      const sourceAgent = selectedWorkbenchAgent(sortedAgents, sourceDraft.selected_provider_id);
+      const sourceAgentApiPresetTypes = sourceAgent?.api_preset_types || [];
+      const compatibleAgentPreset = llmPresets.find(
+        (preset) => preset.id === selectedLlmPresetId && sourceAgentApiPresetTypes.includes(preset.type)
+      );
+      const effectiveLlmPreset = sourceAgentApiPresetTypes.length > 0 ? compatibleAgentPreset : selectedLlmPreset;
+      if (effectiveLlmPreset) {
+        agentPayload.llm_api_preset_id = effectiveLlmPreset.id;
+        agentPayload.llm_model = effectiveLlmPreset.model;
+        agentPayload.llm_base_url = effectiveLlmPreset.base_url;
+        agentPayload.llm_api_key = effectiveLlmPreset.api_key;
+        agentPayload.llm_api_key_env = effectiveLlmPreset.api_key_env;
+        agentPayload.llm_wire_api = llmWireApiForPreset(effectiveLlmPreset);
       }
-      if (agentPayload.selected_provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID && !selectedLlmPreset) {
-        throw new Error("内置 Agent 需要选择 API 预设");
+      if (sourceAgentApiPresetTypes.length > 0 && !compatibleAgentPreset) {
+        throw new Error(`${sourceAgent?.label || sourceDraft.selected_provider_id} 需要选择兼容的 LLM API 预设`);
       }
       const normalizedApiDrafts = normalizeApiPresetDrafts(apiDrafts);
       const nextApiResponse = await saveApiPresets(normalizedApiDrafts);
@@ -2693,7 +2707,11 @@ function WorkbenchSettingsCenter({
                                   const nextDraft = selectAgentProvider(agent.provider_id);
                                   setAgentPickerOpen(false);
                                   if (!agent.selected) {
-                                    if (agent.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID && !selectedLlmPreset) {
+                                    const hasCompatiblePreset = llmPresets.some(
+                                      (preset) =>
+                                        preset.id === selectedLlmPresetId && agent.api_preset_types.includes(preset.type)
+                                    );
+                                    if (agent.api_preset_types.length > 0 && !hasCompatiblePreset) {
                                       openAgentSettings(agent.provider_id);
                                       return;
                                     }
@@ -2934,32 +2952,34 @@ function WorkbenchSettingsCenter({
                           onChange={(event) => setSelectedLlmPresetId(event.target.value)}
                         >
                           <option value="">未选择</option>
-                          {llmPresets.map((preset) => (
+                          {selectedAgentLlmPresets.map((preset) => (
                             <option key={preset.id} value={preset.id}>
                               {preset.label || preset.id} · {preset.model}
                             </option>
                           ))}
                         </select>
                       </label>
-                      {llmPresets.length === 0 && (
-                        <div className="agent-settings-empty">请先在 API 预设里新建 LLM 预设</div>
+                      {selectedAgentLlmPresets.length === 0 && (
+                        <div className="agent-settings-empty">
+                          请先在 API 预设里新建 {selectedAgentApiPresetTypes.join(" / ")} 预设
+                        </div>
                       )}
-                      {selectedLlmPreset && (
+                      {selectedAgentLlmPreset && (
                         <div className="settings-summary-row settings-llm-summary">
                           <span
-                            className={`settings-summary-logo${selectedLlmPresetIcon ? " settings-provider-logo-mini" : ""}`}
-                            style={selectedLlmPresetIcon ? ({ "--provider-color": selectedLlmPresetIcon.accent_color } as CSSProperties) : undefined}
+                            className={`settings-summary-logo${selectedAgentLlmPresetIcon ? " settings-provider-logo-mini" : ""}`}
+                            style={selectedAgentLlmPresetIcon ? ({ "--provider-color": selectedAgentLlmPresetIcon.accent_color } as CSSProperties) : undefined}
                             aria-hidden="true"
                           >
-                            <PresetIconImage icon={selectedLlmPresetIcon} fallback={<SettingsNavIcon icon="llm" />} />
+                            <PresetIconImage icon={selectedAgentLlmPresetIcon} fallback={<SettingsNavIcon icon="llm" />} />
                           </span>
                           <div>
-                            <span>{selectedLlmPreset.type === "llm_responses" ? "Responses" : "Chat Completions"}</span>
-                            <strong>{selectedLlmPreset.label || selectedLlmPreset.id}</strong>
-                            <em>{selectedLlmPreset.model}</em>
+                            <span>{llmPresetProtocolLabel(selectedAgentLlmPreset)}</span>
+                            <strong>{selectedAgentLlmPreset.label || selectedAgentLlmPreset.id}</strong>
+                            <em>{selectedAgentLlmPreset.model}</em>
                           </div>
-                          {selectedLlmPresetIndex >= 0 && (
-                            <button type="button" className="settings-model-action" onClick={() => openApiPresetSettings(selectedLlmPresetIndex)}>
+                          {selectedAgentLlmPresetIndex >= 0 && (
+                            <button type="button" className="settings-model-action" onClick={() => openApiPresetSettings(selectedAgentLlmPresetIndex)}>
                               编辑
                             </button>
                           )}
@@ -2977,39 +2997,22 @@ function WorkbenchSettingsCenter({
                       />
                     </label>
                   )}
-                  {!selectedAgentUsesApiPreset && (
-                    <div className="settings-form-row">
-                      <label className="settings-field">
-                        <span>推理强度</span>
-                        <select
-                          value={draft.reasoning_effort}
-                          onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
-                        >
-                          <option value="">默认</option>
-                          <option value="none">none</option>
-                          <option value="minimal">minimal</option>
-                          <option value="low">low</option>
-                          <option value="medium">medium</option>
-                          <option value="high">high</option>
-                          <option value="xhigh">xhigh</option>
-                        </select>
-                      </label>
-                      <label className="settings-field">
-                        <span>超时秒数</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={draft.timeout_seconds || ""}
-                          onChange={(event) =>
-                            setDraft((current) => ({ ...current, timeout_seconds: Number(event.target.value || 0) }))
-                          }
-                          placeholder="默认"
-                        />
-                      </label>
-                    </div>
-                  )}
-                  {selectedAgentUsesApiPreset && (
+                  <div className="settings-form-row">
+                    <label className="settings-field">
+                      <span>推理强度</span>
+                      <select
+                        value={draft.reasoning_effort}
+                        onChange={(event) => setDraft((current) => ({ ...current, reasoning_effort: event.target.value }))}
+                      >
+                        <option value="">默认</option>
+                        <option value="none">none</option>
+                        <option value="minimal">minimal</option>
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                        <option value="xhigh">xhigh</option>
+                      </select>
+                    </label>
                     <label className="settings-field">
                       <span>超时秒数</span>
                       <input
@@ -3023,7 +3026,7 @@ function WorkbenchSettingsCenter({
                         placeholder="默认"
                       />
                     </label>
-                  )}
+                  </div>
                   {!selectedAgentUsesApiPreset && (
                     <label className="settings-toggle-row">
                       <input
@@ -3365,7 +3368,15 @@ function WorkbenchSettingsCenter({
                           <button
                             type="button"
                             className="primary"
-                            onClick={() => void saveSettings({ closeDetailOnSuccess: settingsCategory === "api" || settingsCategory === "imagegen" })}
+                            onClick={() =>
+                              void saveSettings({
+                                agentSettingsOverride:
+                                  settingsCategory === "agent" && selectedAgent
+                                    ? { ...draft, selected_provider_id: selectedAgent.provider_id }
+                                    : undefined,
+                                closeDetailOnSuccess: settingsCategory === "api" || settingsCategory === "imagegen"
+                              })
+                            }
                             disabled={loading || saving}
                           >
                             {saving ? "保存中" : "保存"}
@@ -3574,11 +3585,7 @@ function apiPresetsWithImageGenMigration(presets: ApiPreset[], connection: Image
 function matchingLlmPresetId(presets: ApiPreset[], settings: WorkbenchAgentSettings): string {
   if (
     settings.llm_api_preset_id &&
-    presets.some(
-      (preset) =>
-        preset.id === settings.llm_api_preset_id &&
-        (preset.type === "llm_chat_completions" || preset.type === "llm_responses")
-    )
+    presets.some((preset) => preset.id === settings.llm_api_preset_id && isLlmApiPreset(preset))
   ) {
     return settings.llm_api_preset_id;
   }
@@ -3586,11 +3593,15 @@ function matchingLlmPresetId(presets: ApiPreset[], settings: WorkbenchAgentSetti
   const llmModel = settings.llm_model.trim();
   const match = presets.find(
     (preset) =>
-      (preset.type === "llm_chat_completions" || preset.type === "llm_responses") &&
+      isLlmApiPreset(preset) &&
       preset.base_url.trim().replace(/\/+$/, "") === llmBaseUrl &&
       preset.model.trim() === llmModel
   );
   return match?.id || "";
+}
+
+function isLlmApiPreset(preset: ApiPreset): boolean {
+  return ["llm_chat_completions", "llm_responses", "llm_anthropic"].includes(preset.type);
 }
 
 function normalizeApiPresetDrafts(presets: ApiPreset[]): ApiPreset[] {
@@ -3718,7 +3729,7 @@ function AgentValidationCard({ agent }: { agent: WorkbenchAgentDiscovery }) {
 }
 
 function agentRuntimeLabel(agent: WorkbenchAgentDiscovery): string {
-  if (agent.provider_id === DRAWAI_TOOL_AGENT_PROVIDER_ID || agent.kind === "api") {
+  if (agent.api_preset_types.length > 0 || agent.kind === "api") {
     return "API 预设";
   }
   return agent.command.length ? agent.command.join(" ") : "SDK";
@@ -3738,9 +3749,26 @@ function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): Workben
     llm_base_url: (settings.llm_base_url || "").trim().replace(/\/+$/, ""),
     llm_api_key: (settings.llm_api_key || "").trim(),
     llm_api_key_env: (settings.llm_api_key_env ?? "OPENAI_API_KEY").trim(),
-    llm_wire_api: settings.llm_wire_api === "responses" ? "responses" : "chat_completions",
+    llm_wire_api:
+      settings.llm_wire_api === "responses"
+        ? "responses"
+        : settings.llm_wire_api === "anthropic"
+          ? "anthropic"
+          : "chat_completions",
     llm_extra_body: { ...llmExtraBody }
   };
+}
+
+function llmWireApiForPreset(preset: ApiPreset): WorkbenchAgentSettings["llm_wire_api"] {
+  if (preset.type === "llm_anthropic") return "anthropic";
+  if (preset.type === "llm_responses") return "responses";
+  return "chat_completions";
+}
+
+function llmPresetProtocolLabel(preset: ApiPreset): string {
+  if (preset.type === "llm_anthropic") return "Anthropic-compatible";
+  if (preset.type === "llm_responses") return "Responses";
+  return "Chat Completions";
 }
 
 function formatWorkbenchAgentJsonObject(value: Record<string, unknown>): string {

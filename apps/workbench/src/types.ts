@@ -100,7 +100,7 @@ export interface WorkbenchAgentSettings {
   llm_base_url: string;
   llm_api_key: string;
   llm_api_key_env: string;
-  llm_wire_api: "chat_completions" | "responses";
+  llm_wire_api: "chat_completions" | "responses" | "anthropic";
   llm_extra_body: Record<string, unknown>;
 }
 
@@ -121,6 +121,7 @@ export interface WorkbenchAgentDiscovery {
   };
   workflow_provider_id: string;
   pipeline_agent: string;
+  api_preset_types: string[];
   description: string;
 }
 

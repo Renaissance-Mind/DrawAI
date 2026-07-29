@@ -14,6 +14,7 @@ from drawai.workflow.agent_execution import (
     _copy_codex_session_log_snapshot,
     _execute_codex_cli_agent,
     _execute_codex_sdk_agent,
+    _execute_claude_agent_sdk,
     _execute_drawai_tool_agent,
     _execute_kimi_cli_agent,
     _execute_subprocess_agent,
@@ -26,6 +27,172 @@ from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
 
 def test_agent_execution_default_timeout_is_thirty_minutes() -> None:
     assert _timeout_seconds({}) == DEFAULT_AGENT_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize(
+    ("model", "expected_disallowed_tools"),
+    (("mimo-v2.5", None), ("mimo-v2.5-pro", ["Read"])),
+)
+def test_claude_agent_sdk_isolates_gateway_options_and_redacts_inline_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    expected_disallowed_tools: list[str] | None,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeOptions:
+        def __init__(self, **kwargs: object) -> None:
+            captured["options"] = kwargs
+
+    class FakeResultMessage:
+        subtype = "success"
+        is_error = False
+        result = "finished"
+        session_id = "session-xiaomi"
+        duration_ms = 12
+        usage = {"input_tokens": 3, "output_tokens": 2}
+
+    async def fake_query(*, prompt: str, options: FakeOptions):
+        captured["prompt"] = prompt
+        captured["query_options"] = options
+        yield FakeResultMessage()
+
+    fake_sdk = SimpleNamespace(
+        ClaudeAgentOptions=FakeOptions,
+        AssistantMessage=type("FakeAssistantMessage", (), {}),
+        TextBlock=type("FakeTextBlock", (), {}),
+        ResultMessage=FakeResultMessage,
+        query=fake_query,
+    )
+    monkeypatch.setattr(
+        "drawai.workflow.agent_execution._load_claude_agent_sdk",
+        lambda: fake_sdk,
+    )
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "agent" / "runs" / "001"
+    workdir.mkdir(parents=True)
+    secret = "secret-xiaomi-plan-key"
+    request = AgentExecutionRequest(
+        prompt=AgentPrompt(
+            preset_id="custom_agent",
+            provider_id="claude_agent_sdk",
+            text="Write the requested output.",
+            inputs=(),
+            outputs=(),
+            options={
+                "api_preset_id": "xiaomi_claude_code",
+                "model": model,
+                "base_url": "https://token-plan-cn.xiaomimimo.com/anthropic",
+                "api_key": secret,
+                "wire_api": "anthropic",
+                "reasoning_effort": "high",
+                "timeout_seconds": 30,
+            },
+        ),
+        workdir=workdir,
+        run_root=run_root,
+        node_id="agent",
+        node_type="agent",
+    )
+
+    result = _execute_claude_agent_sdk(request, prompt_path=workdir / "prompt.md")
+
+    options = captured["options"]
+    assert isinstance(options, dict)
+    assert options["cwd"] == str(run_root)
+    assert options["model"] == model
+    assert options["setting_sources"] == []
+    assert options["system_prompt"] == {"type": "preset", "preset": "claude_code"}
+    assert options["tools"] == {"type": "preset", "preset": "claude_code"}
+    assert options["permission_mode"] == "bypassPermissions"
+    assert options["max_buffer_size"] == 16 * 1024 * 1024
+    assert options.get("disallowed_tools") == expected_disallowed_tools
+    assert options["env"] == {
+        "ANTHROPIC_BASE_URL": "https://token-plan-cn.xiaomimimo.com/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": secret,
+    }
+    assert result.provider_id == "claude_agent_sdk"
+    assert (workdir / "claude_agent_sdk_final_response.txt").read_text(encoding="utf-8") == "finished"
+    trace = (workdir / "claude_agent_sdk_trace.jsonl").read_text(encoding="utf-8")
+    assert secret not in trace
+    assert "xiaomi_claude_code" in trace
+
+
+def test_claude_agent_sdk_uses_kimi_route_profile_and_environment_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeOptions:
+        def __init__(self, **kwargs: object) -> None:
+            captured["options"] = kwargs
+
+    class FakeResultMessage:
+        subtype = "success"
+        is_error = False
+        result = "finished"
+        session_id = "session-kimi"
+        duration_ms = 12
+        usage = {}
+
+    async def fake_query(*, prompt: str, options: FakeOptions):
+        yield FakeResultMessage()
+
+    fake_sdk = SimpleNamespace(
+        ClaudeAgentOptions=FakeOptions,
+        AssistantMessage=type("FakeAssistantMessage", (), {}),
+        TextBlock=type("FakeTextBlock", (), {}),
+        ResultMessage=FakeResultMessage,
+        query=fake_query,
+    )
+    monkeypatch.setattr(
+        "drawai.workflow.agent_execution._load_claude_agent_sdk",
+        lambda: fake_sdk,
+    )
+    monkeypatch.setenv("KIMI_API_KEY", "secret-kimi-key")
+    run_root = tmp_path / "run"
+    workdir = run_root / "nodes" / "agent" / "runs" / "001"
+    workdir.mkdir(parents=True)
+    request = AgentExecutionRequest(
+        prompt=AgentPrompt(
+            preset_id="custom_agent",
+            provider_id="claude_agent_sdk",
+            text="Write the requested output.",
+            inputs=(),
+            outputs=(),
+            options={
+                "model": "kimi-for-coding",
+                "base_url": "https://api.kimi.com/coding/",
+                "api_key_env": "KIMI_API_KEY",
+                "wire_api": "anthropic",
+                "reasoning_effort": "xhigh",
+                "timeout_seconds": 30,
+            },
+        ),
+        workdir=workdir,
+        run_root=run_root,
+        node_id="agent",
+        node_type="agent",
+    )
+
+    _execute_claude_agent_sdk(request, prompt_path=workdir / "prompt.md")
+
+    options = captured["options"]
+    assert isinstance(options, dict)
+    assert options["thinking"] == {"type": "adaptive"}
+    assert options["effort"] == "max"
+    assert options["env"] == {
+        "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding",
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_API_KEY": "secret-kimi-key",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-for-coding",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-for-coding",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-for-coding",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-for-coding",
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "262144",
+    }
 
 
 def test_drawai_tool_agent_default_iteration_budget_is_large_enough_for_svg_compose() -> None:

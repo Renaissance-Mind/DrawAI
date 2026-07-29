@@ -9152,6 +9152,7 @@ button.asset-status-unsupported {
   padding: 0 13px;
   font-size: 13px;
   font-weight: 740;
+  white-space: nowrap;
   box-shadow: none;
 }
 
@@ -9878,7 +9879,7 @@ button.asset-status-unsupported {
 }
 
 .settings-llm-summary {
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -9887,6 +9888,10 @@ button.asset-status-unsupported {
   min-width: 0;
   display: grid;
   gap: 4px;
+}
+
+.settings-llm-summary .settings-model-action {
+  align-self: center;
 }
 
 .settings-imagegen-summary {

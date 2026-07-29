@@ -11,7 +11,12 @@ import urllib.request
 
 
 API_PRESETS_SCHEMA = "drawai.workbench.api_presets.v1"
-SUPPORTED_API_PRESET_TYPES = ("images_api", "llm_chat_completions", "llm_responses")
+SUPPORTED_API_PRESET_TYPES = (
+    "images_api",
+    "llm_chat_completions",
+    "llm_responses",
+    "llm_anthropic",
+)
 
 
 @dataclass(frozen=True)

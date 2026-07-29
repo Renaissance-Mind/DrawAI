@@ -194,6 +194,8 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     assert agents["drawai_tool_agent"]["available"] is True
     assert agents["drawai_tool_agent"]["label"] == "内置 Agent"
     assert agents["drawai_tool_agent"]["kind"] == "api"
+    assert agents["claude_agent_sdk"]["api_preset_types"] == ["llm_anthropic"]
+    assert agents["claude_agent_sdk"]["auth"]["available"] is True
 
     save_response = client.put(
         "/api/workbench/agent-settings",
@@ -317,6 +319,52 @@ def test_workbench_agent_settings_api_requires_api_preset_for_builtin_agent(tmp_
     assert "需要选择 API 预设" in response.json()["detail"]
 
 
+def test_workbench_agent_settings_api_saves_claude_sdk_with_anthropic_preset(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+
+    response = client.put(
+        "/api/workbench/agent-settings?include_agents=false",
+        json={
+            "selected_provider_id": "claude_agent_sdk",
+            "llm_api_preset_id": "kimi_coding",
+            "llm_model": "kimi-for-coding",
+            "llm_base_url": "https://api.kimi.com/coding",
+            "llm_api_key_env": "KIMI_API_KEY",
+            "llm_wire_api": "anthropic",
+            "reasoning_effort": "high",
+        },
+    )
+
+    assert response.status_code == 200
+    settings = response.json()["settings"]
+    assert settings["selected_provider_id"] == "claude_agent_sdk"
+    assert settings["llm_api_preset_id"] == "kimi_coding"
+    assert settings["llm_wire_api"] == "anthropic"
+
+
+def test_workbench_agent_settings_api_rejects_openai_preset_for_claude_sdk(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+
+    response = client.put(
+        "/api/workbench/agent-settings?include_agents=false",
+        json={
+            "selected_provider_id": "claude_agent_sdk",
+            "llm_api_preset_id": "openrouter_chat",
+            "llm_model": "anthropic/claude-sonnet-4.5",
+            "llm_base_url": "https://openrouter.ai/api/v1",
+            "llm_api_key_env": "OPENROUTER_API_KEY",
+            "llm_wire_api": "chat_completions",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "llm_anthropic" in response.json()["detail"]
+
+
 def test_workbench_agent_settings_api_reads_saved_builtin_agent(tmp_path: Path) -> None:
     settings_path = tmp_path / "workspace" / "settings" / "agent.json"
     settings_path.parent.mkdir(parents=True)
@@ -350,6 +398,7 @@ def test_workbench_api_presets_api_saves_and_validates_presets(tmp_path: Path) -
     assert response.json()["schema"] == "drawai.workbench.api_presets.v1"
     assert response.json()["presets"] == []
     assert "images_api" in response.json()["preset_types"]
+    assert "llm_anthropic" in response.json()["preset_types"]
 
     save_response = client.put(
         "/api/workbench/api-presets",
@@ -1432,6 +1481,38 @@ def test_workbench_agent_mode_keeps_default_agent_nodes(tmp_path: Path) -> None:
     assert effective_nodes["svg_compose"].config["provider_id"] == "kimi_cli"
     assert effective_nodes["page_spec_refine"].config["reasoning_effort"] == "medium"
     assert effective_nodes["svg_compose"].config["timeout_seconds"] == 900
+
+
+def test_workbench_agent_mode_projects_claude_sdk_preset_into_agent_nodes(
+    tmp_path: Path,
+) -> None:
+    template = load_workflow_template_by_id(tmp_path / "workspace", "default_drawai_dag")
+
+    effective = _workflow_template_with_agent_settings(
+        template,
+        WorkbenchAgentSettings(
+            selected_provider_id="claude_agent_sdk",
+            llm_api_preset_id="xiaomi_claude_code",
+            llm_model="mimo-v2.5-pro",
+            llm_base_url="https://token-plan-cn.xiaomimimo.com/anthropic",
+            llm_api_key_env="XIAOMI_API_KEY",
+            llm_wire_api="anthropic",
+            reasoning_effort="high",
+            timeout_seconds=900,
+        ),
+        execution_mode="agent",
+    )
+
+    nodes = {node.node_id: node for node in effective.nodes}
+    for node_id in ("page_spec_refine", "svg_compose"):
+        config = nodes[node_id].config
+        assert config["provider_id"] == "claude_agent_sdk"
+        assert config["api_preset_id"] == "xiaomi_claude_code"
+        assert config["model"] == "mimo-v2.5-pro"
+        assert config["base_url"] == "https://token-plan-cn.xiaomimimo.com/anthropic"
+        assert config["api_key_env"] == "XIAOMI_API_KEY"
+        assert config["wire_api"] == "anthropic"
+        assert config["reasoning_effort"] == "high"
 
 
 def test_workbench_llm_mode_projects_default_agent_nodes_to_llm(tmp_path: Path) -> None:

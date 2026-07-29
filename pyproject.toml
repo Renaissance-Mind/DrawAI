@@ -15,6 +15,7 @@ authors = [
 keywords = ["drawai", "layout-ir", "svg", "pptx", "ocr", "sam", "scientific-figures"]
 dependencies = [
     "cairosvg>=2.9.0",
+    "claude-agent-sdk>=0.2.119",
     "fastapi>=0.116.0",
     "lxml>=6.1.0",
     "numpy",

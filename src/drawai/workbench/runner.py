@@ -888,6 +888,37 @@ class WorkbenchRunner:
             canonical_path = write_page_spec(Path(case.run_root) / "page_spec.json", page_spec)
             output_path = _copy_workflow_json(canonical_path, context.output_dir / "page_spec.json")
             return (_workflow_output(context, "page_spec", output_path, "page_spec", "drawai.page_spec.v1"),)
+        if processor_id == "page_spec_seed":
+            self._ensure_workflow_stage(
+                case,
+                "prepare",
+                stage_state,
+                stage_state_lock=stage_state_lock,
+            )
+            page_spec = page_spec_from_candidates(
+                (),
+                page_id=case.case_id,
+                source_image=str(paths.figure_image),
+                canvas=_source_metadata_canvas(paths),
+                producer="page_spec_seed",
+            )
+            canonical_path = write_page_spec(
+                Path(case.run_root) / "page_spec.json",
+                page_spec,
+            )
+            output_path = _copy_workflow_json(
+                canonical_path,
+                context.output_dir / "page_spec.json",
+            )
+            return (
+                _workflow_output(
+                    context,
+                    "page_spec",
+                    output_path,
+                    "page_spec",
+                    "drawai.page_spec.v1",
+                ),
+            )
         if processor_id == "asset_prepare":
             page_spec_source = _input_path_by_type(
                 case.run_root,
