@@ -346,7 +346,7 @@ const DEFAULT_SAM_PROMPTS: SamPromptConfig[] = [
   { id: "icon", text: "icon", confidence_threshold: 0.3 },
   { id: "picture", text: "picture", confidence_threshold: 0.3 }
 ];
-const NODE_PICKER_GROUP_ORDER = ["Processor", "LLM", "Agent", "Review", "Export"];
+const NODE_PICKER_GROUP_ORDER = ["Processor", "Agent", "Review", "Export"];
 const WORKFLOW_FORMAT_OPTIONS: WorkflowFormatOption[] = [
   {
     format_id: "drawai.image.v1",
@@ -1520,7 +1520,7 @@ export default function WorkflowWorkspace({ onError }: { onError: (message: stri
                           <span>{template.description || "Workflow DAG"}</span>
                         </div>
                         <div className="task-meta">
-                          <em>{template.nodes.length} 节点 · {template.edges.length} 连线 · {stats.llm} LLM · {stats.agent} Agent</em>
+                          <em>{template.nodes.length} 节点 · {template.edges.length} 连线 · {stats.agent} Agent</em>
                         </div>
                       </div>
                     </div>
@@ -2347,7 +2347,7 @@ function WorkflowLibraryDialog({
                 <div>
                   <strong>{template.name}</strong>
                   <span>{template.description || "DrawAI workflow"}</span>
-                  <em>{template.nodes.length} 节点 · {template.edges.length} 连线 · {stats.llm} LLM · {stats.agent} Agent</em>
+                  <em>{template.nodes.length} 节点 · {template.edges.length} 连线 · {stats.agent} Agent</em>
                 </div>
               </button>
             );
@@ -2408,7 +2408,6 @@ function nodePickerGroupRank(group: string): number {
 function nodePresetGroup(preset: NodePreset): string {
   if (preset.node_type === "parser") return "Parser";
   if (preset.node_type === "agent") return "Agent";
-  if (preset.node_type === "llm") return "LLM";
   if (preset.node_type === "processor") return "Processor";
   if (preset.node_type === "fusion") return "Fusion";
   if (preset.node_type === "export" || preset.node_type === "output") return "Export";
@@ -2420,7 +2419,7 @@ function isSamParserNode(node: WorkflowNode): boolean {
 }
 
 function isPromptNode(node: WorkflowNode): boolean {
-  return node.node_type === "agent" || node.node_type === "llm";
+  return node.node_type === "agent";
 }
 
 function samPromptsForNode(node: WorkflowNode): SamPromptConfig[] {
@@ -2578,7 +2577,6 @@ function agentRuntimeOptionsForNode(node: WorkflowNode): Array<[string, string]>
 }
 
 function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]): string {
-  if (node.node_type === "llm") return workflowLlmPromptText(node, inputs);
   const providerId = defaultAgentProvider(node);
   const selectedInputs = selectedInputsForPrompt(node, inputs);
   const outputs = agentOutputsForNode(node);
@@ -2693,91 +2691,6 @@ function workflowAgentPromptText(node: WorkflowNode, inputs: AgentInputPreview[]
   return `${lines.join("\n").trim()}\n`;
 }
 
-function workflowLlmPromptText(node: WorkflowNode, inputs: AgentInputPreview[]): string {
-  const providerId = defaultAgentProvider(node);
-  const selectedInputs = selectedInputsForPrompt(node, inputs);
-  const outputs = agentOutputsForNode(node);
-  const constraints = agentConstraints(node);
-  const options = agentRuntimeOptionsForNode(node);
-  const lines = [
-    "## LLM Runtime Settings",
-    `- Provider: ${agentProviderDisplayLabel(providerId)}`,
-    "- Workflow run root: <workflow_run_root>",
-    `- Current node workdir: <workflow_run_root>/nodes/${node.node_id}/runs/<attempt_id>`,
-    `- Node run manifest path: <workflow_run_root>/nodes/${node.node_id}/runs/<attempt_id>/node_run.json`,
-    ...options.map(([key, value]) => `- ${key}: ${value}`),
-    "",
-    "## Task",
-    agentTaskText(node),
-    "",
-    "## Connected Input Contents",
-    "At runtime, connected text inputs are embedded into this prompt and connected image inputs are attached as image content. Do not read workflow files from disk."
-  ];
-
-  if (selectedInputs.length > 0) {
-    selectedInputs.forEach((input, index) => {
-      const isImage = input.type === "image" || input.format_id === "drawai.image.v1";
-      lines.push(
-        `### Input ${index + 1}: ${inputSourceLabel(input)}`,
-        `- Format: ${String(input.format_id || "unspecified")}`,
-        `- Type: ${String(input.type || "unspecified")}`,
-        `- Run-root path: ${String(input.path || "")}`,
-        `- Absolute path: ${inputAbsolutePath(String(input.path || ""))}`,
-        `- Description: ${String(input.description || "No description supplied.")}`,
-        isImage ? "Image content is attached to this LLM request." : "Content is embedded here at runtime."
-      );
-    });
-  } else {
-    lines.push("- No connected inputs were provided.");
-  }
-
-  lines.push(
-    "",
-    "## Required Direct Outputs",
-    "Return only the declared output content. The DrawAI runner extracts your response and saves it to the declared node output path."
-  );
-  outputs.forEach((output) => {
-    const finalPath = outputPathFromRunRoot(node.node_id, output.path);
-    lines.push(
-      `- Port: ${output.port_id}`,
-      `  Format: ${output.format_id}`,
-      `  Type: ${output.type}`,
-      `  Node-output relative path: ${output.path}`,
-      `  Final run-root path: ${finalPath}`,
-      `  Final absolute path: ${outputAbsolutePath(node.node_id, output.path)}`,
-      `  Instruction: Return the ${output.port_id} output as ${llmOutputKind(output)} content.`,
-      `  Description: ${output.description}`
-    );
-  });
-
-  lines.push("", "## Type And Format Contracts");
-  orderedUnique([
-    ...selectedInputs.map((input) => String(input.type || "")),
-    ...outputs.map((output) => output.type)
-  ]).forEach((typeName) => {
-    lines.push(`- Type \`${typeName}\`: ${WORKFLOW_TYPE_CONTRACTS[typeName] || "No built-in type description is registered. Follow the node description and embedded input content."}`);
-  });
-  orderedUnique([
-    ...selectedInputs.map((input) => String(input.format_id || "")),
-    ...outputs.map((output) => output.format_id)
-  ]).forEach((formatId) => {
-    lines.push(`- Format \`${formatId}\`: ${WORKFLOW_FORMAT_CONTRACTS[formatId] || "No built-in format description is registered. Follow the output declaration."}`);
-  });
-
-  if (constraints.length > 0) {
-    lines.push("", "## Constraints");
-    constraints.forEach((constraint) => lines.push(`- ${constraint}`));
-  }
-
-  return `${lines.join("\n").trim()}\n`;
-}
-
-function llmOutputKind(output: AgentOutputConfig): string {
-  if (output.format_id.includes("svg") || output.type === "semantic_svg") return "SVG";
-  if (output.format_id.includes("json") || output.type !== "image") return "JSON";
-  return "plain text";
-}
-
 function agentScriptsForNode(node: WorkflowNode): Array<Record<string, unknown>> {
   const raw = node.config.scripts;
   if (!Array.isArray(raw)) return [];
@@ -2889,7 +2802,7 @@ function workflowCanvasSize(template: WorkflowTemplate | null): { width: number;
 }
 
 function workflowNodeStats(template: WorkflowTemplate | null): Record<string, number> {
-  const stats: Record<string, number> = { parser: 0, agent: 0, llm: 0, processor: 0, export: 0 };
+  const stats: Record<string, number> = { parser: 0, agent: 0, processor: 0, export: 0 };
   template?.nodes.forEach((node) => {
     if (node.node_type in stats) stats[node.node_type] += 1;
   });
@@ -2897,7 +2810,7 @@ function workflowNodeStats(template: WorkflowTemplate | null): Record<string, nu
 }
 
 function defaultSelectedNodeId(template: WorkflowTemplate): string {
-  return template.nodes.find((node) => node.node_type === "llm")?.node_id || template.nodes.find((node) => node.node_type === "agent")?.node_id || template.nodes[0]?.node_id || "";
+  return template.nodes.find((node) => node.node_type === "agent")?.node_id || template.nodes[0]?.node_id || "";
 }
 
 function nodeTypeLabel(nodeType: string): string {
@@ -2906,7 +2819,6 @@ function nodeTypeLabel(nodeType: string): string {
     parser: "解析器",
     fusion: "融合",
     agent: "智能体",
-    llm: "LLM",
     processor: "处理器",
     human_review: "人工确认",
     export: "导出",

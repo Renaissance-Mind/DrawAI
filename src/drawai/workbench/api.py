@@ -4359,8 +4359,8 @@ def _workbench_agent_discovery_snapshot(app: FastAPI, *, refresh: bool = False) 
 
 def _batch_execution_mode(value: Any) -> BatchExecutionMode:
     mode = str(value or "default").strip().lower()
-    if mode not in {"default", "agent", "llm"}:
-        raise HTTPException(status_code=400, detail="execution_mode must be default, agent, or llm")
+    if mode not in {"default", "agent"}:
+        raise HTTPException(status_code=400, detail="execution_mode must be default or agent")
     return mode  # type: ignore[return-value]
 
 
@@ -4378,6 +4378,7 @@ def _batch_agent_settings(value: Any, workspace: str | Path):
     try:
         return normalize_workbench_agent_settings(
             payload,
+            require_selected_api_preset=True,
             api_presets=read_workbench_api_presets(workspace),
         )
     except ValueError as exc:

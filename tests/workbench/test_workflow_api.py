@@ -1482,29 +1482,10 @@ def test_create_batch_applies_saved_workbench_acp_agent_to_case_config(
     assert payload["model_runtime"]["acp"]["command"] == [str(executable), *command[1:]]
 
 
-def test_create_batch_applies_saved_workbench_llm_runtime_to_case_config(tmp_path: Path) -> None:
+def test_create_batch_rejects_removed_direct_llm_execution_mode(tmp_path: Path) -> None:
     client = _client(tmp_path)
     source = tmp_path / "single.png"
     Image.new("RGB", (24, 24), "white").save(source)
-    _save_llm_preset(
-        client,
-        preset_id="openrouter",
-        endpoint_id="chat_completions",
-        endpoint_type="llm_chat_completions",
-        base_url="https://openrouter.ai/api/v1",
-        model="minimax/minimax-m3",
-        api_key_env="OPENROUTER_API_KEY",
-    )
-    save_response = client.put(
-        "/api/workbench/agent-settings",
-        json={
-            "llm_api_preset_id": "openrouter",
-            "llm_endpoint_id": "chat_completions",
-            "reasoning_effort": "xhigh",
-            "timeout_seconds": 900,
-        },
-    )
-    assert save_response.status_code == 200
 
     response = client.post(
         "/api/batches",
@@ -1519,22 +1500,8 @@ def test_create_batch_applies_saved_workbench_llm_runtime_to_case_config(tmp_pat
         },
     )
 
-    assert response.status_code == 200
-    assert response.json()["batch"]["execution_mode"] == "llm"
-    config_path = Path(response.json()["cases"][0]["config_path"])
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert payload["svg"]["generation_backend"] == "responses"
-    assert payload["model_runtime"]["provider"] == "openai_compatible"
-    assert payload["model_runtime"]["connection_id"] == "openai_compatible"
-    assert payload["model_runtime"]["model_name"] == "minimax/minimax-m3"
-    assert payload["model_runtime"]["reasoning_effort"] == "xhigh"
-    assert payload["model_runtime"]["timeout_seconds"] == 900
-    assert payload["model_runtime"]["base_url"] == "https://openrouter.ai/api/v1"
-    assert payload["model_runtime"]["api_provider"]["mode"] == "thirdparty"
-    thirdparty = payload["model_runtime"]["api_provider"]["thirdparty"]
-    assert thirdparty["base_url"] == "https://openrouter.ai/api/v1"
-    assert thirdparty["api_key_env"] == "OPENROUTER_API_KEY"
-    assert thirdparty["wire_api"] == "chat_completions"
+    assert response.status_code == 400
+    assert response.json()["detail"] == "execution_mode must be default or agent"
 
 
 def test_create_batch_applies_saved_builtin_agent_api_preset_to_case_config(tmp_path: Path) -> None:
@@ -1651,41 +1618,15 @@ def test_workbench_agent_mode_projects_claude_sdk_preset_into_agent_nodes(
         assert config["reasoning_effort"] == "high"
 
 
-def test_workbench_llm_mode_projects_default_agent_nodes_to_llm(tmp_path: Path) -> None:
+def test_workbench_rejects_removed_direct_llm_execution_mode(tmp_path: Path) -> None:
     template = load_workflow_template_by_id(tmp_path / "workspace", "default_drawai_dag")
 
-    effective = _workflow_template_with_agent_settings(
-        template,
-        WorkbenchAgentSettings(
-            llm_model="minimax/minimax-m3",
-            llm_base_url="https://openrouter.ai/api/v1",
-            llm_api_key_env="OPENROUTER_API_KEY",
-            llm_wire_api="chat_completions",
-            llm_extra_body={"reasoning": {"enabled": True}},
-            reasoning_effort="high",
-            timeout_seconds=900,
-        ),
-        execution_mode="llm",
-    )
-
-    original_nodes = {node.node_id: node for node in template.nodes}
-    effective_nodes = {node.node_id: node for node in effective.nodes}
-    assert original_nodes["page_spec_refine"].node_type == "agent"
-    assert original_nodes["svg_compose"].node_type == "agent"
-    assert effective_nodes["page_spec_refine"].node_type == "llm"
-    assert effective_nodes["svg_compose"].node_type == "llm"
-    assert effective_nodes["page_spec_refine"].inputs == original_nodes["page_spec_refine"].inputs
-    assert effective_nodes["svg_compose"].outputs == original_nodes["svg_compose"].outputs
-    assert effective_nodes["page_spec_refine"].config["provider_id"] == "openai_compatible"
-    assert effective_nodes["svg_compose"].config["provider_id"] == "openai_compatible"
-    assert effective_nodes["page_spec_refine"].config["model"] == "minimax/minimax-m3"
-    assert effective_nodes["svg_compose"].config["model"] == "minimax/minimax-m3"
-    assert effective_nodes["page_spec_refine"].config["base_url"] == "https://openrouter.ai/api/v1"
-    assert effective_nodes["page_spec_refine"].config["api_key_env"] == "OPENROUTER_API_KEY"
-    assert effective_nodes["page_spec_refine"].config["wire_api"] == "chat_completions"
-    assert effective_nodes["page_spec_refine"].config["extra_body"] == {"reasoning": {"enabled": True}}
-    assert effective_nodes["page_spec_refine"].config["reasoning_effort"] == "high"
-    assert effective_nodes["svg_compose"].config["timeout_seconds"] == 900
+    with pytest.raises(ValueError, match="Expected one of: default, agent"):
+        _workflow_template_with_agent_settings(
+            template,
+            WorkbenchAgentSettings(),
+            execution_mode="llm",
+        )
 
 
 def test_workbench_default_mode_preserves_dag_prompt_node_types(tmp_path: Path) -> None:

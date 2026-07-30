@@ -31,9 +31,8 @@ export function workflowNodeExtraInfoRows({
   const rows: WorkflowNodeInfoRow[] = [];
   const providerId = clean(nodeRun?.provider_id) || clean(metadata?.provider_id) || clean(node.config.provider_id);
   const providerLabel = clean(nodeRun?.provider_label) || clean(metadata?.provider_label) || fallbackProviderLabel(providerId);
-  const providerKind = node.node_type === "llm" ? "API Provider" : "Agent";
   if (providerLabel) {
-    rows.push({ label: providerKind, value: providerLabel });
+    rows.push({ label: "Agent", value: providerLabel });
   }
   if (providerId && providerId !== providerLabel) {
     rows.push({ label: "Provider ID", value: providerId });

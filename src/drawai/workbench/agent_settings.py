@@ -26,7 +26,6 @@ from .api_presets import (
 
 SETTINGS_SCHEMA = "drawai.workbench.agent_settings.v2"
 DEFAULT_AGENT_PROVIDER_ID = "codex_sdk"
-DEFAULT_LLM_PROVIDER_ID = "openai_compatible"
 DEFAULT_LLM_WIRE_API = "chat_completions"
 SUPPORTED_LLM_WIRE_APIS = ("chat_completions", "responses", "anthropic")
 API_PRESET_TYPE_TO_WIRE_API = {
@@ -405,39 +404,6 @@ def apply_workbench_agent_settings_to_node_config(
     return config
 
 
-def apply_workbench_llm_settings_to_node_config(
-    node_config: Mapping[str, Any],
-    settings: WorkbenchAgentSettings,
-) -> dict[str, Any]:
-    if settings.llm_wire_api == "anthropic":
-        raise ValueError(
-            "Anthropic-compatible presets run through the Claude Code SDK Agent, "
-            "not direct LLM mode"
-        )
-    config = dict(node_config)
-    config["provider_id"] = DEFAULT_LLM_PROVIDER_ID
-    if settings.llm_api_preset_id:
-        config["api_preset_id"] = settings.llm_api_preset_id
-    if settings.llm_endpoint_id:
-        config["api_endpoint_id"] = settings.llm_endpoint_id
-    if settings.llm_model:
-        config["model"] = settings.llm_model
-    if settings.reasoning_effort:
-        config["reasoning_effort"] = settings.reasoning_effort
-    if settings.timeout_seconds:
-        config["timeout_seconds"] = settings.timeout_seconds
-    if settings.llm_base_url:
-        config["base_url"] = settings.llm_base_url
-    if settings.llm_api_key:
-        config["api_key"] = settings.llm_api_key
-    if settings.llm_api_key_env:
-        config["api_key_env"] = settings.llm_api_key_env
-    config["wire_api"] = settings.llm_wire_api
-    if settings.llm_extra_body:
-        config["extra_body"] = dict(settings.llm_extra_body)
-    return config
-
-
 def workbench_agent_runtime_options(settings: WorkbenchAgentSettings) -> dict[str, Any]:
     definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     command = resolved_agent_command(settings.selected_provider_id)
@@ -467,11 +433,8 @@ def apply_workbench_agent_settings_to_config_payload(
     execution_mode: str = "default",
 ) -> None:
     mode = execution_mode.strip().lower()
-    if mode == "llm":
-        _apply_workbench_llm_settings_to_config_payload(payload, settings)
-        return
     if mode not in {"default", "agent"}:
-        raise ValueError(f"unsupported execution_mode: {execution_mode!r}. Expected one of: default, agent, llm")
+        raise ValueError(f"unsupported execution_mode: {execution_mode!r}. Expected one of: default, agent")
     definition = AGENT_DEFINITIONS[settings.selected_provider_id]
     svg_config = _mapping_child(payload, "svg")
     runtime_config = _mapping_child(payload, "model_runtime")
@@ -533,47 +496,6 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["fast"] = True
     if settings.timeout_seconds:
         runtime_config["timeout_seconds"] = settings.timeout_seconds
-
-
-def _apply_workbench_llm_settings_to_config_payload(
-    payload: dict[str, Any],
-    settings: WorkbenchAgentSettings,
-) -> None:
-    if settings.llm_wire_api == "anthropic":
-        raise ValueError(
-            "Anthropic-compatible presets run through the Claude Code SDK Agent, "
-            "not direct LLM mode"
-        )
-    svg_config = _mapping_child(payload, "svg")
-    runtime_config = _mapping_child(payload, "model_runtime")
-    svg_config["generation_backend"] = "responses"
-    runtime_config["provider"] = DEFAULT_LLM_PROVIDER_ID
-    runtime_config["connection_id"] = DEFAULT_LLM_PROVIDER_ID
-    if settings.llm_api_preset_id:
-        runtime_config["api_preset_id"] = settings.llm_api_preset_id
-    if settings.llm_endpoint_id:
-        runtime_config["api_endpoint_id"] = settings.llm_endpoint_id
-    if settings.llm_model:
-        runtime_config["model_name"] = settings.llm_model
-    if settings.reasoning_effort:
-        runtime_config["reasoning_effort"] = settings.reasoning_effort
-    if settings.timeout_seconds:
-        runtime_config["timeout_seconds"] = settings.timeout_seconds
-    if settings.llm_base_url:
-        runtime_config["base_url"] = settings.llm_base_url
-    if settings.llm_api_key:
-        runtime_config["api_key"] = settings.llm_api_key
-    if settings.llm_base_url:
-        api_provider = _mapping_child(runtime_config, "api_provider")
-        api_provider["mode"] = "thirdparty"
-        thirdparty = _mapping_child(api_provider, "thirdparty")
-        thirdparty["base_url"] = settings.llm_base_url
-        thirdparty["wire_api"] = settings.llm_wire_api
-        thirdparty["model_provider"] = DEFAULT_LLM_PROVIDER_ID
-        if settings.llm_api_key:
-            thirdparty["api_key"] = settings.llm_api_key
-        if settings.llm_api_key_env:
-            thirdparty["api_key_env"] = settings.llm_api_key_env
 
 
 def resolved_agent_command(provider_id: str) -> list[str]:

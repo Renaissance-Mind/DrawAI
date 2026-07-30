@@ -1238,14 +1238,13 @@ function GeneratedBatchSubmitDialog({
     setSubmitting(true);
     setSubmitError("");
     try {
-      const executionMode: BatchExecutionMode = selectedExecutionMode === "llm" ? "default" : selectedExecutionMode;
       const form = new FormData();
       form.set("name", name.trim() || defaultName || "生成图");
       form.set("input_mode", "upload");
       form.set("max_concurrent_cases", "10");
       form.set("auto_run_svg_after_analysis", manualAssetReview ? "false" : "true");
       form.set("workflow_template_id", selectedWorkflowTemplateId);
-      form.set("execution_mode", executionMode);
+      form.set("execution_mode", selectedExecutionMode);
       for (const [index, image] of images.entries()) {
         await appendGeneratedImageToForm(form, image, index);
       }
@@ -1310,7 +1309,6 @@ function GeneratedBatchSubmitDialog({
                   {mode === "default" ? "默认" : "Agent"}
                 </button>
               ))}
-              <button type="button" role="radio" aria-checked={false} disabled>LLM</button>
             </div>
           </div>
           <label className="gen-submit-review-toggle">

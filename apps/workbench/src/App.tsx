@@ -67,7 +67,6 @@ import {
   compatibleAgentsForEndpoint,
   compatibleEndpointsForAgent,
   compatibleLlmPresetsForAgent,
-  directLlmEndpoints,
   isLlmApiPreset,
   llmEndpointProtocolLabel,
   llmPresetEndpoints,
@@ -128,7 +127,6 @@ import type {
   AssetGeometry,
   AssetPlan,
   BatchDetail,
-  BatchExecutionMode,
   BatchRecord,
   CaseDetail,
   CaseRecord,
@@ -193,7 +191,7 @@ type TaskDialogTarget = { batchId: string; name: string };
 type NodeArtifactNavigationItem = { node_id: string; label: string; detail: string };
 type WorkbenchSettingsNavItem = { id: WorkbenchSettingsCategory; label: string; icon: WorkbenchSettingsCategory };
 type WorkbenchSettingsNavSection = { label?: string; items: WorkbenchSettingsNavItem[] };
-type UploadEngineMode = Extract<BatchExecutionMode, "agent" | "llm">;
+type UploadEngineMode = "agent" | "llm";
 
 const CASE_DETAIL_LAYOUT_MS = 420;
 const CASE_CARD_LAYOUT_MS = 560;
@@ -7715,12 +7713,16 @@ function NewBatchForm({
   const selectedCount = uploadFileRows.filter((row) => selectedUploadIds.has(row.id)).length;
   const allUploadsSelected = uploadFileRows.length > 0 && selectedCount === uploadFileRows.length;
   const selectedAgent = agentChoices.find((agent) => agent.provider_id === agentSettingsDraft.selected_provider_id) || null;
-  const llmPresets = apiPresets.filter((preset) => directLlmEndpoints(preset).length > 0);
+  const llmPresets = apiPresets.filter(isLlmApiPreset);
   const selectedLlmPreset = llmPresets.find((preset) => preset.id === agentSettingsDraft.llm_api_preset_id) || null;
-  const selectedDirectLlmEndpoints = selectedLlmPreset ? directLlmEndpoints(selectedLlmPreset) : [];
-  const selectedDirectLlmEndpoint = selectedDirectLlmEndpoints.find(
+  const selectedLlmEndpoints = selectedLlmPreset ? llmPresetEndpoints(selectedLlmPreset) : [];
+  const selectedLlmEndpoint = selectedLlmEndpoints.find(
     (endpoint) => endpoint.id === agentSettingsDraft.llm_endpoint_id
-  ) || selectedDirectLlmEndpoints[0] || null;
+  ) || selectedLlmEndpoints[0] || null;
+  const selectedLlmCompatibleAgents = compatibleAgentsForEndpoint(agentChoices, selectedLlmEndpoint);
+  const selectedLlmAgent = selectedLlmCompatibleAgents.find(
+    (agent) => agent.provider_id === agentSettingsDraft.selected_provider_id
+  ) || selectedLlmCompatibleAgents[0] || null;
   const selectedAgentLlmPresets = compatibleLlmPresetsForAgent(selectedAgent, apiPresets);
   const selectedAgentLlmPreset = selectedAgentLlmPresets.find(
     (preset) => preset.id === agentSettingsDraft.llm_api_preset_id
@@ -7841,21 +7843,46 @@ function NewBatchForm({
 
   function chooseExecutionMode(mode: UploadEngineMode) {
     setSelectedExecutionMode(mode);
-    if (mode === "llm" && !selectedLlmPreset && llmPresets[0]) {
-      const endpoint = directLlmEndpoints(llmPresets[0])[0];
-      if (endpoint) {
-        setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, llmPresets[0], endpoint));
-      }
+    if (mode === "llm") {
+      const preset = selectedLlmPreset || llmPresets[0] || null;
+      if (preset) chooseLlmPreset(preset);
     }
   }
 
   function chooseLlmPreset(preset: ApiPreset) {
-    const endpoint = directLlmEndpoints(preset).find(
-      (item) => item.id === agentSettingsDraft.llm_endpoint_id
-    ) || directLlmEndpoints(preset)[0];
+    const endpoints = llmPresetEndpoints(preset);
+    const currentEndpoint = endpoints.find((item) => item.id === agentSettingsDraft.llm_endpoint_id) || null;
+    const endpoint = (
+      currentEndpoint && compatibleAgentsForEndpoint(agentChoices, currentEndpoint).length > 0
+        ? currentEndpoint
+        : endpoints.find((item) => compatibleAgentsForEndpoint(agentChoices, item).length > 0)
+    ) || currentEndpoint || endpoints[0];
     if (!endpoint) return;
+    const agents = compatibleAgentsForEndpoint(agentChoices, endpoint);
+    const agent = agents.find((item) => item.provider_id === agentSettingsDraft.selected_provider_id) || agents[0] || null;
     setSelectedExecutionMode("llm");
-    setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, preset, endpoint));
+    setAgentSettingsDraft((current) => ({
+      ...agentSettingsWithLlmSelection(current, preset, endpoint),
+      selected_provider_id: agent?.provider_id || current.selected_provider_id
+    }));
+  }
+
+  function chooseLlmEndpoint(endpoint: ApiPresetEndpoint) {
+    if (!selectedLlmPreset) return;
+    const agents = compatibleAgentsForEndpoint(agentChoices, endpoint);
+    const agent = agents.find((item) => item.provider_id === agentSettingsDraft.selected_provider_id) || agents[0] || null;
+    setAgentSettingsDraft((current) => ({
+      ...agentSettingsWithLlmSelection(current, selectedLlmPreset, endpoint),
+      selected_provider_id: agent?.provider_id || current.selected_provider_id
+    }));
+  }
+
+  function chooseLlmAgent(agent: WorkbenchAgentDiscovery) {
+    if (!selectedLlmPreset || !selectedLlmEndpoint) return;
+    setAgentSettingsDraft((current) => ({
+      ...agentSettingsWithLlmSelection(current, selectedLlmPreset, selectedLlmEndpoint),
+      selected_provider_id: agent.provider_id
+    }));
   }
 
   function chooseUploadAgent(agent: WorkbenchAgentDiscovery) {
@@ -7878,8 +7905,8 @@ function NewBatchForm({
   async function confirmUpload() {
     if (!pendingUpload || submitting) return;
     const normalizedAgentSettings = normalizeWorkbenchAgentDraft(agentSettingsDraft);
-    if (selectedExecutionMode === "llm" && (!selectedLlmPreset || !selectedDirectLlmEndpoint)) {
-      setUploadError("LLM 模式需要选择兼容的 LLM 预设和 Endpoint。");
+    if (selectedExecutionMode === "llm" && (!selectedLlmPreset || !selectedLlmEndpoint || !selectedLlmAgent)) {
+      setUploadError("LLM 模式需要选择 LLM 预设、Endpoint 和兼容 Harness。");
       return;
     }
     if (
@@ -7899,7 +7926,7 @@ function NewBatchForm({
       form.set("max_concurrent_cases", "10");
       form.set("auto_run_svg_after_analysis", "true");
       form.set("workflow_template_id", selectedWorkflowTemplateId);
-      form.set("execution_mode", selectedExecutionMode);
+      form.set("execution_mode", "agent");
       form.set("agent_settings", JSON.stringify(normalizedAgentSettings));
       pendingUpload.files.forEach((item) => form.append("files", item.file, item.relativePath));
       const detail = await createUploadBatch(form);
@@ -8050,20 +8077,11 @@ function NewBatchForm({
                       </span>
                       <span className="upload-engine-copy">
                         <strong>LLM 模式</strong>
-                        <em>{selectedLlmPreset?.label || agentSettingsDraft.llm_model || "选择 LLM"}</em>
-                      </span>
-                      <span
-                        className="upload-mode-warning"
-                        data-tooltip="LLM使用单次调用，效果会显著弱于Agent模式"
-                        title="LLM使用单次调用，效果会显著弱于Agent模式"
-                        role="img"
-                        aria-label="LLM使用单次调用，效果会显著弱于Agent模式"
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 3.25 22 20.5H2L12 3.25Z" />
-                          <path d="M12 8.5v5.25" />
-                          <path d="M12 17.25h.01" />
-                        </svg>
+                        <em>
+                          {selectedLlmPreset
+                            ? `${selectedLlmEndpoint?.model || selectedLlmPreset.label || selectedLlmPreset.id}${selectedLlmAgent ? ` · ${selectedLlmAgent.label}` : ""}`
+                            : "选择 LLM 与 Harness"}
+                        </em>
                       </span>
                     </button>
                   </div>
@@ -8223,7 +8241,7 @@ function NewBatchForm({
                             </span>
                             <span className="upload-provider-copy">
                               <strong>{preset.label || preset.id}</strong>
-                              <em>{directLlmEndpoints(preset).map((endpoint) => endpoint.model).join(" · ")}</em>
+                              <em>{llmPresetEndpoints(preset).map((endpoint) => endpoint.model).join(" · ")}</em>
                             </span>
                           </button>
                         );
@@ -8234,20 +8252,36 @@ function NewBatchForm({
                       <label className="settings-field upload-compact-field">
                         <span>Endpoint</span>
                         <select
-                          value={selectedDirectLlmEndpoint?.id || ""}
+                          value={selectedLlmEndpoint?.id || ""}
                           disabled={submitting || !selectedLlmPreset}
                           onChange={(event) => {
-                            const endpoint = selectedDirectLlmEndpoints.find((item) => item.id === event.target.value);
-                            if (selectedLlmPreset && endpoint) {
-                              setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, selectedLlmPreset, endpoint));
-                            }
+                            const endpoint = selectedLlmEndpoints.find((item) => item.id === event.target.value);
+                            if (endpoint) chooseLlmEndpoint(endpoint);
                           }}
                         >
                           <option value="">未选择</option>
-                          {selectedDirectLlmEndpoints.map((endpoint) => (
+                          {selectedLlmEndpoints.map((endpoint) => (
                             <option key={endpoint.id} value={endpoint.id}>
                               {endpoint.label} · {endpoint.model}
                             </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field upload-compact-field">
+                        <span>Harness</span>
+                        <select
+                          value={selectedLlmAgent?.provider_id || ""}
+                          disabled={submitting || !selectedLlmEndpoint || selectedLlmCompatibleAgents.length === 0}
+                          onChange={(event) => {
+                            const agent = selectedLlmCompatibleAgents.find((item) => item.provider_id === event.target.value);
+                            if (agent) chooseLlmAgent(agent);
+                          }}
+                        >
+                          <option value="">
+                            {selectedLlmCompatibleAgents.length > 0 ? "未选择" : "无兼容 Harness"}
+                          </option>
+                          {selectedLlmCompatibleAgents.map((agent) => (
+                            <option key={agent.provider_id} value={agent.provider_id}>{agent.label}</option>
                           ))}
                         </select>
                       </label>
@@ -8267,18 +8301,20 @@ function NewBatchForm({
                           <option value="xhigh">xhigh</option>
                         </select>
                       </label>
-                      <label className="settings-toggle-row">
-                        <input
-                          type="checkbox"
-                          checked={llmThinking}
-                          disabled={submitting}
-                          onChange={(event) => setAgentSettingsDraft((current) => ({
-                            ...current,
-                            llm_extra_body: llmExtraBodyWithThinking(current.llm_extra_body, event.target.checked)
-                          }))}
-                        />
-                        <span>Thinking</span>
-                      </label>
+                      {selectedLlmAgent?.provider_id === "drawai_tool_agent" && (
+                        <label className="settings-toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={llmThinking}
+                            disabled={submitting}
+                            onChange={(event) => setAgentSettingsDraft((current) => ({
+                              ...current,
+                              llm_extra_body: llmExtraBodyWithThinking(current.llm_extra_body, event.target.checked)
+                            }))}
+                          />
+                          <span>Thinking</span>
+                        </label>
+                      )}
                     </div>
                   </div>
                 )}

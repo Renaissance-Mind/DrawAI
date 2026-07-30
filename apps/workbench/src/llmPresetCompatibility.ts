@@ -11,8 +11,6 @@ export const LLM_ENDPOINT_TYPES = [
   "llm_anthropic"
 ] as const;
 
-export const DIRECT_LLM_ENDPOINT_TYPES = ["llm_chat_completions", "llm_responses"] as const;
-
 export function isLlmApiPreset(preset: ApiPreset): boolean {
   return preset.type === "llm" || LLM_ENDPOINT_TYPES.includes(preset.type as (typeof LLM_ENDPOINT_TYPES)[number]);
 }
@@ -73,12 +71,6 @@ export function preferredCompatibleEndpoint(
   if (!preset) return null;
   const endpoints = compatibleEndpointsForAgent(agent, preset);
   return endpoints.find((endpoint) => endpoint.id === endpointId) || endpoints[0] || null;
-}
-
-export function directLlmEndpoints(preset: ApiPreset): ApiPresetEndpoint[] {
-  return llmPresetEndpoints(preset).filter((endpoint) =>
-    DIRECT_LLM_ENDPOINT_TYPES.includes(endpoint.type as (typeof DIRECT_LLM_ENDPOINT_TYPES)[number])
-  );
 }
 
 export function agentSettingsWithLlmSelection(

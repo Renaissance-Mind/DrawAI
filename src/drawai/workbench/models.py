@@ -9,7 +9,7 @@ from typing import Any, Literal, Mapping
 from drawai.workflow.templates import DEFAULT_WORKFLOW_TEMPLATE_ID
 
 BatchStatus = Literal["queued", "running", "waiting_review", "completed", "failed", "canceled"]
-BatchExecutionMode = Literal["default", "agent", "llm"]
+BatchExecutionMode = Literal["default", "agent"]
 CaseStatus = Literal[
     "queued",
     "analysis_running",

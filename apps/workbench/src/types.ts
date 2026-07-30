@@ -7,7 +7,7 @@ export type AssetGeometry =
   | { kind: "mask"; mask_path?: string; bbox: [number, number, number, number]; coordinate_system?: string };
 
 export type BatchStatus = "queued" | "running" | "waiting_review" | "completed" | "failed" | "canceled";
-export type BatchExecutionMode = "default" | "agent" | "llm";
+export type BatchExecutionMode = "default" | "agent";
 export type CaseStatus =
   | "queued"
   | "analysis_running"

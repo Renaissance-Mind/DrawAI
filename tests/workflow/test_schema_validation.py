@@ -39,6 +39,26 @@ def _agent_outputs(port_id: str, type_name: str) -> dict[str, object]:
     }
 
 
+def test_rejects_removed_direct_llm_node_type() -> None:
+    template = WorkflowTemplate(
+        template_id="tpl_direct_llm",
+        name="Direct LLM",
+        nodes=(
+            WorkflowNode(
+                node_id="direct_llm",
+                node_type="llm",
+                title="Direct LLM",
+            ),
+        ),
+        edges=(),
+    )
+
+    result = validate_workflow_template(template)
+
+    assert not result.ok
+    assert any(error.code == "direct_llm_node_removed" for error in result.errors)
+
+
 def test_valid_workflow_accepts_type_compatible_edges() -> None:
     template = WorkflowTemplate(
         template_id="tpl_valid",

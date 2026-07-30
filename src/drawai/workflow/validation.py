@@ -83,7 +83,15 @@ def validate_workflow_template(template: WorkflowTemplate) -> WorkflowValidation
         adjacency[source_node.node_id].append(target_node.node_id)
 
     for node in template.nodes:
-        if node.node_type in {"agent", "llm"}:
+        if node.node_type == "llm":
+            errors.append(
+                WorkflowValidationError(
+                    "direct_llm_node_removed",
+                    "Direct LLM workflow nodes are not supported; use an Agent node with a compatible LLM preset.",
+                    node_id=node.node_id,
+                )
+            )
+        if node.node_type == "agent":
             errors.extend(_validate_agent_outputs(node))
         for input_port in node.inputs:
             incoming = incoming_by_target_port.get((node.node_id, input_port.port_id), [])

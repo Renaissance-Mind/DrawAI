@@ -444,6 +444,7 @@ class WorkbenchStore:
                 "execution_mode",
                 "TEXT NOT NULL DEFAULT 'default'",
             )
+            db.execute("UPDATE batches SET execution_mode = 'agent' WHERE execution_mode = 'llm'")
 
 
 def _resolve_inside(root: Path, path: str | Path) -> Path:

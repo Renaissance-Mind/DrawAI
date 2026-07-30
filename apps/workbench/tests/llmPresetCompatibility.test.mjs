@@ -10,7 +10,6 @@ test("multi-endpoint presets expose only harness-compatible routes", async () =>
   const {
     compatibleAgentsForEndpoint,
     compatibleEndpointsForAgent,
-    directLlmEndpoints,
     preferredCompatibleEndpoint
   } = await loadModule();
   const preset = multiEndpointPreset();
@@ -20,7 +19,6 @@ test("multi-endpoint presets expose only harness-compatible routes", async () =>
   assert.deepEqual(compatibleEndpointsForAgent(claude, preset).map((endpoint) => endpoint.id), ["anthropic"]);
   assert.deepEqual(compatibleEndpointsForAgent(builtin, preset).map((endpoint) => endpoint.id), ["chat"]);
   assert.equal(preferredCompatibleEndpoint(claude, preset, "chat")?.id, "anthropic");
-  assert.deepEqual(directLlmEndpoints(preset).map((endpoint) => endpoint.id), ["responses", "chat"]);
   assert.deepEqual(
     compatibleAgentsForEndpoint([claude, builtin], preset.endpoints[0]).map((item) => item.provider_id),
     ["claude_agent_sdk"]

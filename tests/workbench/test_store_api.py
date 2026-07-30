@@ -4,6 +4,7 @@ import base64
 import json
 import io
 import shutil
+import sqlite3
 import threading
 import time
 import zipfile
@@ -73,6 +74,26 @@ def test_store_creates_batch_case_stage_and_artifact(tmp_path: Path) -> None:
     resolved = store.resolve_artifact(artifact.artifact_token)
     assert resolved.path == str(artifact_path)
     assert resolved.to_api()["url"].startswith("/api/artifacts/")
+
+
+def test_store_migrates_legacy_direct_llm_batches_to_agent_mode(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    store = WorkbenchStore(workspace)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("input: {}\n", encoding="utf-8")
+    batch = store.create_batch(
+        name="legacy direct llm",
+        input_mode="upload",
+        max_concurrent_cases=1,
+        auto_run_svg_after_analysis=True,
+        config_path=config_path,
+    )
+    with sqlite3.connect(store.db_path) as db:
+        db.execute("UPDATE batches SET execution_mode = 'llm' WHERE batch_id = ?", (batch.batch_id,))
+
+    migrated = WorkbenchStore(workspace)
+
+    assert migrated.get_batch(batch.batch_id).execution_mode == "agent"
 
 
 def test_pipeline_failure_message_prefers_exception_message() -> None:
