@@ -37,6 +37,33 @@ test("API preset templates describe Anthropic-compatible endpoints without harne
   }
 });
 
+test("saved presets resolve provider icons by base URL regardless of model", async () => {
+  const { apiPresetIconForPreset } = await loadTemplateModule();
+
+  const icon = apiPresetIconForPreset({
+    id: "kimi_k3",
+    label: "Kimi K3",
+    type: "llm",
+    base_url: "https://api.kimi.com/coding",
+    model: "k3",
+    api_key_env: "KIMI_PLAN_KEY",
+    api_key: "",
+    endpoints: [
+      {
+        id: "anthropic",
+        label: "Anthropic",
+        type: "llm_anthropic",
+        base_url: "https://api.kimi.com/coding",
+        model: "k3",
+        api_key_env: "KIMI_PLAN_KEY",
+        api_key: ""
+      }
+    ]
+  });
+
+  assert.equal(icon?.icon_url, "/provider-icons/moonshot.png");
+});
+
 test("API preset templates include local provider icons", async () => {
   const { API_PRESET_TEMPLATES } = await loadTemplateModule();
 

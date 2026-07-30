@@ -305,15 +305,22 @@ export function apiPresetDraftFromTemplate(template: ApiPresetTemplate, existing
 
 export function apiPresetTemplateForPreset(preset: ApiPreset): ApiPresetTemplate | null {
   const normalizedPresetId = preset.id.replace(/_\d+$/, "");
+  const presetBaseUrl = normalizedApiPresetBaseUrl(preset.base_url);
   return (
     API_PRESET_TEMPLATES.find(
       (template) =>
         template.id === preset.id ||
         template.id === normalizedPresetId ||
-        (template.base_url === preset.base_url && template.model === preset.model) ||
-        preset.endpoints?.some((endpoint) => template.base_url === endpoint.base_url && template.model === endpoint.model)
+        normalizedApiPresetBaseUrl(template.base_url) === presetBaseUrl ||
+        preset.endpoints?.some(
+          (endpoint) => normalizedApiPresetBaseUrl(template.base_url) === normalizedApiPresetBaseUrl(endpoint.base_url)
+        )
     ) || null
   );
+}
+
+function normalizedApiPresetBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, "");
 }
 
 export function apiPresetTemplateSearchText(template: ApiPresetTemplate): string {
