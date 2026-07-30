@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from .acp_agent_presets import SUPPORTED_ACP_AGENTS
+from .agent_defaults import DEFAULT_AGENT_TIMEOUT_SECONDS
 from .prompt_plan import DEFAULT_SAM3_PROMPTS, Sam3Prompt
 
 RECOGNIZED_OCR_PROVIDERS = frozenset({"remote_paddleocr", "fixture"})
@@ -103,7 +104,7 @@ class AssetPolicyConfig:
 @dataclass(frozen=True)
 class DrawAiSvgConfig:
     max_attempts: int = 8
-    timeout_seconds: float = 1500
+    timeout_seconds: float = DEFAULT_AGENT_TIMEOUT_SECONDS
     generation_backend: str = "codex_python_sdk_controlled"
     staged_generation: bool = True
     text_rendering: str = "model_text"
@@ -184,7 +185,7 @@ class ModelRuntimeConfig:
     wire_api: str = "responses"
     extra_body: dict[str, Any] | None = None
     extra_headers: dict[str, str] | None = None
-    timeout_seconds: float = 600
+    timeout_seconds: float = DEFAULT_AGENT_TIMEOUT_SECONDS
     concurrency_mode: str = "auto"
     max_concurrent: int = 20
     max_critic_rounds: int = 3

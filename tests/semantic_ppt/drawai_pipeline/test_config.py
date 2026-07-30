@@ -50,7 +50,7 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.svg.max_attempts == 8
     assert cfg.svg.generation_backend == "codex_python_sdk_controlled"
     assert cfg.svg.staged_generation is True
-    assert cfg.svg.timeout_seconds == 1500
+    assert cfg.svg.timeout_seconds == 3600
     assert cfg.svg.text_rendering == "model_text"
     assert cfg.svg.visual_review_rounds == ("text_style",)
     assert cfg.svg_to_ppt.enabled is True
@@ -61,7 +61,7 @@ def test_load_main_config_uses_codex_python_sdk_defaults():
     assert cfg.model_runtime.reasoning_effort == "xhigh"
     assert cfg.model_runtime.base_url == ""
     assert cfg.model_runtime.api_key == ""
-    assert cfg.model_runtime.timeout_seconds == 600
+    assert cfg.model_runtime.timeout_seconds == 3600
 
 
 def test_template_config_preserves_current_baseline_defaults():
@@ -71,7 +71,7 @@ def test_template_config_preserves_current_baseline_defaults():
     assert cfg.input.normalization.upscale_only is False
     assert cfg.sam3.return_masks is False
     assert cfg.svg.generation_backend == "codex_python_sdk_controlled"
-    assert cfg.svg.timeout_seconds == 1500
+    assert cfg.svg.timeout_seconds == 3600
     assert cfg.svg_to_ppt.enabled is True
     assert cfg.svg_to_ppt.export_pptx is True
     assert cfg.model_runtime.provider == "codex-python-sdk"

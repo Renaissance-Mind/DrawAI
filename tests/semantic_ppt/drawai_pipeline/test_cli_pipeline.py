@@ -615,7 +615,7 @@ def test_cli_dry_run_config_prints_default_summary():
     assert payload["model_runtime"]["model_name"] == "gpt-5.5"
     assert payload["model_runtime"]["reasoning_effort"] == "xhigh"
     assert payload["model_runtime"]["base_url"] == ""
-    assert payload["model_runtime"]["timeout_seconds"] == 600
+    assert payload["model_runtime"]["timeout_seconds"] == 3600
 
 
 def _write_minimal_cli_config(tmp_path: Path) -> Path:
@@ -1753,7 +1753,7 @@ v2:
     assert sessions[0].runtime_config["connection_id"] == "codex-python-sdk-controlled"
     assert sessions[0].runtime_config["model_name"] == "gpt-5.5"
     assert sessions[0].runtime_config["base_url"] == ""
-    assert sessions[0].runtime_config["timeout_seconds"] == 1500
+    assert sessions[0].runtime_config["timeout_seconds"] == 3600
     isolated_cwd = sessions[0].isolated_cwd.replace("\\", "/")
     output_svg_path = calls[0]["output_svg_path"].replace("\\", "/")
     output_response_path = calls[0]["output_response_path"].replace("\\", "/")

@@ -267,7 +267,7 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   model: "",
   reasoning_effort: "",
   fast: false,
-  timeout_seconds: 0,
+  timeout_seconds: 3600,
   llm_api_preset_id: "",
   llm_endpoint_id: "",
   llm_model: "",
@@ -4157,7 +4157,10 @@ function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): Workben
     model: (settings.model || "").trim(),
     reasoning_effort: (settings.reasoning_effort || "").trim(),
     fast: Boolean(settings.fast),
-    timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0,
+    timeout_seconds:
+      Number.isFinite(timeout) && timeout > 0
+        ? Math.floor(timeout)
+        : DEFAULT_WORKBENCH_AGENT_SETTINGS.timeout_seconds,
     llm_api_preset_id: (settings.llm_api_preset_id || "").trim(),
     llm_endpoint_id: (settings.llm_endpoint_id || "").trim(),
     llm_model: (settings.llm_model || "").trim(),

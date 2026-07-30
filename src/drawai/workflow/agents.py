@@ -8,6 +8,7 @@ from posixpath import normpath
 from typing import Any, Literal
 
 from drawai.acp_agent_presets import ACP_AGENT_PRESETS
+from drawai.agent_defaults import DEFAULT_AGENT_TIMEOUT_SECONDS
 from drawai.tool_agent_runtime import (
     DRAWAI_TOOL_AGENT_PROVIDER,
     MAX_APPEND_WRITE_CHARS,
@@ -43,8 +44,7 @@ DANGEROUS_AGENT_CONFIG_KEYS = (
     "executable",
     "shell_command",
 )
-DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
-SVG_AGENT_TIMEOUT_SECONDS = 7200
+SVG_AGENT_TIMEOUT_SECONDS = DEFAULT_AGENT_TIMEOUT_SECONDS
 
 TYPE_CONTRACTS = {
     "image": "栅格图像文件。把它作为视觉证据；除非当前 node 声明了 image output，否则不要改写它。",

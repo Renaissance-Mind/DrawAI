@@ -273,6 +273,7 @@ def test_workbench_agent_settings_api_can_skip_agent_discovery(tmp_path: Path) -
     assert response.status_code == 200
     payload = response.json()
     assert payload["settings"]["selected_provider_id"] == "codex_sdk"
+    assert payload["settings"]["timeout_seconds"] == 3600
     assert payload["agents"] == []
 
     save_response = client.put(

@@ -25,7 +25,8 @@ from drawai.tool_agent_runtime import DEFAULT_TOOL_AGENT_MAX_ITERATIONS
 from drawai.workflow.agents import DEFAULT_AGENT_TIMEOUT_SECONDS, AgentPrompt
 
 
-def test_agent_execution_default_timeout_is_thirty_minutes() -> None:
+def test_agent_execution_default_timeout_is_one_hour() -> None:
+    assert DEFAULT_AGENT_TIMEOUT_SECONDS == 3600
     assert _timeout_seconds({}) == DEFAULT_AGENT_TIMEOUT_SECONDS
 
 

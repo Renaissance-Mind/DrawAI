@@ -44,6 +44,20 @@ def test_builtin_agent_nodes_follow_workbench_settings_by_default(tmp_path: Path
         assert config["timeout_seconds"] == 900
 
 
+def test_builtin_agent_nodes_use_one_hour_workbench_default(tmp_path: Path) -> None:
+    template = load_workflow_template_by_id(tmp_path / "workspace", "default_drawai_dag")
+
+    effective = _workflow_template_with_agent_settings(
+        template,
+        WorkbenchAgentSettings(),
+        execution_mode="agent",
+    )
+
+    effective_nodes = {node.node_id: node for node in effective.nodes}
+    for node_id in ("page_spec_refine", "svg_compose"):
+        assert effective_nodes[node_id].config["timeout_seconds"] == 3600
+
+
 def test_explicit_dag_agent_runtime_settings_win_over_workbench_settings(tmp_path: Path) -> None:
     template = load_workflow_template_by_id(tmp_path / "workspace", "default_drawai_dag")
     nodes = []

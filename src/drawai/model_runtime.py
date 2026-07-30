@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
+from .agent_defaults import DEFAULT_AGENT_TIMEOUT_SECONDS
+
 
 class ModelRuntimeError(ValueError):
     """Raised when the DrawAI model runtime cannot invoke a vision model."""
@@ -520,7 +522,7 @@ def _runtime_timeout_seconds(runtime_config: RuntimeSettings | dict[str, Any]) -
     else:
         raw_timeout = getattr(runtime_config, "timeout_seconds", None)
     if raw_timeout in (None, ""):
-        return 600.0
+        return float(DEFAULT_AGENT_TIMEOUT_SECONDS)
     try:
         timeout = float(raw_timeout)
     except (TypeError, ValueError) as exc:

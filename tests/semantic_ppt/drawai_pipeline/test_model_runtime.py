@@ -8,6 +8,10 @@ from PIL import Image
 from drawai import model_runtime
 
 
+def test_model_runtime_default_timeout_is_one_hour():
+    assert model_runtime._runtime_timeout_seconds({}) == 3600
+
+
 def test_invoke_vision_text_passes_runtime_timeout(monkeypatch, tmp_path: Path):
     image = tmp_path / "figure.png"
     Image.new("RGB", (4, 4), "white").save(image)

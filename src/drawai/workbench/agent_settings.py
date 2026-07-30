@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from drawai.acp_agent_presets import ACP_AGENT_PRESETS
+from drawai.agent_defaults import DEFAULT_AGENT_TIMEOUT_SECONDS
 from drawai.codex_cli import resolve_codex_executable
 from drawai.tool_agent_runtime import DRAWAI_TOOL_AGENT_PROVIDER
 from drawai.workflow.agents import SUPPORTED_REASONING_EFFORTS
@@ -54,7 +55,7 @@ class WorkbenchAgentSettings:
     model: str = ""
     reasoning_effort: str = ""
     fast: bool = False
-    timeout_seconds: int = 0
+    timeout_seconds: int = DEFAULT_AGENT_TIMEOUT_SECONDS
     llm_api_preset_id: str = ""
     llm_endpoint_id: str = ""
     llm_model: str = ""
@@ -653,10 +654,10 @@ def _codex_auth_candidate_paths() -> list[Path]:
 
 
 def _settings_timeout_seconds(raw: Any) -> int:
-    if raw in (None, ""):
-        return 0
+    if raw in (None, "", 0, 0.0, "0"):
+        return DEFAULT_AGENT_TIMEOUT_SECONDS
     value = int(raw)
-    if value < 0:
+    if value <= 0:
         raise ValueError("timeout_seconds must be positive")
     return value
 
