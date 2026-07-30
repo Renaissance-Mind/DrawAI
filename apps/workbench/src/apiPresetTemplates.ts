@@ -25,8 +25,8 @@ export interface ApiPresetIcon {
 export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
   {
     id: "anthropic_claude_code",
-    label: "Anthropic · Claude Code SDK",
-    description: "Anthropic Messages API used through the Claude Code agent runtime.",
+    label: "Anthropic",
+    description: "Anthropic Messages API endpoint for Claude models.",
     type: "llm_anthropic",
     base_url: "https://api.anthropic.com",
     model: "claude-sonnet-4-5",
@@ -34,13 +34,13 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     accent_color: "#d97757",
     icon_url: "/agent-icons/claude-code.svg",
     model_fetch: "none",
-    badge_label: "Claude Code SDK",
+    badge_label: "Anthropic",
     suggested_models: ["claude-sonnet-4-5", "claude-opus-4-1"]
   },
   {
     id: "kimi_coding_claude_code",
-    label: "Kimi Coding · Claude Code SDK",
-    description: "Kimi Coding Plan Anthropic-compatible route used through Claude Code.",
+    label: "Kimi Coding",
+    description: "Kimi Coding Plan Anthropic-compatible endpoint.",
     type: "llm_anthropic",
     base_url: "https://api.kimi.com/coding",
     model: "kimi-for-coding",
@@ -48,13 +48,13 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     accent_color: "#111827",
     icon_url: "/provider-icons/moonshot.png",
     model_fetch: "none",
-    badge_label: "Claude Code SDK",
-    suggested_models: ["kimi-for-coding"]
+    badge_label: "Anthropic 兼容",
+    suggested_models: ["kimi-for-coding", "k3"]
   },
   {
     id: "minimax_claude_code",
-    label: "MiniMax · Claude Code SDK",
-    description: "MiniMax Anthropic-compatible route used through Claude Code.",
+    label: "MiniMax",
+    description: "MiniMax Anthropic-compatible endpoint.",
     type: "llm_anthropic",
     base_url: "https://api.minimaxi.com/anthropic",
     model: "MiniMax-M3",
@@ -62,13 +62,13 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     accent_color: "#ef4444",
     icon_url: "/agent-icons/claude-code.svg",
     model_fetch: "none",
-    badge_label: "Claude Code SDK",
+    badge_label: "Anthropic 兼容",
     suggested_models: ["MiniMax-M3"]
   },
   {
     id: "xiaomi_claude_code",
-    label: "Xiaomi MiMo · Claude Code SDK",
-    description: "Xiaomi MiMo Token Plan Anthropic-compatible route used through Claude Code.",
+    label: "Xiaomi MiMo",
+    description: "Xiaomi MiMo Token Plan Anthropic-compatible endpoint.",
     type: "llm_anthropic",
     base_url: "https://token-plan-cn.xiaomimimo.com/anthropic",
     model: "mimo-v2.5",
@@ -76,13 +76,13 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     accent_color: "#ff6900",
     icon_url: "/agent-icons/claude-code.svg",
     model_fetch: "none",
-    badge_label: "Claude Code SDK",
+    badge_label: "Anthropic 兼容",
     suggested_models: ["mimo-v2.5", "mimo-v2.5-pro"]
   },
   {
     id: "openrouter_claude_code",
-    label: "OpenRouter · Claude Code SDK",
-    description: "OpenRouter Anthropic-compatible route used through Claude Code.",
+    label: "OpenRouter",
+    description: "OpenRouter Anthropic-compatible endpoint.",
     type: "llm_anthropic",
     base_url: "https://openrouter.ai/api",
     model: "anthropic/claude-sonnet-4.5",
@@ -90,7 +90,7 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
     accent_color: "#111111",
     icon_url: "/provider-icons/openrouter.svg",
     model_fetch: "none",
-    badge_label: "Claude Code SDK",
+    badge_label: "Anthropic 兼容",
     suggested_models: ["anthropic/claude-sonnet-4.5", "tencent/hy3:free"]
   },
   {
