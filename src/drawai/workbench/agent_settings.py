@@ -14,8 +14,17 @@ from drawai.codex_cli import resolve_codex_executable
 from drawai.tool_agent_runtime import DRAWAI_TOOL_AGENT_PROVIDER
 from drawai.workflow.agents import SUPPORTED_REASONING_EFFORTS
 
+from .api_presets import (
+    ApiPreset,
+    ApiPresetEndpoint,
+    api_preset_by_id,
+    api_preset_endpoint_by_id,
+    compatible_api_preset_endpoints,
+    read_workbench_api_presets,
+)
 
-SETTINGS_SCHEMA = "drawai.workbench.agent_settings.v1"
+
+SETTINGS_SCHEMA = "drawai.workbench.agent_settings.v2"
 DEFAULT_AGENT_PROVIDER_ID = "codex_sdk"
 DEFAULT_LLM_PROVIDER_ID = "openai_compatible"
 DEFAULT_LLM_WIRE_API = "chat_completions"
@@ -48,6 +57,7 @@ class WorkbenchAgentSettings:
     fast: bool = False
     timeout_seconds: int = 0
     llm_api_preset_id: str = ""
+    llm_endpoint_id: str = ""
     llm_model: str = ""
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -59,6 +69,19 @@ class WorkbenchAgentSettings:
         payload = asdict(self)
         payload["schema"] = SETTINGS_SCHEMA
         return payload
+
+    def to_persisted_dict(self) -> dict[str, Any]:
+        return {
+            "schema": SETTINGS_SCHEMA,
+            "selected_provider_id": self.selected_provider_id,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "fast": self.fast,
+            "timeout_seconds": self.timeout_seconds,
+            "llm_api_preset_id": self.llm_api_preset_id,
+            "llm_endpoint_id": self.llm_endpoint_id,
+            "llm_extra_body": dict(self.llm_extra_body),
+        }
 
 
 AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
@@ -142,7 +165,7 @@ AGENT_DEFINITIONS: dict[str, WorkbenchAgentDefinition] = {
         kind="api",
         workflow_provider_id=DRAWAI_TOOL_AGENT_PROVIDER,
         pipeline_agent="",
-        api_preset_types=("llm_chat_completions", "llm_responses"),
+        api_preset_types=("llm_chat_completions",),
         description="OpenAI-compatible API provider with DrawAI-owned file and tool loop.",
     ),
 }
@@ -161,17 +184,25 @@ def read_workbench_agent_settings(workspace: str | Path) -> WorkbenchAgentSettin
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping):
         raise ValueError(f"Workbench agent settings must be a JSON object: {path}")
-    return normalize_workbench_agent_settings(payload, fallback_hidden_provider=True)
+    return normalize_workbench_agent_settings(
+        payload,
+        fallback_hidden_provider=True,
+        api_presets=read_workbench_api_presets(workspace),
+    )
 
 
 def write_workbench_agent_settings(
     workspace: str | Path,
     payload: Mapping[str, Any],
 ) -> WorkbenchAgentSettings:
-    settings = normalize_workbench_agent_settings(payload, require_selected_api_preset=True)
+    settings = normalize_workbench_agent_settings(
+        payload,
+        require_selected_api_preset=True,
+        api_presets=read_workbench_api_presets(workspace),
+    )
     path = agent_settings_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(settings.to_persisted_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return settings
 
 
@@ -180,6 +211,7 @@ def normalize_workbench_agent_settings(
     *,
     fallback_hidden_provider: bool = False,
     require_selected_api_preset: bool = False,
+    api_presets: Sequence[ApiPreset] = (),
 ) -> WorkbenchAgentSettings:
     data = dict(payload or {})
     raw_llm_api_key_env = data.get("llm_api_key_env")
@@ -210,18 +242,43 @@ def normalize_workbench_agent_settings(
     llm_model = str(data.get("llm_model") or "").strip()
     llm_base_url = str(data.get("llm_base_url") or "").strip().rstrip("/")
     definition = AGENT_DEFINITIONS[provider_id]
+    llm_api_preset_id = str(data.get("llm_api_preset_id") or "").strip()
+    llm_endpoint_id = str(data.get("llm_endpoint_id") or "").strip()
+    selected_endpoint: ApiPresetEndpoint | None = None
+    selected_preset = api_preset_by_id(api_presets, llm_api_preset_id) if llm_api_preset_id else None
+    if selected_preset is not None:
+        if selected_preset.type != "llm":
+            raise ValueError(f"API preset {selected_preset.id!r} is not an LLM preset")
+        selected_endpoint = api_preset_endpoint_by_id(selected_preset, llm_endpoint_id)
+        if selected_endpoint is None:
+            selected_endpoint = _legacy_matching_endpoint(
+                selected_preset,
+                model=llm_model,
+                base_url=llm_base_url,
+                wire_api=llm_wire_api,
+            )
+        if selected_endpoint is None and definition.api_preset_types:
+            compatible = compatible_api_preset_endpoints(selected_preset, definition.api_preset_types)
+            selected_endpoint = compatible[0] if compatible else None
+        if selected_endpoint is None and selected_preset.endpoints:
+            selected_endpoint = selected_preset.endpoints[0]
+        if selected_endpoint is not None:
+            llm_endpoint_id = selected_endpoint.id
+            llm_model = selected_endpoint.model
+            llm_base_url = selected_endpoint.base_url
+            raw_llm_api_key_env = selected_endpoint.api_key_env
+            data["llm_api_key"] = selected_endpoint.api_key
+            llm_wire_api = API_PRESET_TYPE_TO_WIRE_API[selected_endpoint.type]
+    elif llm_api_preset_id and api_presets:
+        raise ValueError(f"LLM API preset not found: {llm_api_preset_id}")
     if require_selected_api_preset and definition.api_preset_types:
-        if not llm_model or not llm_base_url:
-            raise ValueError(f"{definition.label} 需要选择 API 预设（兼容的 LLM API）")
-        supported_wire_apis = tuple(
-            API_PRESET_TYPE_TO_WIRE_API[preset_type]
-            for preset_type in definition.api_preset_types
-        )
-        if llm_wire_api not in supported_wire_apis:
+        if selected_preset is None or selected_endpoint is None:
+            raise ValueError(f"{definition.label} 需要选择兼容的 LLM 预设和 Endpoint")
+        if selected_endpoint.type not in definition.api_preset_types:
             supported = ", ".join(definition.api_preset_types)
             raise ValueError(
-                f"{definition.label} 不支持 {llm_wire_api!r} API 预设；"
-                f"请选择以下类型之一：{supported}"
+                f"{definition.label} 不支持 Endpoint {selected_endpoint.label!r} "
+                f"({selected_endpoint.type})；请选择以下类型之一：{supported}"
             )
     return WorkbenchAgentSettings(
         selected_provider_id=provider_id,
@@ -229,13 +286,39 @@ def normalize_workbench_agent_settings(
         reasoning_effort=reasoning_effort,
         fast=_settings_fast(data.get("fast")),
         timeout_seconds=timeout_seconds,
-        llm_api_preset_id=str(data.get("llm_api_preset_id") or "").strip(),
+        llm_api_preset_id=llm_api_preset_id,
+        llm_endpoint_id=llm_endpoint_id,
         llm_model=llm_model,
         llm_base_url=llm_base_url,
         llm_api_key=str(data.get("llm_api_key") or "").strip(),
         llm_api_key_env=("OPENAI_API_KEY" if raw_llm_api_key_env is None else str(raw_llm_api_key_env)).strip(),
         llm_wire_api=llm_wire_api,
         llm_extra_body=dict(llm_extra_body),
+    )
+
+
+def _legacy_matching_endpoint(
+    preset: ApiPreset,
+    *,
+    model: str,
+    base_url: str,
+    wire_api: str,
+) -> ApiPresetEndpoint | None:
+    endpoint_type = {
+        "anthropic": "llm_anthropic",
+        "responses": "llm_responses",
+        "chat_completions": "llm_chat_completions",
+    }.get(wire_api)
+    normalized_base_url = base_url.rstrip("/")
+    return next(
+        (
+            endpoint
+            for endpoint in preset.endpoints
+            if (not model or endpoint.model == model)
+            and (not normalized_base_url or endpoint.base_url.rstrip("/") == normalized_base_url)
+            and (endpoint_type is None or endpoint.type == endpoint_type)
+        ),
+        None,
     )
 
 
@@ -278,6 +361,8 @@ def apply_workbench_agent_settings_to_node_config(
     if definition.provider_id == "claude_agent_sdk":
         if settings.llm_api_preset_id:
             config["api_preset_id"] = settings.llm_api_preset_id
+        if settings.llm_endpoint_id:
+            config["api_endpoint_id"] = settings.llm_endpoint_id
         config["model"] = settings.llm_model or settings.model
         config["base_url"] = settings.llm_base_url
         if settings.llm_api_key:
@@ -293,6 +378,8 @@ def apply_workbench_agent_settings_to_node_config(
     if definition.provider_id == DRAWAI_TOOL_AGENT_PROVIDER:
         if settings.llm_api_preset_id:
             config["api_preset_id"] = settings.llm_api_preset_id
+        if settings.llm_endpoint_id:
+            config["api_endpoint_id"] = settings.llm_endpoint_id
         if settings.llm_model or settings.model:
             config["model"] = settings.llm_model or settings.model
         if settings.llm_base_url:
@@ -301,7 +388,7 @@ def apply_workbench_agent_settings_to_node_config(
             config["api_key"] = settings.llm_api_key
         if settings.llm_api_key_env:
             config["api_key_env"] = settings.llm_api_key_env
-        config["wire_api"] = "chat_completions"
+        config["wire_api"] = settings.llm_wire_api
         if settings.llm_extra_body:
             config["extra_body"] = dict(settings.llm_extra_body)
         if settings.timeout_seconds:
@@ -331,6 +418,8 @@ def apply_workbench_llm_settings_to_node_config(
     config["provider_id"] = DEFAULT_LLM_PROVIDER_ID
     if settings.llm_api_preset_id:
         config["api_preset_id"] = settings.llm_api_preset_id
+    if settings.llm_endpoint_id:
+        config["api_endpoint_id"] = settings.llm_endpoint_id
     if settings.llm_model:
         config["model"] = settings.llm_model
     if settings.reasoning_effort:
@@ -397,6 +486,7 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["connection_id"] = "claude-agent-sdk"
         runtime_config["model_name"] = settings.llm_model or settings.model
         runtime_config["api_preset_id"] = settings.llm_api_preset_id
+        runtime_config["api_endpoint_id"] = settings.llm_endpoint_id
         runtime_config["base_url"] = settings.llm_base_url
         runtime_config["wire_api"] = settings.llm_wire_api
         if settings.llm_api_key:
@@ -408,9 +498,11 @@ def apply_workbench_agent_settings_to_config_payload(
         runtime_config["provider"] = DRAWAI_TOOL_AGENT_PROVIDER
         runtime_config["connection_id"] = DRAWAI_TOOL_AGENT_PROVIDER
         runtime_config["model_name"] = settings.llm_model or settings.model
-        runtime_config["wire_api"] = "chat_completions"
+        runtime_config["wire_api"] = settings.llm_wire_api
         if settings.llm_api_preset_id:
             runtime_config["api_preset_id"] = settings.llm_api_preset_id
+        if settings.llm_endpoint_id:
+            runtime_config["api_endpoint_id"] = settings.llm_endpoint_id
         if settings.llm_base_url:
             runtime_config["base_url"] = settings.llm_base_url
         if settings.llm_api_key:
@@ -459,6 +551,8 @@ def _apply_workbench_llm_settings_to_config_payload(
     runtime_config["connection_id"] = DEFAULT_LLM_PROVIDER_ID
     if settings.llm_api_preset_id:
         runtime_config["api_preset_id"] = settings.llm_api_preset_id
+    if settings.llm_endpoint_id:
+        runtime_config["api_endpoint_id"] = settings.llm_endpoint_id
     if settings.llm_model:
         runtime_config["model_name"] = settings.llm_model
     if settings.reasoning_effort:

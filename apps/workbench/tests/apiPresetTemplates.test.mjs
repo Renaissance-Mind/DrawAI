@@ -43,9 +43,10 @@ test("API preset templates create editable drafts without copying secrets", asyn
 
   assert.equal(draft.id, "ollama");
   assert.equal(draft.label, "Ollama");
-  assert.equal(draft.type, "llm_chat_completions");
-  assert.equal(draft.api_key_env, "");
-  assert.equal(draft.api_key, "");
+  assert.equal(draft.type, "llm");
+  assert.equal(draft.endpoints[0].type, "llm_chat_completions");
+  assert.equal(draft.endpoints[0].api_key_env, "");
+  assert.equal(draft.endpoints[0].api_key, "");
   assert.equal("logo_url" in draft, false);
 });
 

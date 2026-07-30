@@ -1,4 +1,4 @@
-import type { ApiPreset } from "./types";
+import type { ApiPreset, ApiPresetEndpoint } from "./types";
 
 export interface ApiPresetTemplate {
   id: string;
@@ -278,6 +278,19 @@ export const API_PRESET_TEMPLATES: ApiPresetTemplate[] = [
 ];
 
 export function apiPresetDraftFromTemplate(template: ApiPresetTemplate, existing: ApiPreset[]): ApiPreset {
+  if (template.type !== "images_api") {
+    const endpoint = endpointFromTemplate(template);
+    return {
+      id: uniqueApiPresetId(existing, template.id),
+      label: template.label,
+      type: "llm",
+      base_url: endpoint.base_url,
+      model: endpoint.model,
+      api_key_env: endpoint.api_key_env,
+      api_key: "",
+      endpoints: [endpoint]
+    };
+  }
   return {
     id: uniqueApiPresetId(existing, template.id),
     label: template.label,
@@ -285,7 +298,8 @@ export function apiPresetDraftFromTemplate(template: ApiPresetTemplate, existing
     base_url: template.base_url,
     model: template.model,
     api_key_env: template.api_key_env,
-    api_key: ""
+    api_key: "",
+    endpoints: []
   };
 }
 
@@ -296,7 +310,8 @@ export function apiPresetTemplateForPreset(preset: ApiPreset): ApiPresetTemplate
       (template) =>
         template.id === preset.id ||
         template.id === normalizedPresetId ||
-        (template.base_url === preset.base_url && template.model === preset.model)
+        (template.base_url === preset.base_url && template.model === preset.model) ||
+        preset.endpoints?.some((endpoint) => template.base_url === endpoint.base_url && template.model === endpoint.model)
     ) || null
   );
 }
@@ -325,6 +340,46 @@ export function blankApiPresetDraft(existing: ApiPreset[]): ApiPreset {
     base_url: "https://api.openai.com/v1",
     model: "gpt-image-2",
     api_key_env: "OPENAI_API_KEY",
+    api_key: "",
+    endpoints: []
+  };
+}
+
+export function blankLlmPresetDraft(existing: ApiPreset[]): ApiPreset {
+  const endpoint: ApiPresetEndpoint = {
+    id: "chat_completions",
+    label: "Chat Completions",
+    type: "llm_chat_completions",
+    base_url: "https://api.openai.com/v1",
+    model: "gpt-4o",
+    api_key_env: "OPENAI_API_KEY",
+    api_key: ""
+  };
+  return {
+    id: uniqueApiPresetId(existing, "llm_preset"),
+    label: "新建 LLM 预设",
+    type: "llm",
+    base_url: endpoint.base_url,
+    model: endpoint.model,
+    api_key_env: endpoint.api_key_env,
+    api_key: endpoint.api_key,
+    endpoints: [endpoint]
+  };
+}
+
+function endpointFromTemplate(template: ApiPresetTemplate): ApiPresetEndpoint {
+  return {
+    id: template.type.replace(/^llm_/, ""),
+    label:
+      template.type === "llm_anthropic"
+        ? "Anthropic"
+        : template.type === "llm_responses"
+          ? "Responses"
+          : "Chat Completions",
+    type: template.type as ApiPresetEndpoint["type"],
+    base_url: template.base_url,
+    model: template.model,
+    api_key_env: template.api_key_env,
     api_key: ""
   };
 }

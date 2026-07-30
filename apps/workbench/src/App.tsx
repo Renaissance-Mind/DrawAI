@@ -57,10 +57,23 @@ import {
   apiPresetIconForPreset,
   apiPresetTemplateSearchText,
   blankApiPresetDraft,
+  blankLlmPresetDraft,
   uniqueApiPresetId,
   type ApiPresetTemplate
 } from "./apiPresetTemplates";
 import { agentProviderIconForId, sortWorkbenchAgentsForDisplay } from "./agentProviderPresentation";
+import {
+  agentSettingsWithLlmSelection,
+  compatibleAgentsForEndpoint,
+  compatibleEndpointsForAgent,
+  compatibleLlmPresetsForAgent,
+  directLlmEndpoints,
+  isLlmApiPreset,
+  llmEndpointProtocolLabel,
+  llmPresetEndpoints,
+  preferredCompatibleEndpoint,
+  selectedLlmEndpoint
+} from "./llmPresetCompatibility";
 import {
   imageGenApiPresets,
   imageGenConnectionFromMethod,
@@ -109,6 +122,7 @@ import {
 import type {
   ArtifactRecord,
   ApiPreset,
+  ApiPresetEndpoint,
   ApiPresetsResponse,
   AssetElement,
   AssetGeometry,
@@ -257,6 +271,7 @@ const DEFAULT_WORKBENCH_AGENT_SETTINGS: WorkbenchAgentSettings = {
   fast: false,
   timeout_seconds: 0,
   llm_api_preset_id: "",
+  llm_endpoint_id: "",
   llm_model: "",
   llm_base_url: "",
   llm_api_key: "",
@@ -1994,10 +2009,12 @@ function WorkbenchSettingsCenter({
 
   const agents = response?.agents || [];
   const sortedAgents = sortWorkbenchAgentsForDisplay(agents);
-  const presetTypes = apiResponse?.preset_types || ["images_api", "llm_chat_completions", "llm_responses", "llm_anthropic"];
+  const presetTypes = apiResponse?.preset_types || ["images_api", "llm"];
+  const endpointTypes = apiResponse?.endpoint_types || ["llm_chat_completions", "llm_responses", "llm_anthropic"];
   const selectedApiPreset = apiDrafts[selectedApiPresetIndex] || null;
   const llmPresets = apiDrafts.filter(isLlmApiPreset);
   const selectedLlmPreset = llmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
+  const selectedEndpoint = selectedLlmEndpoint(selectedLlmPreset, draft.llm_endpoint_id);
   const selectedLlmPresetIcon = selectedLlmPreset
     ? apiPresetIconForPreset(selectedLlmPreset, apiPresetResolvedLogo(apiPresetLogoUrls, selectedLlmPreset))
     : null;
@@ -2026,8 +2043,17 @@ function WorkbenchSettingsCenter({
     null;
   const selectedAgentApiPresetTypes = selectedAgent?.api_preset_types || [];
   const selectedAgentUsesApiPreset = selectedAgentApiPresetTypes.length > 0;
-  const selectedAgentLlmPresets = llmPresets.filter((preset) => selectedAgentApiPresetTypes.includes(preset.type));
-  const selectedAgentLlmPreset = selectedAgentLlmPresets.find((preset) => preset.id === selectedLlmPresetId) || null;
+  const selectedAgentLlmPresets = compatibleLlmPresetsForAgent(selectedAgent, llmPresets);
+  const selectedAgentLlmPreset = selectedAgentLlmPresets.find((preset) => preset.id === draft.llm_api_preset_id) || null;
+  const selectedAgentLlmEndpoints = selectedAgentLlmPreset
+    ? compatibleEndpointsForAgent(selectedAgent, selectedAgentLlmPreset)
+    : [];
+  const selectedAgentLlmEndpoint = preferredCompatibleEndpoint(
+    selectedAgent,
+    selectedAgentLlmPreset,
+    draft.llm_endpoint_id
+  );
+  const compatibleSelectedEndpointAgents = compatibleAgentsForEndpoint(sortedAgents, selectedEndpoint);
   const selectedAgentLlmPresetIcon = selectedAgentLlmPreset
     ? apiPresetIconForPreset(selectedAgentLlmPreset, apiPresetResolvedLogo(apiPresetLogoUrls, selectedAgentLlmPreset))
     : null;
@@ -2036,7 +2062,21 @@ function WorkbenchSettingsCenter({
     : -1;
   const agentPickerChoices = workbenchAgentPickerChoices(sortedAgents, draft.selected_provider_id);
   const selectAgentProvider = (providerId: string): WorkbenchAgentSettings => {
-    const nextDraft = { ...draft, selected_provider_id: providerId };
+    const agent = selectedWorkbenchAgent(sortedAgents, providerId);
+    let nextDraft = { ...draft, selected_provider_id: providerId };
+    if (agent?.api_preset_types.length) {
+      const presets = compatibleLlmPresetsForAgent(agent, llmPresets);
+      const preset =
+        presets.find((item) => item.id === draft.llm_api_preset_id) ||
+        presets.find((item) => item.id === selectedLlmPresetId) ||
+        presets[0] ||
+        null;
+      const endpoint = preferredCompatibleEndpoint(agent, preset, draft.llm_endpoint_id);
+      if (preset && endpoint) {
+        nextDraft = agentSettingsWithLlmSelection(nextDraft, preset, endpoint);
+        setSelectedLlmPresetId(preset.id);
+      }
+    }
     setDraft(nextDraft);
     return nextDraft;
   };
@@ -2053,6 +2093,21 @@ function WorkbenchSettingsCenter({
     setApiPresetDialogMode("edit");
     setApiTemplateSearch("");
     return nextIndex;
+  };
+
+  const createLlmPresetDraft = () => {
+    const nextPreset = blankLlmPresetDraft(apiDrafts);
+    const endpoint = llmPresetEndpoints(nextPreset)[0];
+    const nextIndex = apiDrafts.length;
+    setApiDrafts((current) => [...current, nextPreset]);
+    setSelectedApiPresetIndex(nextIndex);
+    setSelectedLlmPresetId(nextPreset.id);
+    if (endpoint) {
+      setDraft((current) => agentSettingsWithLlmSelection(current, nextPreset, endpoint));
+    }
+    setNewApiPresetDraftIndex(nextIndex);
+    setSettingsCategory("llm");
+    setSettingsDetailTarget("llm");
   };
 
   const discardNewApiPresetDraft = () => {
@@ -2138,6 +2193,18 @@ function WorkbenchSettingsCenter({
   const openLlmSettings = (presetId: string) => {
     setSettingsCategory("llm");
     setSelectedLlmPresetId(presetId);
+    const presetIndex = apiDrafts.findIndex((preset) => preset.id === presetId);
+    if (presetIndex >= 0) {
+      const preset = apiDrafts[presetIndex];
+      const endpoint = selectedLlmEndpoint(
+        preset,
+        draft.llm_api_preset_id === preset.id ? draft.llm_endpoint_id : ""
+      );
+      setSelectedApiPresetIndex(presetIndex);
+      if (endpoint) {
+        setDraft((current) => agentSettingsWithLlmSelection(current, preset, endpoint));
+      }
+    }
     setSettingsDetailTarget("llm");
   };
 
@@ -2185,14 +2252,7 @@ function WorkbenchSettingsCenter({
         return;
       }
       if (action.mode === "create_llm_api") {
-        createApiPresetDraft({
-          id: uniqueApiPresetId(apiDrafts, "llm_api"),
-          label: "LLM API",
-          type: "llm_responses",
-          model: "gpt-5"
-        });
-        setSettingsCategory("api");
-        setSettingsDetailTarget("api");
+        createLlmPresetDraft();
         return;
       }
       setSettingsCategory("api");
@@ -2223,24 +2283,30 @@ function WorkbenchSettingsCenter({
         ...sourceDraft,
         llm_extra_body: parseWorkbenchAgentJsonObject(llmExtraBodyText, "LLM extra body")
       });
-      const sourceAgent = selectedWorkbenchAgent(sortedAgents, sourceDraft.selected_provider_id);
-      const sourceAgentApiPresetTypes = sourceAgent?.api_preset_types || [];
-      const compatibleAgentPreset = llmPresets.find(
-        (preset) => preset.id === selectedLlmPresetId && sourceAgentApiPresetTypes.includes(preset.type)
-      );
-      const effectiveLlmPreset = sourceAgentApiPresetTypes.length > 0 ? compatibleAgentPreset : selectedLlmPreset;
-      if (effectiveLlmPreset) {
-        agentPayload.llm_api_preset_id = effectiveLlmPreset.id;
-        agentPayload.llm_model = effectiveLlmPreset.model;
-        agentPayload.llm_base_url = effectiveLlmPreset.base_url;
-        agentPayload.llm_api_key = effectiveLlmPreset.api_key;
-        agentPayload.llm_api_key_env = effectiveLlmPreset.api_key_env;
-        agentPayload.llm_wire_api = llmWireApiForPreset(effectiveLlmPreset);
-      }
-      if (sourceAgentApiPresetTypes.length > 0 && !compatibleAgentPreset) {
-        throw new Error(`${sourceAgent?.label || sourceDraft.selected_provider_id} 需要选择兼容的 LLM API 预设`);
-      }
       const normalizedApiDrafts = normalizeApiPresetDrafts(apiDrafts);
+      const sourceAgent = selectedWorkbenchAgent(sortedAgents, sourceDraft.selected_provider_id);
+      const normalizedLlmPresets = normalizedApiDrafts.filter(isLlmApiPreset);
+      const chosenPreset = normalizedLlmPresets.find((preset) => preset.id === sourceDraft.llm_api_preset_id) || null;
+      const sourceAgentUsesPreset = Boolean(sourceAgent?.api_preset_types.length);
+      const effectiveEndpoint = sourceAgentUsesPreset
+        ? preferredCompatibleEndpoint(sourceAgent, chosenPreset, sourceDraft.llm_endpoint_id)
+        : selectedLlmEndpoint(chosenPreset, sourceDraft.llm_endpoint_id);
+      if (chosenPreset && effectiveEndpoint) {
+        Object.assign(agentPayload, agentSettingsWithLlmSelection(agentPayload, chosenPreset, effectiveEndpoint));
+      } else if (!sourceAgentUsesPreset) {
+        Object.assign(agentPayload, {
+          llm_api_preset_id: "",
+          llm_endpoint_id: "",
+          llm_model: "",
+          llm_base_url: "",
+          llm_api_key: "",
+          llm_api_key_env: "",
+          llm_wire_api: "chat_completions"
+        });
+      }
+      if (sourceAgentUsesPreset && (!chosenPreset || !effectiveEndpoint)) {
+        throw new Error(`${sourceAgent?.label || sourceDraft.selected_provider_id} 需要选择兼容的 LLM 预设和 Endpoint`);
+      }
       const nextApiResponse = await saveApiPresets(normalizedApiDrafts);
       const [nextProcessorResponse, nextResponse] = await Promise.all([
         saveProcessorSettings(processorDrafts),
@@ -2511,6 +2577,7 @@ function WorkbenchSettingsCenter({
                       {llmPresets.length === 0 && <div className="agent-settings-empty">未发现 LLM API 预设</div>}
                       {llmPresets.map((preset) => {
                         const presetIcon = apiPresetIconForPreset(preset, apiPresetResolvedLogo(apiPresetLogoUrls, preset));
+                        const endpoints = llmPresetEndpoints(preset);
                         return (
                           <article
                             key={preset.id}
@@ -2526,17 +2593,17 @@ function WorkbenchSettingsCenter({
                               </span>
                               <div>
                                 <strong>{preset.label || preset.id}</strong>
-                                <span>{preset.type === "llm_responses" ? "Responses" : "Chat Completions"}</span>
+                                <span>{endpoints.length} Endpoints</span>
                               </div>
                             </div>
                             <dl className="settings-model-meta">
                               <div>
                                 <dt>模型</dt>
-                                <dd>{preset.model || "未设置"}</dd>
+                                <dd>{endpoints.map((endpoint) => endpoint.model).join(" · ") || "未设置"}</dd>
                               </div>
                               <div>
-                                <dt>Base URL</dt>
-                                <dd>{preset.base_url || "未设置"}</dd>
+                                <dt>协议</dt>
+                                <dd>{endpoints.map((endpoint) => llmEndpointProtocolLabel(endpoint.type)).join(" · ") || "未设置"}</dd>
                               </div>
                             </dl>
                             <button type="button" className="settings-model-action" onClick={() => openLlmSettings(preset.id)}>
@@ -2545,6 +2612,11 @@ function WorkbenchSettingsCenter({
                           </article>
                         );
                       })}
+                      <button type="button" className="settings-model-card settings-model-card-add" onClick={createLlmPresetDraft}>
+                        <span className="settings-model-add-icon" aria-hidden="true">+</span>
+                        <strong>新建 LLM 预设</strong>
+                        <span>添加一个或多个 API Endpoint</span>
+                      </button>
                     </div>
                   )}
                   {settingsCategory === "imagegen" && (
@@ -2709,7 +2781,10 @@ function WorkbenchSettingsCenter({
                                   if (!agent.selected) {
                                     const hasCompatiblePreset = llmPresets.some(
                                       (preset) =>
-                                        preset.id === selectedLlmPresetId && agent.api_preset_types.includes(preset.type)
+                                        preset.id === nextDraft.llm_api_preset_id &&
+                                        compatibleEndpointsForAgent(agent, preset).some(
+                                          (endpoint) => endpoint.id === nextDraft.llm_endpoint_id
+                                        )
                                     );
                                     if (agent.api_preset_types.length > 0 && !hasCompatiblePreset) {
                                       openAgentSettings(agent.provider_id);
@@ -2837,7 +2912,8 @@ function WorkbenchSettingsCenter({
                           setSelectedLlmPresetId((current) => (current === removeId ? "" : current));
                           setDraft((current) => ({
                             ...current,
-                            llm_api_preset_id: current.llm_api_preset_id === removeId ? "" : current.llm_api_preset_id
+                            llm_api_preset_id: current.llm_api_preset_id === removeId ? "" : current.llm_api_preset_id,
+                            llm_endpoint_id: current.llm_api_preset_id === removeId ? "" : current.llm_endpoint_id
                           }));
                           setProcessorDrafts((current) => retargetProcessorApiPresetDrafts(current, removeId, ""));
                         }}
@@ -2880,52 +2956,48 @@ function WorkbenchSettingsCenter({
                         <span>类型</span>
                         <select
                           value={selectedApiPreset.type}
-                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { type: event.target.value })}
+                          onChange={(event) =>
+                            updateApiPresetTypeDraft(
+                              setApiDrafts,
+                              selectedApiPresetIndex,
+                              event.target.value,
+                              endpointTypes
+                            )
+                          }
                         >
                           {presetTypes.map((type) => (
                             <option key={type} value={type}>{type}</option>
                           ))}
                         </select>
                       </label>
-                      <label className="settings-field">
-                        <span>Base URL</span>
-                        <input
-                          value={selectedApiPreset.base_url}
-                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { base_url: event.target.value })}
-                          placeholder="https://api.openai.com"
-                          autoComplete="off"
+                      {selectedApiPreset.type === "llm" ? (
+                        <LlmPresetEndpointsEditor
+                          preset={selectedApiPreset}
+                          endpointTypes={endpointTypes}
+                          onChangeEndpoint={(endpointIndex, patch) => {
+                            const previousEndpointId = llmPresetEndpoints(selectedApiPreset)[endpointIndex]?.id || "";
+                            updateApiPresetEndpointDraft(setApiDrafts, selectedApiPresetIndex, endpointIndex, patch);
+                            if (patch.id && draft.llm_api_preset_id === selectedApiPreset.id && draft.llm_endpoint_id === previousEndpointId) {
+                              setDraft((current) => ({ ...current, llm_endpoint_id: patch.id || current.llm_endpoint_id }));
+                            }
+                          }}
+                          onAddEndpoint={() => addApiPresetEndpointDraft(setApiDrafts, selectedApiPresetIndex)}
+                          onRemoveEndpoint={(endpointIndex) => {
+                            const endpoints = llmPresetEndpoints(selectedApiPreset);
+                            const removedEndpoint = endpoints[endpointIndex];
+                            removeApiPresetEndpointDraft(setApiDrafts, selectedApiPresetIndex, endpointIndex);
+                            if (removedEndpoint && draft.llm_api_preset_id === selectedApiPreset.id && draft.llm_endpoint_id === removedEndpoint.id) {
+                              const fallback = endpoints.find((_, index) => index !== endpointIndex);
+                              setDraft((current) => fallback ? agentSettingsWithLlmSelection(current, selectedApiPreset, fallback) : current);
+                            }
+                          }}
                         />
-                      </label>
-                      <label className="settings-field">
-                        <span>模型</span>
-                        <input
-                          value={selectedApiPreset.model}
-                          onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { model: event.target.value })}
-                          placeholder={selectedApiPreset.type === "images_api" ? "gpt-image-2" : "model name"}
-                          autoComplete="off"
+                      ) : (
+                        <ApiPresetConnectionFields
+                          preset={selectedApiPreset}
+                          onChange={(patch) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, patch)}
                         />
-                      </label>
-                      <div className="settings-form-row">
-                        <label className="settings-field">
-                          <span>API Key Env</span>
-                          <input
-                            value={selectedApiPreset.api_key_env}
-                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { api_key_env: event.target.value })}
-                            placeholder="OPENAI_API_KEY"
-                            autoComplete="off"
-                          />
-                        </label>
-                        <label className="settings-field">
-                          <span>API Key</span>
-                          <input
-                            type="password"
-                            value={selectedApiPreset.api_key}
-                            onChange={(event) => updateApiPresetDraft(setApiDrafts, selectedApiPresetIndex, { api_key: event.target.value })}
-                            placeholder="保存到本机 workspace"
-                            autoComplete="off"
-                          />
-                        </label>
-                      </div>
+                      )}
                     </>
                     ) : (
                     <EmptyState label="选择或新建一个 API 预设" />
@@ -2946,19 +3018,46 @@ function WorkbenchSettingsCenter({
                   {selectedAgentUsesApiPreset ? (
                     <>
                       <label className="settings-field">
-                        <span>API 预设</span>
+                        <span>LLM 预设</span>
                         <select
-                          value={selectedLlmPresetId}
-                          onChange={(event) => setSelectedLlmPresetId(event.target.value)}
+                          value={selectedAgentLlmPreset?.id || ""}
+                          onChange={(event) => {
+                            const preset = selectedAgentLlmPresets.find((item) => item.id === event.target.value) || null;
+                            const endpoint = preferredCompatibleEndpoint(selectedAgent, preset, draft.llm_endpoint_id);
+                            setSelectedLlmPresetId(event.target.value);
+                            if (preset && endpoint) {
+                              setDraft((current) => agentSettingsWithLlmSelection(current, preset, endpoint));
+                            }
+                          }}
                         >
                           <option value="">未选择</option>
                           {selectedAgentLlmPresets.map((preset) => (
                             <option key={preset.id} value={preset.id}>
-                              {preset.label || preset.id} · {preset.model}
+                              {preset.label || preset.id}
                             </option>
                           ))}
                         </select>
                       </label>
+                      {selectedAgentLlmPreset && (
+                        <label className="settings-field">
+                          <span>Endpoint</span>
+                          <select
+                            value={selectedAgentLlmEndpoint?.id || ""}
+                            onChange={(event) => {
+                              const endpoint = selectedAgentLlmEndpoints.find((item) => item.id === event.target.value);
+                              if (endpoint) {
+                                setDraft((current) => agentSettingsWithLlmSelection(current, selectedAgentLlmPreset, endpoint));
+                              }
+                            }}
+                          >
+                            {selectedAgentLlmEndpoints.map((endpoint) => (
+                              <option key={endpoint.id} value={endpoint.id}>
+                                {endpoint.label} · {endpoint.model}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       {selectedAgentLlmPresets.length === 0 && (
                         <div className="agent-settings-empty">
                           请先在 API 预设里新建 {selectedAgentApiPresetTypes.join(" / ")} 预设
@@ -2974,9 +3073,9 @@ function WorkbenchSettingsCenter({
                             <PresetIconImage icon={selectedAgentLlmPresetIcon} fallback={<SettingsNavIcon icon="llm" />} />
                           </span>
                           <div>
-                            <span>{llmPresetProtocolLabel(selectedAgentLlmPreset)}</span>
+                            <span>{selectedAgentLlmEndpoint ? llmEndpointProtocolLabel(selectedAgentLlmEndpoint.type) : "Endpoint"}</span>
                             <strong>{selectedAgentLlmPreset.label || selectedAgentLlmPreset.id}</strong>
-                            <em>{selectedAgentLlmPreset.model}</em>
+                            <em>{selectedAgentLlmEndpoint?.model || "未选择 Endpoint"}</em>
                           </div>
                           {selectedAgentLlmPresetIndex >= 0 && (
                             <button type="button" className="settings-model-action" onClick={() => openApiPresetSettings(selectedAgentLlmPresetIndex)}>
@@ -3043,53 +3142,138 @@ function WorkbenchSettingsCenter({
               {settingsCategory === "llm" && (
                 <div className="agent-settings-section">
                   <div className="agent-settings-section-title">
-                    <span>LLM</span>
+                    <span>LLM 预设</span>
+                    {selectedLlmPreset && (
+                      <button type="button" className="link-button" onClick={createLlmPresetDraft}>
+                        新建
+                      </button>
+                    )}
                   </div>
                   <label className="settings-field">
-                    <span>默认 LLM API 预设</span>
+                    <span>预设</span>
                     <select
                       value={selectedLlmPresetId}
-                      onChange={(event) => setSelectedLlmPresetId(event.target.value)}
+                      onChange={(event) => openLlmSettings(event.target.value)}
                     >
                       <option value="">未选择</option>
                       {llmPresets.map((preset) => (
                         <option key={preset.id} value={preset.id}>
-                          {preset.label || preset.id} · {preset.model}
+                          {preset.label || preset.id} · {llmPresetEndpoints(preset).length} endpoints
                         </option>
                       ))}
                     </select>
                   </label>
                   {selectedLlmPreset && (
-                    <div className="settings-summary-row settings-llm-summary">
-                      <span
-                        className={`settings-summary-logo${selectedLlmPresetIcon ? " settings-provider-logo-mini" : ""}`}
-                        style={selectedLlmPresetIcon ? ({ "--provider-color": selectedLlmPresetIcon.accent_color } as CSSProperties) : undefined}
-                        aria-hidden="true"
-                      >
-                        <PresetIconImage icon={selectedLlmPresetIcon} fallback={<SettingsNavIcon icon="llm" />} />
-                      </span>
-                      <div>
-                        <span>{selectedLlmPreset.type}</span>
-                        <strong>{selectedLlmPreset.base_url}</strong>
-                        <em>{selectedLlmPreset.model}</em>
+                    <>
+                      <div className="settings-summary-row settings-llm-summary">
+                        <span
+                          className={`settings-summary-logo${selectedLlmPresetIcon ? " settings-provider-logo-mini" : ""}`}
+                          style={selectedLlmPresetIcon ? ({ "--provider-color": selectedLlmPresetIcon.accent_color } as CSSProperties) : undefined}
+                          aria-hidden="true"
+                        >
+                          <PresetIconImage icon={selectedLlmPresetIcon} fallback={<SettingsNavIcon icon="llm" />} />
+                        </span>
+                        <div>
+                          <span>{llmPresetEndpoints(selectedLlmPreset).length} Endpoints</span>
+                          <strong>{selectedLlmPreset.label || selectedLlmPreset.id}</strong>
+                          <em>{llmPresetEndpoints(selectedLlmPreset).map((endpoint) => llmEndpointProtocolLabel(endpoint.type)).join(" · ")}</em>
+                        </div>
                       </div>
-                    </div>
+                      <div className="settings-form-row">
+                        <label className="settings-field">
+                          <span>ID</span>
+                          <input
+                            value={selectedLlmPreset.id}
+                            onChange={(event) => {
+                              const previousId = selectedLlmPreset.id;
+                              const nextId = event.target.value;
+                              updateApiPresetDraft(setApiDrafts, selectedLlmPresetIndex, { id: nextId });
+                              setSelectedLlmPresetId(nextId);
+                              setDraft((current) => ({
+                                ...current,
+                                llm_api_preset_id: current.llm_api_preset_id === previousId ? nextId : current.llm_api_preset_id
+                              }));
+                            }}
+                            autoComplete="off"
+                          />
+                        </label>
+                        <label className="settings-field">
+                          <span>名称</span>
+                          <input
+                            value={selectedLlmPreset.label}
+                            onChange={(event) =>
+                              updateApiPresetDraft(setApiDrafts, selectedLlmPresetIndex, { label: event.target.value })
+                            }
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+                      <LlmPresetEndpointsEditor
+                        preset={selectedLlmPreset}
+                        endpointTypes={endpointTypes}
+                        onChangeEndpoint={(endpointIndex, patch) => {
+                          const previousEndpointId = llmPresetEndpoints(selectedLlmPreset)[endpointIndex]?.id || "";
+                          updateApiPresetEndpointDraft(setApiDrafts, selectedLlmPresetIndex, endpointIndex, patch);
+                          if (patch.id && draft.llm_api_preset_id === selectedLlmPreset.id && draft.llm_endpoint_id === previousEndpointId) {
+                            setDraft((current) => ({ ...current, llm_endpoint_id: patch.id || current.llm_endpoint_id }));
+                          }
+                        }}
+                        onAddEndpoint={() => addApiPresetEndpointDraft(setApiDrafts, selectedLlmPresetIndex)}
+                        onRemoveEndpoint={(endpointIndex) => {
+                          const endpoints = llmPresetEndpoints(selectedLlmPreset);
+                          const removedEndpoint = endpoints[endpointIndex];
+                          removeApiPresetEndpointDraft(setApiDrafts, selectedLlmPresetIndex, endpointIndex);
+                          if (removedEndpoint && draft.llm_api_preset_id === selectedLlmPreset.id && draft.llm_endpoint_id === removedEndpoint.id) {
+                            const fallback = endpoints.find((_, index) => index !== endpointIndex);
+                            setDraft((current) => fallback ? agentSettingsWithLlmSelection(current, selectedLlmPreset, fallback) : current);
+                          }
+                        }}
+                      />
+                      <div className="agent-settings-section-title settings-subsection-title">
+                        <span>运行组合</span>
+                      </div>
+                      <label className="settings-field">
+                        <span>Endpoint</span>
+                        <select
+                          value={selectedEndpoint?.id || ""}
+                          onChange={(event) => {
+                            const endpoint = llmPresetEndpoints(selectedLlmPreset).find((item) => item.id === event.target.value);
+                            if (endpoint) {
+                              setDraft((current) => agentSettingsWithLlmSelection(current, selectedLlmPreset, endpoint));
+                            }
+                          }}
+                        >
+                          {llmPresetEndpoints(selectedLlmPreset).map((endpoint) => (
+                            <option key={endpoint.id} value={endpoint.id}>
+                              {endpoint.label} · {endpoint.model}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>兼容 Harness</span>
+                        <select
+                          value={compatibleSelectedEndpointAgents.some((agent) => agent.provider_id === draft.selected_provider_id) ? draft.selected_provider_id : ""}
+                          onChange={(event) => {
+                            if (!event.target.value || !selectedEndpoint) return;
+                            setDraft((current) => ({
+                              ...agentSettingsWithLlmSelection(current, selectedLlmPreset, selectedEndpoint),
+                              selected_provider_id: event.target.value
+                            }));
+                            setSelectedAgentConfigProviderId(event.target.value);
+                          }}
+                        >
+                          <option value="">未选择</option>
+                          {compatibleSelectedEndpointAgents.map((agent) => (
+                            <option key={agent.provider_id} value={agent.provider_id}>{agent.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {compatibleSelectedEndpointAgents.length === 0 && (
+                        <div className="agent-settings-empty">当前 Endpoint 没有已安装且兼容的 Harness</div>
+                      )}
+                    </>
                   )}
-                  <label className="settings-field">
-                    <span>API 格式</span>
-                    <select
-                      value={draft.llm_wire_api}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          llm_wire_api: event.target.value === "responses" ? "responses" : "chat_completions"
-                        }))
-                      }
-                    >
-                      <option value="chat_completions">Chat Completions</option>
-                      <option value="responses">Responses</option>
-                    </select>
-                  </label>
                   <label className="settings-field">
                     <span>Extra Body</span>
                     <textarea
@@ -3577,7 +3761,8 @@ function apiPresetsWithImageGenMigration(presets: ApiPreset[], connection: Image
       base_url,
       model: connection.model.trim(),
       api_key_env: connection.apiKey.trim() ? "" : "OPENAI_API_KEY",
-      api_key: connection.apiKey.trim()
+      api_key: connection.apiKey.trim(),
+      endpoints: []
     }
   ];
 }
@@ -3594,26 +3779,51 @@ function matchingLlmPresetId(presets: ApiPreset[], settings: WorkbenchAgentSetti
   const match = presets.find(
     (preset) =>
       isLlmApiPreset(preset) &&
-      preset.base_url.trim().replace(/\/+$/, "") === llmBaseUrl &&
-      preset.model.trim() === llmModel
+      llmPresetEndpoints(preset).some(
+        (endpoint) =>
+          endpoint.base_url.trim().replace(/\/+$/, "") === llmBaseUrl &&
+          endpoint.model.trim() === llmModel
+      )
   );
   return match?.id || "";
 }
 
-function isLlmApiPreset(preset: ApiPreset): boolean {
-  return ["llm_chat_completions", "llm_responses", "llm_anthropic"].includes(preset.type);
-}
-
 function normalizeApiPresetDrafts(presets: ApiPreset[]): ApiPreset[] {
-  return presets.map((preset) => ({
-    id: preset.id.trim(),
-    label: preset.label.trim() || preset.id.trim(),
-    type: preset.type.trim(),
-    base_url: preset.base_url.trim().replace(/\/+$/, ""),
-    model: preset.model.trim(),
-    api_key_env: preset.api_key_env.trim(),
-    api_key: preset.api_key.trim()
-  }));
+  return presets.map((preset) => {
+    const id = preset.id.trim();
+    if (isLlmApiPreset(preset)) {
+      const endpoints = llmPresetEndpoints(preset).map((endpoint) => ({
+        id: endpoint.id.trim(),
+        label: endpoint.label.trim() || endpoint.id.trim(),
+        type: endpoint.type,
+        base_url: endpoint.base_url.trim().replace(/\/+$/, ""),
+        model: endpoint.model.trim(),
+        api_key_env: endpoint.api_key_env.trim(),
+        api_key: endpoint.api_key.trim()
+      }));
+      const primary = endpoints[0];
+      return {
+        id,
+        label: preset.label.trim() || id,
+        type: "llm",
+        base_url: primary?.base_url || "",
+        model: primary?.model || "",
+        api_key_env: primary?.api_key_env || "",
+        api_key: primary?.api_key || "",
+        endpoints
+      };
+    }
+    return {
+      id,
+      label: preset.label.trim() || id,
+      type: preset.type.trim(),
+      base_url: preset.base_url.trim().replace(/\/+$/, ""),
+      model: preset.model.trim(),
+      api_key_env: preset.api_key_env.trim(),
+      api_key: preset.api_key.trim(),
+      endpoints: []
+    };
+  });
 }
 
 function updateApiPresetDraft(
@@ -3622,6 +3832,212 @@ function updateApiPresetDraft(
   patch: Partial<ApiPreset>
 ): void {
   setter((current) => current.map((preset, index) => (index === presetIndex ? { ...preset, ...patch } : preset)));
+}
+
+function updateApiPresetTypeDraft(
+  setter: (updater: (current: ApiPreset[]) => ApiPreset[]) => void,
+  presetIndex: number,
+  type: string,
+  endpointTypes: string[]
+): void {
+  setter((current) => current.map((preset, index) => {
+    if (index !== presetIndex) return preset;
+    if (type === "llm") {
+      const existing = llmPresetEndpoints(preset);
+      const fallbackType = endpointTypes.includes("llm_chat_completions")
+        ? "llm_chat_completions"
+        : endpointTypes[0] || "llm_chat_completions";
+      const endpoints = existing.length > 0
+        ? existing
+        : [blankApiPresetEndpoint(preset, fallbackType, "chat_completions")];
+      return { ...preset, type: "llm", endpoints };
+    }
+    const primary = llmPresetEndpoints(preset)[0];
+    return {
+      ...preset,
+      type,
+      base_url: primary?.base_url || preset.base_url,
+      model: primary?.model || preset.model,
+      api_key_env: primary?.api_key_env || preset.api_key_env,
+      api_key: primary?.api_key || preset.api_key,
+      endpoints: []
+    };
+  }));
+}
+
+function updateApiPresetEndpointDraft(
+  setter: (updater: (current: ApiPreset[]) => ApiPreset[]) => void,
+  presetIndex: number,
+  endpointIndex: number,
+  patch: Partial<ApiPresetEndpoint>
+): void {
+  setter((current) => current.map((preset, index) => {
+    if (index !== presetIndex) return preset;
+    const endpoints = llmPresetEndpoints(preset).map((endpoint, currentEndpointIndex) =>
+      currentEndpointIndex === endpointIndex ? { ...endpoint, ...patch } : endpoint
+    );
+    return { ...preset, endpoints };
+  }));
+}
+
+function addApiPresetEndpointDraft(
+  setter: (updater: (current: ApiPreset[]) => ApiPreset[]) => void,
+  presetIndex: number
+): void {
+  setter((current) => current.map((preset, index) => {
+    if (index !== presetIndex) return preset;
+    const endpoints = llmPresetEndpoints(preset);
+    let suffix = endpoints.length + 1;
+    while (endpoints.some((endpoint) => endpoint.id === `endpoint_${suffix}`)) suffix += 1;
+    return {
+      ...preset,
+      endpoints: [...endpoints, blankApiPresetEndpoint(preset, "llm_chat_completions", `endpoint_${suffix}`)]
+    };
+  }));
+}
+
+function removeApiPresetEndpointDraft(
+  setter: (updater: (current: ApiPreset[]) => ApiPreset[]) => void,
+  presetIndex: number,
+  endpointIndex: number
+): void {
+  setter((current) => current.map((preset, index) => {
+    if (index !== presetIndex) return preset;
+    const endpoints = llmPresetEndpoints(preset);
+    if (endpoints.length <= 1) return preset;
+    return { ...preset, endpoints: endpoints.filter((_, index) => index !== endpointIndex) };
+  }));
+}
+
+function blankApiPresetEndpoint(
+  preset: ApiPreset,
+  type: string,
+  id: string
+): ApiPresetEndpoint {
+  const endpointType = type === "llm_anthropic" || type === "llm_responses"
+    ? type
+    : "llm_chat_completions";
+  return {
+    id,
+    label: llmEndpointProtocolLabel(endpointType),
+    type: endpointType,
+    base_url: preset.base_url,
+    model: preset.model,
+    api_key_env: preset.api_key_env,
+    api_key: preset.api_key
+  };
+}
+
+function ApiPresetConnectionFields({
+  preset,
+  onChange
+}: {
+  preset: ApiPreset;
+  onChange: (patch: Partial<ApiPreset>) => void;
+}) {
+  return (
+    <>
+      <label className="settings-field">
+        <span>Base URL</span>
+        <input value={preset.base_url} onChange={(event) => onChange({ base_url: event.target.value })} autoComplete="off" />
+      </label>
+      <label className="settings-field">
+        <span>模型</span>
+        <input value={preset.model} onChange={(event) => onChange({ model: event.target.value })} autoComplete="off" />
+      </label>
+      <div className="settings-form-row">
+        <label className="settings-field">
+          <span>API Key 环境变量</span>
+          <input value={preset.api_key_env} onChange={(event) => onChange({ api_key_env: event.target.value })} autoComplete="off" />
+        </label>
+        <label className="settings-field">
+          <span>API Key</span>
+          <input type="password" value={preset.api_key} onChange={(event) => onChange({ api_key: event.target.value })} autoComplete="new-password" />
+        </label>
+      </div>
+    </>
+  );
+}
+
+function LlmPresetEndpointsEditor({
+  preset,
+  endpointTypes,
+  onChangeEndpoint,
+  onAddEndpoint,
+  onRemoveEndpoint
+}: {
+  preset: ApiPreset;
+  endpointTypes: string[];
+  onChangeEndpoint: (endpointIndex: number, patch: Partial<ApiPresetEndpoint>) => void;
+  onAddEndpoint: () => void;
+  onRemoveEndpoint: (endpointIndex: number) => void;
+}) {
+  const endpoints = llmPresetEndpoints(preset);
+  return (
+    <div className="settings-endpoint-list">
+      <div className="settings-endpoint-list-heading">
+        <span>Endpoints</span>
+        <button type="button" className="link-button" onClick={onAddEndpoint}>添加 Endpoint</button>
+      </div>
+      {endpoints.map((endpoint, endpointIndex) => (
+        <section className="settings-endpoint-card" key={`${endpoint.id}-${endpointIndex}`}>
+          <div className="settings-endpoint-head">
+            <strong>{endpoint.label || endpoint.id || `Endpoint ${endpointIndex + 1}`}</strong>
+            <span>{llmEndpointProtocolLabel(endpoint.type)}</span>
+            <button
+              type="button"
+              className="link-button"
+              disabled={endpoints.length <= 1}
+              onClick={() => onRemoveEndpoint(endpointIndex)}
+            >
+              删除
+            </button>
+          </div>
+          <div className="settings-form-row">
+            <label className="settings-field">
+              <span>ID</span>
+              <input value={endpoint.id} onChange={(event) => onChangeEndpoint(endpointIndex, { id: event.target.value })} autoComplete="off" />
+            </label>
+            <label className="settings-field">
+              <span>名称</span>
+              <input value={endpoint.label} onChange={(event) => onChangeEndpoint(endpointIndex, { label: event.target.value })} autoComplete="off" />
+            </label>
+          </div>
+          <label className="settings-field">
+            <span>API 协议</span>
+            <select
+              value={endpoint.type}
+              onChange={(event) => onChangeEndpoint(endpointIndex, {
+                type: event.target.value as ApiPresetEndpoint["type"]
+              })}
+            >
+              {endpointTypes.map((type) => (
+                <option key={type} value={type}>{llmEndpointProtocolLabel(type)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-field">
+            <span>Base URL</span>
+            <input value={endpoint.base_url} onChange={(event) => onChangeEndpoint(endpointIndex, { base_url: event.target.value })} autoComplete="off" />
+          </label>
+          <label className="settings-field">
+            <span>模型</span>
+            <input value={endpoint.model} onChange={(event) => onChangeEndpoint(endpointIndex, { model: event.target.value })} autoComplete="off" />
+          </label>
+          <div className="settings-form-row">
+            <label className="settings-field">
+              <span>API Key 环境变量</span>
+              <input value={endpoint.api_key_env} onChange={(event) => onChangeEndpoint(endpointIndex, { api_key_env: event.target.value })} autoComplete="off" />
+            </label>
+            <label className="settings-field">
+              <span>API Key</span>
+              <input type="password" value={endpoint.api_key} onChange={(event) => onChangeEndpoint(endpointIndex, { api_key: event.target.value })} autoComplete="new-password" />
+            </label>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 function retargetProcessorApiPresetDrafts(
@@ -3745,6 +4161,7 @@ function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): Workben
     fast: Boolean(settings.fast),
     timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? Math.floor(timeout) : 0,
     llm_api_preset_id: (settings.llm_api_preset_id || "").trim(),
+    llm_endpoint_id: (settings.llm_endpoint_id || "").trim(),
     llm_model: (settings.llm_model || "").trim(),
     llm_base_url: (settings.llm_base_url || "").trim().replace(/\/+$/, ""),
     llm_api_key: (settings.llm_api_key || "").trim(),
@@ -3757,18 +4174,6 @@ function normalizeWorkbenchAgentDraft(settings: WorkbenchAgentSettings): Workben
           : "chat_completions",
     llm_extra_body: { ...llmExtraBody }
   };
-}
-
-function llmWireApiForPreset(preset: ApiPreset): WorkbenchAgentSettings["llm_wire_api"] {
-  if (preset.type === "llm_anthropic") return "anthropic";
-  if (preset.type === "llm_responses") return "responses";
-  return "chat_completions";
-}
-
-function llmPresetProtocolLabel(preset: ApiPreset): string {
-  if (preset.type === "llm_anthropic") return "Anthropic-compatible";
-  if (preset.type === "llm_responses") return "Responses";
-  return "Chat Completions";
 }
 
 function formatWorkbenchAgentJsonObject(value: Record<string, unknown>): string {
@@ -7310,8 +7715,22 @@ function NewBatchForm({
   const selectedCount = uploadFileRows.filter((row) => selectedUploadIds.has(row.id)).length;
   const allUploadsSelected = uploadFileRows.length > 0 && selectedCount === uploadFileRows.length;
   const selectedAgent = agentChoices.find((agent) => agent.provider_id === agentSettingsDraft.selected_provider_id) || null;
-  const llmPresets = apiPresets.filter((preset) => preset.type === "llm_chat_completions" || preset.type === "llm_responses");
-  const selectedLlmPreset = llmPresets.find((preset) => apiPresetMatchesLlmSettings(preset, agentSettingsDraft)) || null;
+  const llmPresets = apiPresets.filter((preset) => directLlmEndpoints(preset).length > 0);
+  const selectedLlmPreset = llmPresets.find((preset) => preset.id === agentSettingsDraft.llm_api_preset_id) || null;
+  const selectedDirectLlmEndpoints = selectedLlmPreset ? directLlmEndpoints(selectedLlmPreset) : [];
+  const selectedDirectLlmEndpoint = selectedDirectLlmEndpoints.find(
+    (endpoint) => endpoint.id === agentSettingsDraft.llm_endpoint_id
+  ) || selectedDirectLlmEndpoints[0] || null;
+  const selectedAgentLlmPresets = compatibleLlmPresetsForAgent(selectedAgent, apiPresets);
+  const selectedAgentLlmPreset = selectedAgentLlmPresets.find(
+    (preset) => preset.id === agentSettingsDraft.llm_api_preset_id
+  ) || null;
+  const selectedAgentLlmEndpoints = selectedAgentLlmPreset
+    ? compatibleEndpointsForAgent(selectedAgent, selectedAgentLlmPreset)
+    : [];
+  const selectedAgentLlmEndpoint = selectedAgentLlmEndpoints.find(
+    (endpoint) => endpoint.id === agentSettingsDraft.llm_endpoint_id
+  ) || selectedAgentLlmEndpoints[0] || null;
   const filteredAgentChoices = filterUploadAgents(agentChoices, agentSearch);
   const filteredLlmPresets = filterUploadLlmPresets(llmPresets, llmSearch);
   const llmThinking = llmThinkingEnabled(agentSettingsDraft.llm_extra_body);
@@ -7423,20 +7842,52 @@ function NewBatchForm({
   function chooseExecutionMode(mode: UploadEngineMode) {
     setSelectedExecutionMode(mode);
     if (mode === "llm" && !selectedLlmPreset && llmPresets[0]) {
-      setAgentSettingsDraft((current) => agentSettingsWithLlmPreset(current, llmPresets[0]));
+      const endpoint = directLlmEndpoints(llmPresets[0])[0];
+      if (endpoint) {
+        setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, llmPresets[0], endpoint));
+      }
     }
   }
 
   function chooseLlmPreset(preset: ApiPreset) {
+    const endpoint = directLlmEndpoints(preset).find(
+      (item) => item.id === agentSettingsDraft.llm_endpoint_id
+    ) || directLlmEndpoints(preset)[0];
+    if (!endpoint) return;
     setSelectedExecutionMode("llm");
-    setAgentSettingsDraft((current) => agentSettingsWithLlmPreset(current, preset));
+    setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, preset, endpoint));
+  }
+
+  function chooseUploadAgent(agent: WorkbenchAgentDiscovery) {
+    setAgentSettingsDraft((current) => {
+      const selected = apiPresets.find((preset) => preset.id === current.llm_api_preset_id) || null;
+      const preset = selected && compatibleEndpointsForAgent(agent, selected).length > 0
+        ? selected
+        : compatibleLlmPresetsForAgent(agent, apiPresets)[0] || null;
+      const endpoint = preferredCompatibleEndpoint(agent, preset, current.llm_endpoint_id);
+      if (!preset || !endpoint) {
+        return { ...current, selected_provider_id: agent.provider_id };
+      }
+      return {
+        ...agentSettingsWithLlmSelection(current, preset, endpoint),
+        selected_provider_id: agent.provider_id
+      };
+    });
   }
 
   async function confirmUpload() {
     if (!pendingUpload || submitting) return;
     const normalizedAgentSettings = normalizeWorkbenchAgentDraft(agentSettingsDraft);
-    if (selectedExecutionMode === "llm" && !normalizedAgentSettings.llm_model.trim()) {
-      setUploadError("LLM 模式需要填写模型。");
+    if (selectedExecutionMode === "llm" && (!selectedLlmPreset || !selectedDirectLlmEndpoint)) {
+      setUploadError("LLM 模式需要选择兼容的 LLM 预设和 Endpoint。");
+      return;
+    }
+    if (
+      selectedExecutionMode === "agent" &&
+      selectedAgent?.api_preset_types.length &&
+      (!selectedAgentLlmPreset || !selectedAgentLlmEndpoint)
+    ) {
+      setUploadError(`${selectedAgent.label} 需要选择兼容的 LLM 预设和 Endpoint。`);
       return;
     }
     try {
@@ -7638,7 +8089,7 @@ function NewBatchForm({
                             className={selected ? "upload-provider-card active" : "upload-provider-card"}
                             disabled={submitting}
                             aria-pressed={selected}
-                            onClick={() => setAgentSettingsDraft((current) => ({ ...current, selected_provider_id: agent.provider_id }))}
+                            onClick={() => chooseUploadAgent(agent)}
                           >
                             <span
                               className={`upload-engine-logo settings-provider-logo${agentIcon ? "" : " settings-provider-logo-custom"}`}
@@ -7657,16 +8108,60 @@ function NewBatchForm({
                       {filteredAgentChoices.length === 0 && <div className="upload-option-empty">暂无匹配 Agent</div>}
                     </div>
                     <div className="upload-runtime-options">
-                      <label className="settings-field upload-compact-field">
-                        <span>模型覆盖</span>
-                        <input
-                          value={agentSettingsDraft.model}
-                          disabled={submitting}
-                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, model: event.target.value }))}
-                          placeholder="留空使用所选 Agent 默认"
-                          autoComplete="off"
-                        />
-                      </label>
+                      {selectedAgent?.api_preset_types.length ? (
+                        <>
+                          <label className="settings-field upload-compact-field">
+                            <span>LLM 预设</span>
+                            <select
+                              value={selectedAgentLlmPreset?.id || ""}
+                              disabled={submitting}
+                              onChange={(event) => {
+                                const preset = selectedAgentLlmPresets.find((item) => item.id === event.target.value) || null;
+                                const endpoint = preferredCompatibleEndpoint(selectedAgent, preset, agentSettingsDraft.llm_endpoint_id);
+                                if (preset && endpoint) {
+                                  setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, preset, endpoint));
+                                }
+                              }}
+                            >
+                              <option value="">未选择</option>
+                              {selectedAgentLlmPresets.map((preset) => (
+                                <option key={preset.id} value={preset.id}>{preset.label || preset.id}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="settings-field upload-compact-field">
+                            <span>Endpoint</span>
+                            <select
+                              value={selectedAgentLlmEndpoint?.id || ""}
+                              disabled={submitting || !selectedAgentLlmPreset}
+                              onChange={(event) => {
+                                const endpoint = selectedAgentLlmEndpoints.find((item) => item.id === event.target.value);
+                                if (selectedAgentLlmPreset && endpoint) {
+                                  setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, selectedAgentLlmPreset, endpoint));
+                                }
+                              }}
+                            >
+                              <option value="">未选择</option>
+                              {selectedAgentLlmEndpoints.map((endpoint) => (
+                                <option key={endpoint.id} value={endpoint.id}>
+                                  {endpoint.label} · {endpoint.model}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </>
+                      ) : (
+                        <label className="settings-field upload-compact-field">
+                          <span>模型覆盖</span>
+                          <input
+                            value={agentSettingsDraft.model}
+                            disabled={submitting}
+                            onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, model: event.target.value }))}
+                            placeholder="留空使用所选 Agent 默认"
+                            autoComplete="off"
+                          />
+                        </label>
+                      )}
                       <label className="settings-field upload-compact-field">
                         <span>推理强度</span>
                         <select
@@ -7683,15 +8178,17 @@ function NewBatchForm({
                           <option value="xhigh">xhigh</option>
                         </select>
                       </label>
-                      <label className="settings-toggle-row">
-                        <input
-                          type="checkbox"
-                          checked={agentSettingsDraft.fast}
-                          disabled={submitting}
-                          onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, fast: event.target.checked }))}
-                        />
-                        <span>Fast 模式</span>
-                      </label>
+                      {!selectedAgent?.api_preset_types.length && (
+                        <label className="settings-toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={agentSettingsDraft.fast}
+                            disabled={submitting}
+                            onChange={(event) => setAgentSettingsDraft((current) => ({ ...current, fast: event.target.checked }))}
+                          />
+                          <span>Fast 模式</span>
+                        </label>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -7726,7 +8223,7 @@ function NewBatchForm({
                             </span>
                             <span className="upload-provider-copy">
                               <strong>{preset.label || preset.id}</strong>
-                              <em>{preset.model || preset.type}</em>
+                              <em>{directLlmEndpoints(preset).map((endpoint) => endpoint.model).join(" · ")}</em>
                             </span>
                           </button>
                         );
@@ -7734,6 +8231,26 @@ function NewBatchForm({
                       {filteredLlmPresets.length === 0 && <div className="upload-option-empty">暂无匹配 LLM 配置</div>}
                     </div>
                     <div className="upload-runtime-options">
+                      <label className="settings-field upload-compact-field">
+                        <span>Endpoint</span>
+                        <select
+                          value={selectedDirectLlmEndpoint?.id || ""}
+                          disabled={submitting || !selectedLlmPreset}
+                          onChange={(event) => {
+                            const endpoint = selectedDirectLlmEndpoints.find((item) => item.id === event.target.value);
+                            if (selectedLlmPreset && endpoint) {
+                              setAgentSettingsDraft((current) => agentSettingsWithLlmSelection(current, selectedLlmPreset, endpoint));
+                            }
+                          }}
+                        >
+                          <option value="">未选择</option>
+                          {selectedDirectLlmEndpoints.map((endpoint) => (
+                            <option key={endpoint.id} value={endpoint.id}>
+                              {endpoint.label} · {endpoint.model}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <label className="settings-field upload-compact-field">
                         <span>推理强度</span>
                         <select
@@ -7900,37 +8417,19 @@ function filterUploadLlmPresets(presets: ApiPreset[], query: string): ApiPreset[
       preset.id,
       preset.label,
       preset.type,
-      preset.base_url,
-      preset.model,
-      preset.api_key_env
+      ...llmPresetEndpoints(preset).flatMap((endpoint) => [
+        endpoint.id,
+        endpoint.label,
+        endpoint.type,
+        endpoint.base_url,
+        endpoint.model,
+        endpoint.api_key_env
+      ])
     ]
       .join(" ")
       .toLowerCase()
       .includes(needle)
   );
-}
-
-function apiPresetMatchesLlmSettings(preset: ApiPreset, settings: WorkbenchAgentSettings): boolean {
-  if (settings.llm_api_preset_id) {
-    return preset.id === settings.llm_api_preset_id;
-  }
-  return (
-    preset.model.trim() === settings.llm_model.trim() &&
-    preset.base_url.trim().replace(/\/+$/, "") === settings.llm_base_url.trim().replace(/\/+$/, "") &&
-    (preset.type === "llm_responses" ? "responses" : "chat_completions") === settings.llm_wire_api
-  );
-}
-
-function agentSettingsWithLlmPreset(settings: WorkbenchAgentSettings, preset: ApiPreset): WorkbenchAgentSettings {
-  return normalizeWorkbenchAgentDraft({
-    ...settings,
-    llm_api_preset_id: preset.id,
-    llm_model: preset.model,
-    llm_base_url: preset.base_url,
-    llm_api_key: preset.api_key,
-    llm_api_key_env: preset.api_key_env,
-    llm_wire_api: preset.type === "llm_responses" ? "responses" : "chat_completions"
-  });
 }
 
 function workflowTemplateSummary(template: WorkflowTemplate): string {

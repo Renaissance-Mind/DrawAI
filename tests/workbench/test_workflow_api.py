@@ -32,6 +32,43 @@ from drawai.workbench.store import WorkbenchStore
 from drawai.workflow.templates import load_workflow_template_by_id, user_workflow_template_path
 
 
+def _save_llm_preset(
+    client: TestClient,
+    *,
+    preset_id: str,
+    endpoint_id: str,
+    endpoint_type: str,
+    base_url: str,
+    model: str,
+    api_key_env: str = "OPENAI_API_KEY",
+    api_key: str = "",
+) -> None:
+    response = client.put(
+        "/api/workbench/api-presets",
+        json={
+            "presets": [
+                {
+                    "id": preset_id,
+                    "label": preset_id.replace("_", " ").title(),
+                    "type": "llm",
+                    "endpoints": [
+                        {
+                            "id": endpoint_id,
+                            "label": endpoint_id.replace("_", " ").title(),
+                            "type": endpoint_type,
+                            "base_url": base_url,
+                            "model": model,
+                            "api_key_env": api_key_env,
+                            "api_key": api_key,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_workbench_workflow_template_api_lists_and_copies_templates(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
@@ -221,9 +258,9 @@ def test_workbench_agent_settings_api_discovers_validates_and_saves_cli_provider
     assert settings["reasoning_effort"] == "high"
     assert settings["timeout_seconds"] == 3600
     assert "execution_mode" not in settings
-    assert settings["llm_model"] == "minimax/minimax-m3"
-    assert settings["llm_base_url"] == "https://openrouter.ai/api/v1"
-    assert settings["llm_api_key_env"] == "OPENROUTER_API_KEY"
+    assert settings["llm_model"] == ""
+    assert settings["llm_base_url"] == ""
+    assert settings["llm_api_key_env"] == "OPENAI_API_KEY"
     assert settings["llm_wire_api"] == "chat_completions"
     assert settings["llm_extra_body"] == {"reasoning": {"enabled": True}}
 
@@ -286,16 +323,22 @@ def test_workbench_agent_settings_api_uses_startup_agent_snapshot_until_refresh(
 
 def test_workbench_agent_settings_api_preserves_explicit_empty_llm_key_env(tmp_path: Path) -> None:
     client = _client(tmp_path)
+    _save_llm_preset(
+        client,
+        preset_id="ollama",
+        endpoint_id="chat_completions",
+        endpoint_type="llm_chat_completions",
+        base_url="http://localhost:11434/v1",
+        model="llama3.1",
+        api_key_env="",
+    )
 
     save_response = client.put(
         "/api/workbench/agent-settings?include_agents=false",
         json={
-            "selected_provider_id": "codex_cli",
-            "model": "gpt-5",
-            "llm_model": "llama3.1",
-            "llm_base_url": "http://localhost:11434/v1",
-            "llm_api_key_env": "",
-            "llm_wire_api": "chat_completions",
+            "selected_provider_id": "drawai_tool_agent",
+            "llm_api_preset_id": "ollama",
+            "llm_endpoint_id": "chat_completions",
         },
     )
 
@@ -316,23 +359,29 @@ def test_workbench_agent_settings_api_requires_api_preset_for_builtin_agent(tmp_
     )
 
     assert response.status_code == 400
-    assert "需要选择 API 预设" in response.json()["detail"]
+    assert "需要选择兼容的 LLM 预设和 Endpoint" in response.json()["detail"]
 
 
 def test_workbench_agent_settings_api_saves_claude_sdk_with_anthropic_preset(
     tmp_path: Path,
 ) -> None:
     client = _client(tmp_path)
+    _save_llm_preset(
+        client,
+        preset_id="kimi_coding",
+        endpoint_id="anthropic",
+        endpoint_type="llm_anthropic",
+        base_url="https://api.kimi.com/coding",
+        model="kimi-for-coding",
+        api_key_env="KIMI_API_KEY",
+    )
 
     response = client.put(
         "/api/workbench/agent-settings?include_agents=false",
         json={
             "selected_provider_id": "claude_agent_sdk",
             "llm_api_preset_id": "kimi_coding",
-            "llm_model": "kimi-for-coding",
-            "llm_base_url": "https://api.kimi.com/coding",
-            "llm_api_key_env": "KIMI_API_KEY",
-            "llm_wire_api": "anthropic",
+            "llm_endpoint_id": "anthropic",
             "reasoning_effort": "high",
         },
     )
@@ -341,23 +390,34 @@ def test_workbench_agent_settings_api_saves_claude_sdk_with_anthropic_preset(
     settings = response.json()["settings"]
     assert settings["selected_provider_id"] == "claude_agent_sdk"
     assert settings["llm_api_preset_id"] == "kimi_coding"
+    assert settings["llm_endpoint_id"] == "anthropic"
     assert settings["llm_wire_api"] == "anthropic"
+    persisted = json.loads((tmp_path / "workspace" / "settings" / "agent.json").read_text(encoding="utf-8"))
+    assert "llm_model" not in persisted
+    assert "llm_base_url" not in persisted
+    assert "llm_api_key" not in persisted
 
 
 def test_workbench_agent_settings_api_rejects_openai_preset_for_claude_sdk(
     tmp_path: Path,
 ) -> None:
     client = _client(tmp_path)
+    _save_llm_preset(
+        client,
+        preset_id="openrouter_chat",
+        endpoint_id="chat_completions",
+        endpoint_type="llm_chat_completions",
+        base_url="https://openrouter.ai/api/v1",
+        model="anthropic/claude-sonnet-4.5",
+        api_key_env="OPENROUTER_API_KEY",
+    )
 
     response = client.put(
         "/api/workbench/agent-settings?include_agents=false",
         json={
             "selected_provider_id": "claude_agent_sdk",
             "llm_api_preset_id": "openrouter_chat",
-            "llm_model": "anthropic/claude-sonnet-4.5",
-            "llm_base_url": "https://openrouter.ai/api/v1",
-            "llm_api_key_env": "OPENROUTER_API_KEY",
-            "llm_wire_api": "chat_completions",
+            "llm_endpoint_id": "chat_completions",
         },
     )
 
@@ -367,14 +427,30 @@ def test_workbench_agent_settings_api_rejects_openai_preset_for_claude_sdk(
 
 def test_workbench_agent_settings_api_reads_saved_builtin_agent(tmp_path: Path) -> None:
     settings_path = tmp_path / "workspace" / "settings" / "agent.json"
+    presets_path = tmp_path / "workspace" / "settings" / "api_presets.json"
     settings_path.parent.mkdir(parents=True)
+    presets_path.write_text(
+        json.dumps(
+            {
+                "presets": [
+                    {
+                        "id": "openrouter",
+                        "label": "OpenRouter",
+                        "type": "llm_chat_completions",
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "model": "qwen3.7-plus",
+                        "api_key_env": "OPENROUTER_API_KEY",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     settings_path.write_text(
         json.dumps(
             {
                 "selected_provider_id": "drawai_tool_agent",
                 "llm_api_preset_id": "openrouter",
-                "llm_model": "qwen3.7-plus",
-                "llm_base_url": "https://openrouter.ai/api/v1",
             }
         ),
         encoding="utf-8",
@@ -387,6 +463,8 @@ def test_workbench_agent_settings_api_reads_saved_builtin_agent(tmp_path: Path) 
     settings = response.json()["settings"]
     assert settings["selected_provider_id"] == "drawai_tool_agent"
     assert settings["llm_api_preset_id"] == "openrouter"
+    assert settings["llm_endpoint_id"] == "chat_completions"
+    assert settings["llm_model"] == "qwen3.7-plus"
 
 
 def test_workbench_api_presets_api_saves_and_validates_presets(tmp_path: Path) -> None:
@@ -395,10 +473,11 @@ def test_workbench_api_presets_api_saves_and_validates_presets(tmp_path: Path) -
     response = client.get("/api/workbench/api-presets")
 
     assert response.status_code == 200
-    assert response.json()["schema"] == "drawai.workbench.api_presets.v1"
+    assert response.json()["schema"] == "drawai.workbench.api_presets.v2"
     assert response.json()["presets"] == []
     assert "images_api" in response.json()["preset_types"]
-    assert "llm_anthropic" in response.json()["preset_types"]
+    assert "llm" in response.json()["preset_types"]
+    assert "llm_anthropic" in response.json()["endpoint_types"]
 
     save_response = client.put(
         "/api/workbench/api-presets",
@@ -452,9 +531,52 @@ def test_workbench_api_presets_api_saves_keyless_local_presets(tmp_path: Path) -
     assert save_response.status_code == 200
     saved = save_response.json()["presets"][0]
     assert saved["id"] == "ollama"
-    assert saved["api_key_env"] == ""
-    assert saved["api_key"] == ""
+    assert saved["type"] == "llm"
+    assert saved["endpoints"][0]["id"] == "chat_completions"
+    assert saved["endpoints"][0]["api_key_env"] == ""
+    assert saved["endpoints"][0]["api_key"] == ""
     assert "logo_url" not in saved
+
+
+def test_workbench_api_presets_api_saves_multiple_llm_endpoints(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.put(
+        "/api/workbench/api-presets",
+        json={
+            "presets": [
+                {
+                    "id": "multi_route",
+                    "label": "Multi Route",
+                    "type": "llm",
+                    "endpoints": [
+                        {
+                            "id": "anthropic",
+                            "label": "Anthropic",
+                            "type": "llm_anthropic",
+                            "base_url": "https://gateway.example.com/anthropic",
+                            "model": "claude-compatible",
+                            "api_key_env": "GATEWAY_KEY",
+                        },
+                        {
+                            "id": "responses",
+                            "label": "Responses",
+                            "type": "llm_responses",
+                            "base_url": "https://gateway.example.com/v1",
+                            "model": "gpt-compatible",
+                            "api_key_env": "GATEWAY_KEY",
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["presets"][0]
+    assert saved["type"] == "llm"
+    assert [endpoint["id"] for endpoint in saved["endpoints"]] == ["anthropic", "responses"]
+    assert saved["base_url"] == "https://gateway.example.com/anthropic"
 
 
 def test_workbench_api_preset_logo_parser_uses_site_logo_for_api_subdomains() -> None:
@@ -1364,13 +1486,20 @@ def test_create_batch_applies_saved_workbench_llm_runtime_to_case_config(tmp_pat
     client = _client(tmp_path)
     source = tmp_path / "single.png"
     Image.new("RGB", (24, 24), "white").save(source)
+    _save_llm_preset(
+        client,
+        preset_id="openrouter",
+        endpoint_id="chat_completions",
+        endpoint_type="llm_chat_completions",
+        base_url="https://openrouter.ai/api/v1",
+        model="minimax/minimax-m3",
+        api_key_env="OPENROUTER_API_KEY",
+    )
     save_response = client.put(
         "/api/workbench/agent-settings",
         json={
-            "llm_model": "minimax/minimax-m3",
-            "llm_base_url": "https://openrouter.ai/api/v1",
-            "llm_api_key_env": "OPENROUTER_API_KEY",
-            "llm_wire_api": "chat_completions",
+            "llm_api_preset_id": "openrouter",
+            "llm_endpoint_id": "chat_completions",
             "reasoning_effort": "xhigh",
             "timeout_seconds": 900,
         },
@@ -1412,15 +1541,21 @@ def test_create_batch_applies_saved_builtin_agent_api_preset_to_case_config(tmp_
     client = _client(tmp_path)
     source = tmp_path / "single.png"
     Image.new("RGB", (24, 24), "white").save(source)
+    _save_llm_preset(
+        client,
+        preset_id="openrouter",
+        endpoint_id="chat_completions",
+        endpoint_type="llm_chat_completions",
+        base_url="https://openrouter.ai/api/v1",
+        model="minimax/minimax-m3",
+        api_key_env="OPENROUTER_API_KEY",
+    )
     save_response = client.put(
         "/api/workbench/agent-settings",
         json={
             "selected_provider_id": "drawai_tool_agent",
             "llm_api_preset_id": "openrouter",
-            "llm_model": "minimax/minimax-m3",
-            "llm_base_url": "https://openrouter.ai/api/v1",
-            "llm_api_key_env": "OPENROUTER_API_KEY",
-            "llm_wire_api": "chat_completions",
+            "llm_endpoint_id": "chat_completions",
             "llm_extra_body": {"reasoning": {"enabled": True}},
             "timeout_seconds": 900,
         },
@@ -1451,6 +1586,7 @@ def test_create_batch_applies_saved_builtin_agent_api_preset_to_case_config(tmp_
     assert payload["model_runtime"]["provider"] == "drawai_tool_agent"
     assert payload["model_runtime"]["connection_id"] == "drawai_tool_agent"
     assert payload["model_runtime"]["api_preset_id"] == "openrouter"
+    assert payload["model_runtime"]["api_endpoint_id"] == "chat_completions"
     assert payload["model_runtime"]["model_name"] == "minimax/minimax-m3"
     assert payload["model_runtime"]["base_url"] == "https://openrouter.ai/api/v1"
     assert payload["model_runtime"]["api_key_env"] == "OPENROUTER_API_KEY"

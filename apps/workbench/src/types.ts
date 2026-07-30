@@ -96,6 +96,7 @@ export interface WorkbenchAgentSettings {
   fast: boolean;
   timeout_seconds: number;
   llm_api_preset_id: string;
+  llm_endpoint_id: string;
   llm_model: string;
   llm_base_url: string;
   llm_api_key: string;
@@ -138,11 +139,23 @@ export interface ApiPreset {
   model: string;
   api_key_env: string;
   api_key: string;
+  endpoints: ApiPresetEndpoint[];
+}
+
+export interface ApiPresetEndpoint {
+  id: string;
+  label: string;
+  type: "llm_chat_completions" | "llm_responses" | "llm_anthropic";
+  base_url: string;
+  model: string;
+  api_key_env: string;
+  api_key: string;
 }
 
 export interface ApiPresetsResponse {
   schema: string;
   preset_types: string[];
+  endpoint_types: string[];
   presets: ApiPreset[];
 }
 

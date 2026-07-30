@@ -4848,6 +4848,60 @@ button.asset-status-unsupported {
   line-height: 1.5;
 }
 
+.settings-subsection-title {
+  margin-top: 4px;
+}
+
+.settings-endpoint-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-endpoint-list-heading,
+.settings-endpoint-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-endpoint-list-heading {
+  justify-content: space-between;
+  color: #344052;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.settings-endpoint-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dce3ed;
+  border-radius: 7px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.settings-endpoint-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172033;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-endpoint-head > span {
+  border-radius: 4px;
+  background: #e9eef7;
+  color: #526078;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-endpoint-head .link-button {
+  margin-left: auto;
+}
+
 .agent-validation-card {
   min-width: 0;
   border: 1px solid var(--line);

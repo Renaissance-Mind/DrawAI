@@ -2808,9 +2808,12 @@ def _workflow_node_api_preset_summaries(
         return []
     summaries: list[dict[str, str]] = []
     for preset in api_presets:
-        if preset.type not in {"llm_chat_completions", "llm_responses"}:
+        if preset.type != "llm":
             continue
-        if preset.base_url.strip().rstrip("/") == base_url and preset.model.strip() == model:
+        if any(
+            endpoint.base_url.strip().rstrip("/") == base_url and endpoint.model.strip() == model
+            for endpoint in preset.endpoints
+        ):
             summaries.append({"processing_type": "", "api_preset_id": preset.id, "api_preset_label": preset.label or preset.id})
     return summaries
 
@@ -4373,7 +4376,10 @@ def _batch_agent_settings(value: Any, workspace: str | Path):
     if not isinstance(payload, Mapping):
         raise HTTPException(status_code=400, detail="agent_settings must be a JSON object")
     try:
-        return normalize_workbench_agent_settings(payload)
+        return normalize_workbench_agent_settings(
+            payload,
+            api_presets=read_workbench_api_presets(workspace),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

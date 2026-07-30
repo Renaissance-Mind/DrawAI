@@ -67,13 +67,15 @@ test("settings Agent panel exposes provider-compatible API preset selectors", ()
 
   assert.match(presentationSource, /drawai_tool_agent:\s*\{[\s\S]*?icon_url:\s*"\/drawai_image\.png"/);
   assert.match(source, /const selectedAgentApiPresetTypes = selectedAgent\?\.api_preset_types \|\| \[\];/);
-  assert.match(source, /selectedAgentApiPresetTypes\.includes\(preset\.type\)/);
+  assert.match(source, /compatibleLlmPresetsForAgent\(selectedAgent, llmPresets\)/);
+  assert.match(source, /preferredCompatibleEndpoint\(/);
   assert.match(source, /agent\.api_preset_types\.length > 0 && !hasCompatiblePreset/);
-  assert.match(source, /function isLlmApiPreset\(preset: ApiPreset\): boolean \{[\s\S]*?"llm_anthropic"/);
-  assert.match(source, /<span>API 预设<\/span>[\s\S]*?value=\{selectedLlmPresetId\}/);
+  assert.match(source, /from "\.\/llmPresetCompatibility"/);
+  assert.match(source, /<span>LLM 预设<\/span>[\s\S]*?value=\{selectedAgentLlmPreset\?\.id \|\| ""\}/);
+  assert.match(source, /<span>Endpoint<\/span>/);
   assert.match(source, /<span>推理强度<\/span>[\s\S]*?value=\{draft\.reasoning_effort\}/);
   assert.match(source, /settingsCategory === "agent" && selectedAgent[\s\S]*?selected_provider_id: selectedAgent\.provider_id/);
-  assert.match(source, /需要选择兼容的 LLM API 预设/);
+  assert.match(source, /需要选择兼容的 LLM 预设和 Endpoint/);
   assert.match(source, /agentRuntimeLabel\(agent\)/);
   assert.match(css, /\.settings-llm-summary\s*\{[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;/);
   assert.match(css, /\.settings-model-action\s*\{[\s\S]*?white-space:\s*nowrap;/);

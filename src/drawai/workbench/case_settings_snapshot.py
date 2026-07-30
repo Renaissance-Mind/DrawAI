@@ -95,7 +95,11 @@ def read_case_settings_snapshot(run_root: str | Path) -> CaseSettingsSnapshot:
         raise ValueError(f"case settings snapshot is missing processor_settings: {path}")
     api_presets = normalize_workbench_api_presets(raw_api_presets)
     return CaseSettingsSnapshot(
-        agent_settings=normalize_workbench_agent_settings(raw_agent_settings, fallback_hidden_provider=True),
+        agent_settings=normalize_workbench_agent_settings(
+            raw_agent_settings,
+            fallback_hidden_provider=True,
+            api_presets=api_presets,
+        ),
         api_presets=api_presets,
         processor_settings=normalize_workbench_processor_settings(raw_processor_settings, api_presets=api_presets),
     )

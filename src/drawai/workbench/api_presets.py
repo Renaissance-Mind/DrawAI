@@ -10,13 +10,27 @@ import urllib.error
 import urllib.request
 
 
-API_PRESETS_SCHEMA = "drawai.workbench.api_presets.v1"
-SUPPORTED_API_PRESET_TYPES = (
-    "images_api",
+API_PRESETS_SCHEMA = "drawai.workbench.api_presets.v2"
+LLM_API_ENDPOINT_TYPES = (
     "llm_chat_completions",
     "llm_responses",
     "llm_anthropic",
 )
+SUPPORTED_API_PRESET_TYPES = ("images_api", "llm")
+
+
+@dataclass(frozen=True)
+class ApiPresetEndpoint:
+    id: str
+    label: str
+    type: str
+    base_url: str
+    model: str
+    api_key_env: str = ""
+    api_key: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -28,9 +42,21 @@ class ApiPreset:
     model: str
     api_key_env: str = ""
     api_key: str = ""
+    endpoints: tuple[ApiPresetEndpoint, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = {
+            "id": self.id,
+            "label": self.label,
+            "type": self.type,
+            "base_url": self.base_url,
+            "model": self.model,
+            "api_key_env": self.api_key_env,
+            "api_key": self.api_key,
+        }
+        if self.type == "llm":
+            payload["endpoints"] = [endpoint.to_dict() for endpoint in self.endpoints]
+        return payload
 
 
 def api_presets_path(workspace: str | Path) -> Path:
@@ -84,13 +110,62 @@ def api_preset_by_id(presets: Sequence[ApiPreset], preset_id: str) -> ApiPreset 
     return next((preset for preset in presets if preset.id == preset_id), None)
 
 
+def api_preset_endpoint_by_id(preset: ApiPreset, endpoint_id: str) -> ApiPresetEndpoint | None:
+    if preset.type != "llm":
+        return None
+    return next((endpoint for endpoint in preset.endpoints if endpoint.id == endpoint_id), None)
+
+
+def compatible_api_preset_endpoints(
+    preset: ApiPreset,
+    endpoint_types: Sequence[str],
+) -> tuple[ApiPresetEndpoint, ...]:
+    supported = set(endpoint_types)
+    return tuple(endpoint for endpoint in preset.endpoints if endpoint.type in supported)
+
+
+def llm_api_preset_endpoint_types(preset: ApiPreset) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(endpoint.type for endpoint in preset.endpoints))
+
+
 def _normalize_api_preset(item: Mapping[str, Any], index: int) -> ApiPreset:
     preset_id = _required_slug(item.get("id"), f"presets[{index}].id")
     preset_type = _required_string(item.get("type"), f"presets[{index}].type")
-    if preset_type not in SUPPORTED_API_PRESET_TYPES:
-        supported = ", ".join(SUPPORTED_API_PRESET_TYPES)
-        raise ValueError(f"unsupported API preset type: {preset_type!r}. Expected one of: {supported}")
     label = str(item.get("label") or preset_id).strip()
+    if preset_type in LLM_API_ENDPOINT_TYPES:
+        legacy_endpoint = {
+            **item,
+            "id": _endpoint_id_for_type(preset_type),
+            "label": _endpoint_label_for_type(preset_type),
+        }
+        endpoint = _normalize_api_preset_endpoint(
+            legacy_endpoint,
+            field_name=f"presets[{index}]",
+            fallback_id=_endpoint_id_for_type(preset_type),
+        )
+        return _llm_api_preset(preset_id, label, (endpoint,))
+    if preset_type == "llm":
+        raw_endpoints = item.get("endpoints")
+        if not isinstance(raw_endpoints, Sequence) or isinstance(raw_endpoints, str | bytes) or not raw_endpoints:
+            raise ValueError(f"presets[{index}].endpoints must be a non-empty array")
+        endpoints: list[ApiPresetEndpoint] = []
+        seen_endpoint_ids: set[str] = set()
+        for endpoint_index, endpoint_item in enumerate(raw_endpoints):
+            if not isinstance(endpoint_item, Mapping):
+                raise ValueError(f"presets[{index}].endpoints[{endpoint_index}] must be an object")
+            endpoint = _normalize_api_preset_endpoint(
+                endpoint_item,
+                field_name=f"presets[{index}].endpoints[{endpoint_index}]",
+                fallback_id=f"endpoint_{endpoint_index + 1}",
+            )
+            if endpoint.id in seen_endpoint_ids:
+                raise ValueError(f"duplicate endpoint id in API preset {preset_id}: {endpoint.id}")
+            seen_endpoint_ids.add(endpoint.id)
+            endpoints.append(endpoint)
+        return _llm_api_preset(preset_id, label, tuple(endpoints))
+    if preset_type != "images_api":
+        supported = ", ".join((*SUPPORTED_API_PRESET_TYPES, *LLM_API_ENDPOINT_TYPES))
+        raise ValueError(f"unsupported API preset type: {preset_type!r}. Expected one of: {supported}")
     base_url = _required_string(item.get("base_url"), f"presets[{index}].base_url").rstrip("/")
     model = _required_string(item.get("model"), f"presets[{index}].model")
     api_key_env = str(item.get("api_key_env") or "").strip()
@@ -106,10 +181,63 @@ def _normalize_api_preset(item: Mapping[str, Any], index: int) -> ApiPreset:
     )
 
 
+def _normalize_api_preset_endpoint(
+    item: Mapping[str, Any],
+    *,
+    field_name: str,
+    fallback_id: str,
+) -> ApiPresetEndpoint:
+    endpoint_type = _required_string(item.get("type"), f"{field_name}.type")
+    if endpoint_type not in LLM_API_ENDPOINT_TYPES:
+        supported = ", ".join(LLM_API_ENDPOINT_TYPES)
+        raise ValueError(f"unsupported LLM endpoint type: {endpoint_type!r}. Expected one of: {supported}")
+    endpoint_id = _required_slug(item.get("id") or fallback_id, f"{field_name}.id")
+    return ApiPresetEndpoint(
+        id=endpoint_id,
+        label=str(item.get("label") or _endpoint_label_for_type(endpoint_type)).strip(),
+        type=endpoint_type,
+        base_url=_required_string(item.get("base_url"), f"{field_name}.base_url").rstrip("/"),
+        model=_required_string(item.get("model"), f"{field_name}.model"),
+        api_key_env=str(item.get("api_key_env") or "").strip(),
+        api_key=str(item.get("api_key") or "").strip(),
+    )
+
+
+def _llm_api_preset(
+    preset_id: str,
+    label: str,
+    endpoints: tuple[ApiPresetEndpoint, ...],
+) -> ApiPreset:
+    primary = endpoints[0]
+    return ApiPreset(
+        id=preset_id,
+        label=label,
+        type="llm",
+        base_url=primary.base_url,
+        model=primary.model,
+        api_key_env=primary.api_key_env,
+        api_key=primary.api_key,
+        endpoints=endpoints,
+    )
+
+
+def _endpoint_id_for_type(endpoint_type: str) -> str:
+    return endpoint_type.removeprefix("llm_")
+
+
+def _endpoint_label_for_type(endpoint_type: str) -> str:
+    return {
+        "llm_anthropic": "Anthropic",
+        "llm_responses": "Responses",
+        "llm_chat_completions": "Chat Completions",
+    }[endpoint_type]
+
+
 def _api_presets_document(presets: Sequence[ApiPreset]) -> dict[str, Any]:
     return {
         "schema": API_PRESETS_SCHEMA,
         "preset_types": list(SUPPORTED_API_PRESET_TYPES),
+        "endpoint_types": list(LLM_API_ENDPOINT_TYPES),
         "presets": [preset.to_dict() for preset in presets],
     }
 
@@ -281,13 +409,18 @@ def _is_local_logo_host(hostname: str) -> bool:
 
 __all__ = [
     "API_PRESETS_SCHEMA",
+    "LLM_API_ENDPOINT_TYPES",
     "SUPPORTED_API_PRESET_TYPES",
     "ApiPreset",
+    "ApiPresetEndpoint",
+    "api_preset_endpoint_by_id",
     "api_preset_logo_page_urls",
     "api_preset_logo_url_from_html",
     "api_preset_by_id",
+    "compatible_api_preset_endpoints",
     "api_presets_path",
     "normalize_workbench_api_presets",
+    "llm_api_preset_endpoint_types",
     "read_workbench_api_presets",
     "workbench_api_presets_payload",
     "write_workbench_api_presets",

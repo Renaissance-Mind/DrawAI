@@ -122,7 +122,7 @@ def _runtime_group(runtime_services: Mapping[str, Any], issues: list[dict[str, A
 
 def _api_group(api_presets: Sequence[ApiPreset], api_error: str, issues: list[dict[str, Any]]) -> dict[str, Any]:
     images_presets = [preset for preset in api_presets if preset.type == "images_api"]
-    llm_presets = [preset for preset in api_presets if preset.type in {"llm_chat_completions", "llm_responses"}]
+    llm_presets = [preset for preset in api_presets if preset.type == "llm"]
     items = [
         _item("api.total", "API 预设", "ok" if api_presets else "warning", str(len(api_presets)), "workspace settings"),
         _item("api.images", "Images API", "ok" if images_presets else "warning", str(len(images_presets)), "图像生成/编辑模型"),
