@@ -19,19 +19,11 @@
 
 https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 
-<a id="roadmap"></a>
-## 🗺️ 规划
+<a id="news"></a>
+## 🔥 News
 
-为了开源版本的稳定性，DrawAI 暂时收起了一些仍在验证中的能力。它们会在跨平台测试、依赖整理和协议确认之后逐步测试并开放。
-
-- [x] 支持 Windows 系统（已支持原生部署，Mac 和 Linux 保持兼容）
-- [ ] 支持多边形和不规则 Mask
-- [x] 支持用 GPT-Image-2 重绘素材
-- [ ] 支持更复杂的生成模式（各种图像生成 Skill 等）
-- [ ] 支持以 Skills 方式使用
-- [x] 支持其他 Agent 和模型（已支持 `codex cli`、`claude`、`kimi-code`、`OpenClaw`、`Hermes`、`OpenHands ACP`）
-
-> 备注：由于目前删减了 Mask 和重绘能力，对于全图复杂背景的鲁棒性有下降，目前正在火速支持中。
+- **2026.08** — DrawAI 论文《DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable》已在 arXiv 上线，欢迎阅读。
+- **2026.08** — 新增 LLM API 支持，默认使用 Claude Code SDK 进行推理。
 
 <a id="quick-start"></a>
 ## ⚡ 快速上手

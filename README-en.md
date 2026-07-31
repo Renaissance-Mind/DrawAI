@@ -19,19 +19,11 @@ It decomposes input images into structure, text, and local assets, then generate
 
 https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 
-<a id="roadmap"></a>
-## 🗺️ Roadmap
+<a id="news"></a>
+## 🔥 News
 
-For open-source stability, DrawAI currently keeps some still-under-validation capabilities out of the public path. These features will be tested and opened progressively after cross-platform validation, dependency cleanup, and license review.
-
-- [x] Support Windows systems (native deployment is supported; macOS and Linux remain compatible)
-- [ ] Support polygon and irregular masks
-- [x] Support asset redrawing with GPT-Image-2
-- [ ] Support more complex generation modes, including image-generation skills
-- [ ] Support skill-based usage
-- [x] Support other agents and models (already supports `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`, and `OpenHands ACP`)
-
-> Note: Because mask and redraw capabilities are currently reduced in the open-source path, robustness on full-image complex backgrounds is lower than the internal target. Support is being added rapidly.
+- **2026.08** — Our paper, *DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable*, is now available on arXiv.
+- **2026.08** — Added support for LLM APIs, with Claude Code SDK as the default inference backend.
 
 <a id="quick-start"></a>
 ## ⚡ Quick Start
