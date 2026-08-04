@@ -4,7 +4,7 @@
   <a href="https://github.com/Renaissance-Mind/DrawAI-dev"><img alt="Repository" src="https://img.shields.io/badge/repo-DrawAI-111827"></a>
   <a href="https://drawai.renaissancemind.ai/demo"><img alt="Demo" src="https://img.shields.io/badge/demo-online-F59E0B"></a>
   <a href="https://drawai.renaissancemind.ai"><img alt="Website" src="https://img.shields.io/badge/website-DrawAI-0EA5E9"></a>
-  <img alt="arXiv" src="https://img.shields.io/badge/arXiv-TODO-DC2626">
+  <a href="https://arxiv.org/abs/2608.00548"><img alt="arXiv:2608.00548" src="https://img.shields.io/badge/arXiv-2608.00548-DC2626"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-2563EB">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-7C3AED">
   <a href="README.md">简体中文</a>
@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 <a id="news"></a>
 ## 🔥 News
 
-- **2026.08** — Our paper, *DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable*, is now available on arXiv.
+- **2026.08** — Our paper, [*DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable*](https://arxiv.org/abs/2608.00548), is now available on arXiv.
 - **2026.08** — Added support for LLM APIs, with Claude Code SDK as the default inference backend.
 
 <a id="quick-start"></a>
