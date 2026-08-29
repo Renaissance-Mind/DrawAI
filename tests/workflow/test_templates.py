@@ -329,7 +329,9 @@ def test_list_workflow_templates_includes_builtin_and_local_templates(tmp_path: 
     templates = list_workflow_templates(tmp_path)
     ids = [template.template_id for template in templates]
 
-    assert ids[0] == "default_drawai_dag"
+    assert ids[:2] == ["default_drawai_dag", "simple_drawai_dag"]
+    assert "image_to_pptx_zh" not in ids
+    assert "processor_test_page_spec_assets" not in ids
     assert copied.template_id in ids
 
 

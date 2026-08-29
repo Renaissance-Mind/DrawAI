@@ -555,8 +555,6 @@ def builtin_workflow_templates() -> tuple[WorkflowTemplate, ...]:
     return (
         default_drawai_workflow_template(),
         simple_drawai_workflow_template(),
-        image_to_pptx_zh_workflow_template(),
-        processor_test_page_spec_assets_workflow_template(),
     )
 
 
