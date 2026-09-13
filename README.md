@@ -7,6 +7,34 @@ Dataset: [caopu/DrawAI-Bench-Lite](https://huggingface.co/datasets/caopu/DrawAI-
 (private; access required). It contains 80 images across knowledge maps, posters,
 presentation slides, and scientific figures, together with element annotations.
 
+## Required Inputs
+
+**Provide the final SVG produced by the method you want to evaluate.** Each SVG
+must correspond to one of the dataset's 80 `bench_id` values. A complete run of
+one method/model setting contains 80 SVGs; a smaller completed subset is also
+supported and its coverage is reported.
+
+| File | Provided by | Used for |
+|---|---|---|
+| Original reference image | Downloaded dataset | Visual reconstruction target |
+| GT element annotation JSON | Downloaded dataset | Target object kinds, text, geometry, and positions |
+| Final candidate `.svg` | Your method's output | Reconstructed appearance and editable object structure |
+| `candidates.jsonl` | You | Associates each SVG with its `bench_id`, method, model, and completion status |
+| Candidate `rendered.png` | Generated automatically by the evaluator | Visual comparison with the reference image |
+
+The evaluator renders each candidate SVG with Chromium. Rule metrics compare
+the rendered pixels and parsed SVG objects against the reference and annotations.
+The Rubric judge reads the reference image, GT JSON, final SVG, and generated
+PNG. You do not need to supply candidate PNGs, run SAM/OCR, or provide generation
+logs or intermediate application files. Standard SVGs from other methods are
+accepted; DrawAI-specific element IDs are optional.
+
+The full 39-metric evaluator accepts SVG predictions. PNG/JPEG alone do not
+contain the object structure needed for editability metrics. PPTX, PDF, and
+DrawIO files are not parsed directly by this package; export them to SVG first.
+The scores then describe that exported SVG. Preserve editable text and vector
+objects during export, since a raster-only export loses that structure.
+
 ## Install
 
 Python 3.12 on Linux or macOS and a Chromium-based browser are required.
@@ -52,16 +80,32 @@ Dataset verification checks the original-image and annotation checksums.
 
 ## Predictions
 
-Create a JSON Lines manifest containing one row per prediction:
+For example, keep a completed SVG and its manifest together in this layout:
+
+```text
+candidates.jsonl
+predictions/
+  kmap_ai_013.svg
+```
+
+Create `candidates.jsonl` with one JSON object per line, one row per prediction:
 
 ```json
 {"bench_id":"knowledge_maps/ai_generated_50/kmap_ai_013","method":"my-method","model":"my-model","candidate_svg":"predictions/kmap_ai_013.svg","status":"completed"}
 ```
 
-`bench_id` must match the dataset manifest. `candidate_svg` is absolute or relative
-to the prediction manifest. `method` and `model` identify the comparison setting.
-Only rows explicitly marked `completed` are evaluated; leave unfinished rows
-with another status. Completed rows must point to valid final SVG files.
+| Field | Meaning |
+|---|---|
+| `bench_id` | Exact case identifier from the dataset's `manifest.json` |
+| `candidate_svg` | Final SVG path, absolute or relative to `candidates.jsonl` |
+| `method` | Label for your method; use a non-empty name without path separators |
+| `model` | Label for the generating model, also without path separators |
+| `status` | Set to `completed` only when the final SVG is ready; other states are skipped |
+
+`model` is a result-grouping label; it does not select the Rubric judge. The
+judge remains `gpt-5.6-sol`. SVG filenames are arbitrary because `bench_id`
+provides the association. Multiple settings can share a manifest, with one
+unique completed row per `(bench_id, method, model)`.
 
 Embed image/font resources in the SVG or keep local references resolvable from
 its directory. Remote resources must be embedded for reproducibility. The asset
