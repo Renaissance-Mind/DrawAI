@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drawai-evaluation"
+version = "1.0.0"
+description = "Standalone DrawAI-Bench reconstruction and editability evaluation"
+requires-python = ">=3.12"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+  "numpy==2.3.5",
+  "opencv-python-headless==4.13.0.92",
+  "Pillow==11.3.0",
+  "scikit-image==0.26.0",
+  "lxml==6.0.2",
+  "huggingface-hub>=1.7,<2",
+  "openai-codex==0.1.0b3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10", "ruff>=0.15,<1"]
+data = ["datasets>=4.5,<5", "pyarrow>=23,<24"]
+
+[project.scripts]
+drawai-dataset = "drawai_evaluation.dataset:main"
+drawai-evaluate = "drawai_evaluation.batch:main"
+drawai-rubric = "drawai_evaluation.rubric:main"
+drawai-merge = "drawai_evaluation.merge:main"
+drawai-scores = "drawai_evaluation.scores:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
