@@ -52,7 +52,7 @@ EXPECTED_CRITERIA = {
 def task(group: str, root: Path, gt_count: int | None = None) -> dict:
     return {
         "task_id": "001",
-        "bench_id": "knowledge_maps/human_100/example",
+        "bench_id": "0001",
         "dag": "default_drawai_dag",
         "lane": "gpt-5.5_codex",
         "group": group,

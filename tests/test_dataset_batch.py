@@ -6,7 +6,12 @@ import pytest
 from PIL import Image
 
 from drawai_evaluation.batch import load_completed_candidates
-from drawai_evaluation.dataset import dataset_path, load_dataset_manifest, resolve_dataset_root
+from drawai_evaluation.dataset import (
+    dataset_path,
+    load_dataset_manifest,
+    remove_obsolete_dataset_files,
+    resolve_dataset_root,
+)
 from drawai_evaluation.renderer import referenced_asset_hashes
 
 
@@ -75,6 +80,49 @@ def test_default_local_dataset_is_used_without_network(dataset: Path, tmp_path: 
     local.parent.mkdir()
     local.symlink_to(dataset, target_is_directory=True)
     assert resolve_dataset_root() == dataset
+
+
+def test_declared_continuous_ids_reject_gaps(dataset: Path):
+    path = dataset / "manifest.json"
+    value = json.loads(path.read_text())
+    value["id_scheme"] = "sequential_4_digit"
+    value["cases"][0]["bench_id"] = "0002"
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match="continuous four-digit"):
+        load_dataset_manifest(dataset)
+
+
+def test_download_cleanup_removes_only_unchanged_obsolete_files(tmp_path: Path):
+    old = tmp_path / "images/previous/image.png"
+    changed = tmp_path / "annotations/previous/image.json"
+    old.parent.mkdir(parents=True)
+    changed.parent.mkdir(parents=True)
+    old.write_bytes(b"original-image")
+    changed.write_text("original-annotation")
+    previous = {
+        "dataset_id": "test-dataset",
+        "cases": [
+            {
+                "image": old.relative_to(tmp_path).as_posix(),
+                "annotation": changed.relative_to(tmp_path).as_posix(),
+                "image_sha256": hashlib.sha256(old.read_bytes()).hexdigest(),
+                "annotation_sha256": hashlib.sha256(changed.read_bytes()).hexdigest(),
+            }
+        ],
+    }
+    changed.write_text("local-change")
+    current = {
+        "dataset_id": "test-dataset",
+        "cases": [
+            {
+                "image": "images/0001.png",
+                "annotation": "annotations/0001.json",
+            }
+        ],
+    }
+    assert remove_obsolete_dataset_files(tmp_path, previous, current) == 1
+    assert not old.exists() and not old.parent.exists()
+    assert changed.read_text() == "local-change"
 
 
 def test_batch_skips_unfinished_and_preserves_completed_identity(dataset: Path, tmp_path: Path):

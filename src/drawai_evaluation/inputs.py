@@ -14,7 +14,10 @@ def resolve_case_id(cases: list[dict[str, Any]], value: str) -> str:
     ids = [case["bench_id"] for case in cases]
     if value in ids:
         return value
-    matches = [case_id for case_id in ids if PurePosixPath(case_id).name == value]
+    if value.isdecimal():
+        matches = [case_id for case_id in ids if case_id.isdecimal() and int(case_id) == int(value)]
+    else:
+        matches = [case_id for case_id in ids if PurePosixPath(case_id).name == value]
     if len(matches) == 1:
         return matches[0]
     if matches:

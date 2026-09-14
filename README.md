@@ -6,6 +6,10 @@ The protocol contains **39 metrics: 9 rule-based metrics and 30 rubric metrics**
 Dataset: [caopu/DrawAI-Bench-Lite](https://huggingface.co/datasets/caopu/DrawAI-Bench-Lite)
 (private; access required). It contains 80 images across knowledge maps, posters,
 presentation slides, and scientific figures, together with element annotations.
+It is a standalone dataset with continuous sample IDs `0001` through `0080`.
+Images are `images/0001.png` through `images/0080.png`; matching annotations are
+`annotations/0001.json` through `annotations/0080.json`. Domain and source type
+are metadata fields rather than directory names.
 
 ## Required Inputs
 
@@ -81,7 +85,8 @@ drawai-dataset verify --local-dir data/DrawAI-Bench-Lite
 After this one-time setup, the evaluation commands below need no dataset flag.
 Dataset discovery uses `--dataset` when given, then `DRAWAI_EVALUATION_DATASET`,
 then `data/DrawAI-Bench-Lite` in the current directory, then the pinned Hugging
-Face cache. If no local dataset is available, the evaluator downloads the images
+Face cache. The default local copy must match the published dataset version.
+If no current local dataset is available, the evaluator downloads the images
 and annotations automatically using your Hugging Face authentication. For a
 dataset stored elsewhere, configure it once:
 
@@ -89,47 +94,46 @@ dataset stored elsewhere, configure it once:
 export DRAWAI_EVALUATION_DATASET=/path/to/DrawAI-Bench-Lite
 ```
 
-The default dataset revision is `b53667b7cf0f1acd8a52aed33c22e952ab6eddd4`.
+The default dataset is version `2.0.0`, pinned to revision
+`174c6a05dedf1a6a9d52823fbb0ab2f8ef864fc9`.
 Use `--revision <dataset-commit>` to select another snapshot. Images retain their original
 resolution; `canvas` in the annotation JSON defines the element coordinate
 system. The scorer resizes the reference image to that canvas before comparison.
 Dataset verification checks the original-image and annotation checksums.
+`drawai-dataset download` updates the managed files and removes unchanged files
+that are no longer listed in the dataset manifest after the new files validate.
 
 ## Single-Image Evaluation
 
 Provide the sample ID and your final SVG path:
 
 ```bash
-drawai-evaluate --id kmap_ai_013 --svg ./result.svg
+drawai-evaluate --id 0001 --svg ./result.svg
 ```
 
-`--id` accepts either a unique short ID, such as `kmap_ai_013`, or the complete
-`bench_id`, such as `knowledge_maps/ai_generated_50/kmap_ai_013`. The SVG filename
-can be arbitrary. Unknown or ambiguous IDs fail with a clear error.
+`--id` uses the dataset's four-digit ID. Numeric input such as `--id 1` also
+resolves to `0001`. The single-image SVG filename can be arbitrary. IDs outside
+the dataset are rejected.
 
 The command prints the result directory and, when the full evaluation finishes,
 the Overall, Reconstruction, Editability, Rule, and Rubric scores. To run only
 the deterministic Rule stage:
 
 ```bash
-drawai-evaluate --id kmap_ai_013 --svg ./result.svg --rule-only
+drawai-evaluate --id 0001 --svg ./result.svg --rule-only
 ```
 
 ## Directory Evaluation
 
-Match the original image's relative path, changing `.png` to `.svg`. For example,
-dataset `images/knowledge_maps/ai_generated_50/kmap_ai_013.png` corresponds to
-`predictions/knowledge_maps/ai_generated_50/kmap_ai_013.svg`:
+Use one flat folder and name predictions after the dataset sample IDs. For
+example, dataset `images/0001.png` corresponds to `predictions/0001.svg`:
 
 ```text
 predictions/
-  knowledge_maps/
-    ai_generated_50/
-      kmap_ai_013.svg
-      kmap_ai_015.svg
-  ppt_slides/
-    human_100/
-      ppt_grad_v7_060.svg
+  0001.svg
+  0002.svg
+  ...
+  0080.svg
 ```
 
 Then specify only the directory:
@@ -138,19 +142,9 @@ Then specify only the directory:
 drawai-evaluate --svg-dir ./predictions
 ```
 
-A flat directory also works when the short IDs are unique in the dataset:
-
-```text
-predictions/
-  kmap_ai_013.svg
-  kmap_ai_015.svg
-  ppt_grad_v7_060.svg
-```
-
-Use the same `--svg-dir` command for either layout. The current 80-case dataset
-has unique short IDs. If both layouts contain a match for the same case, the
-command fails rather than selecting one arbitrarily. Only exact paths/names are
-matched; unrelated SVGs (for example, asset files) are listed as ignored.
+Folder filenames must use all four digits, including leading zeros. Only exact
+sample filenames are matched; unrelated SVGs (for example, asset files) are
+listed as ignored.
 
 Place final SVGs in the matching paths. Missing cases are skipped and listed in
 `coverage.json`, so you can evaluate a completed subset and rerun the command as
@@ -202,10 +196,10 @@ or multiple method/model settings in one run:
 drawai-evaluate --candidates candidates.jsonl
 ```
 
-Each JSONL row contains the full `bench_id`, SVG path, labels, and completion state:
+Each JSONL row contains the four-digit `bench_id`, SVG path, labels, and completion state:
 
 ```json
-{"bench_id":"knowledge_maps/ai_generated_50/kmap_ai_013","method":"my-method","model":"my-model","candidate_svg":"predictions/kmap_ai_013.svg","status":"completed"}
+{"bench_id":"0001","method":"my-method","model":"my-model","candidate_svg":"predictions/0001.svg","status":"completed"}
 ```
 
 Paths are absolute or relative to the manifest. Only `completed` rows are

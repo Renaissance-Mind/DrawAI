@@ -23,6 +23,24 @@ def test_short_and_full_ids_resolve_to_same_case():
         resolve_case_id(CASES + [{"bench_id": "maps/human/map_01"}], "map_01")
 
 
+def test_continuous_sample_ids_accept_numeric_input():
+    cases = [{"bench_id": f"{number:04d}"} for number in range(1, 81)]
+    assert resolve_case_id(cases, "0001") == "0001"
+    assert resolve_case_id(cases, "1") == "0001"
+    assert resolve_case_id(cases, "80") == "0080"
+    with pytest.raises(ValueError, match="unknown sample ID"):
+        resolve_case_id(cases, "81")
+
+
+def test_continuous_flat_names_map_each_sample_once(tmp_path: Path):
+    cases = [{"bench_id": "0001"}, {"bench_id": "0002"}]
+    svg(tmp_path / "0001.svg")
+    svg(tmp_path / "0002.svg")
+    entries, coverage = folder_predictions(cases, tmp_path, method="m", model="v", require_all=True)
+    assert [entry["bench_id"] for entry in entries] == ["0001", "0002"]
+    assert coverage["matched_case_count"] == 2
+
+
 @pytest.mark.parametrize("layout", ["mirrored", "flat"])
 def test_folder_matches_both_supported_layouts(tmp_path: Path, layout: str):
     for case in CASES:

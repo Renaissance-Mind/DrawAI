@@ -12,7 +12,8 @@ from typing import Any
 from PIL import Image
 
 DEFAULT_REPO = "caopu/DrawAI-Bench-Lite"
-DEFAULT_REVISION = "b53667b7cf0f1acd8a52aed33c22e952ab6eddd4"
+DEFAULT_REVISION = "174c6a05dedf1a6a9d52823fbb0ab2f8ef864fc9"
+DEFAULT_DATASET_VERSION = "2.0.0"
 SCHEMA = "drawai.evaluation_dataset.v1"
 KINDS = {"text", "image", "shape", "connector", "formula", "table"}
 DEFAULT_LOCAL_DIR = Path("data/DrawAI-Bench-Lite")
@@ -24,7 +25,21 @@ def resolve_dataset_root(explicit: Path | None = None) -> Path:
     if configured:
         return Path(configured).expanduser().resolve(strict=True)
     if DEFAULT_LOCAL_DIR.exists():
-        return DEFAULT_LOCAL_DIR.resolve(strict=True)
+        local_manifest = DEFAULT_LOCAL_DIR / "manifest.json"
+        local = (
+            json.loads(local_manifest.read_text(encoding="utf-8"))
+            if local_manifest.is_file()
+            else {}
+        )
+        if (
+            local.get("dataset_id") != DEFAULT_REPO
+            or local.get("version") == DEFAULT_DATASET_VERSION
+        ):
+            return DEFAULT_LOCAL_DIR.resolve(strict=True)
+        print(
+            f"Using published dataset version {DEFAULT_DATASET_VERSION}; update the local copy with drawai-dataset download.",
+            flush=True,
+        )
 
     from huggingface_hub import snapshot_download
     from huggingface_hub.errors import LocalEntryNotFoundError
@@ -89,6 +104,11 @@ def load_dataset_manifest(root: Path, *, verify: bool = True) -> dict[str, Any]:
         cases
     ):
         raise ValueError("dataset case count or identities are inconsistent")
+    if manifest.get("id_scheme") == "sequential_4_digit":
+        if [case["bench_id"] for case in cases] != [f"{i:04d}" for i in range(1, len(cases) + 1)]:
+            raise ValueError(
+                "dataset sample IDs must be continuous four-digit numbers starting at 0001"
+            )
     for case in cases:
         image = dataset_path(root, case["image"])
         annotation = dataset_path(root, case["annotation"])
@@ -126,6 +146,37 @@ def load_dataset_manifest(root: Path, *, verify: bool = True) -> dict[str, Any]:
     return manifest
 
 
+def remove_obsolete_dataset_files(
+    root: Path, previous: dict[str, Any], current: dict[str, Any]
+) -> int:
+    """Remove unchanged files managed by the replaced dataset manifest."""
+    if not previous.get("dataset_id") or previous.get("dataset_id") != current.get("dataset_id"):
+        return 0
+    expected = {row[key] for row in current["cases"] for key in ("image", "annotation")}
+    removed = 0
+    parents = set()
+    for row in previous["cases"]:
+        for key in ("image", "annotation"):
+            relative = row[key]
+            if relative in expected:
+                continue
+            path = root / relative
+            if not path.is_file():
+                continue
+            resolved = dataset_path(root, relative)
+            if sha256_file(resolved) != row[f"{key}_sha256"]:
+                continue
+            path.unlink()
+            removed += 1
+            parents.update(
+                parent for parent in path.parents if parent != root and parent.is_relative_to(root)
+            )
+    for parent in sorted(parents, key=lambda p: len(p.parts), reverse=True):
+        if parent.is_dir() and not parent.is_symlink() and not any(parent.iterdir()):
+            parent.rmdir()
+    return removed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download or verify the evaluation dataset.")
     parser.add_argument("action", choices=("download", "verify"))
@@ -133,6 +184,10 @@ def main() -> int:
     parser.add_argument("--repo-id", default=DEFAULT_REPO)
     parser.add_argument("--revision", default=DEFAULT_REVISION)
     args = parser.parse_args()
+    previous_path = args.local_dir / "manifest.json"
+    previous = (
+        json.loads(previous_path.read_text(encoding="utf-8")) if previous_path.is_file() else {}
+    )
     if args.action == "download":
         from huggingface_hub import snapshot_download
 
@@ -143,6 +198,11 @@ def main() -> int:
             local_dir=args.local_dir,
         )
     manifest = load_dataset_manifest(args.local_dir.resolve(strict=True))
+    removed = (
+        remove_obsolete_dataset_files(args.local_dir.resolve(strict=True), previous, manifest)
+        if args.action == "download"
+        else 0
+    )
     print(
         json.dumps(
             {
@@ -150,6 +210,7 @@ def main() -> int:
                 "cases": manifest["case_count"],
                 "elements": sum(c["element_count"] for c in manifest["cases"]),
                 "verified": True,
+                "removed_obsolete_files": removed,
             },
             indent=2,
         )

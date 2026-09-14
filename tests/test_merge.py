@@ -107,7 +107,8 @@ class PartialMergeTest(unittest.TestCase):
             )
 
     def _task(self, root: Path, stem: str) -> dict:
-        candidate = root / "scientific_figures" / "human_100" / stem / "dag" / "lane"
+        sample_id = "0001" if stem == "complete" else "0002"
+        candidate = root / sample_id / "dag" / "lane"
         inputs = candidate / "inputs"
         inputs.mkdir(parents=True)
         gt = inputs / "gt.json"
@@ -132,7 +133,7 @@ class PartialMergeTest(unittest.TestCase):
         )
         return {
             "task_id": f"rubric_{stem}",
-            "bench_id": f"scientific_figures/human_100/{stem}",
+            "bench_id": sample_id,
             "dag": "dag",
             "lane": "lane",
             "group": "global",
