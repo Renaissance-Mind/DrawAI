@@ -12,7 +12,7 @@ from typing import Any
 from PIL import Image
 
 DEFAULT_REPO = "caopu/DrawAI-Bench-Lite"
-DEFAULT_REVISION = "8d99285ca440a8e96096103d96bcac704a6a9cc0"
+DEFAULT_REVISION = "711808882430bb59526e89218f6621baa1dda4d0"
 DEFAULT_DATASET_VERSION = "2.0.0"
 SCHEMA = "drawai.evaluation_dataset.v1"
 KINDS = {"text", "image", "shape", "connector", "formula", "table"}
@@ -61,7 +61,7 @@ def resolve_dataset_root(explicit: Path | None = None) -> Path:
         ):
             return cached
     print(
-        f"Downloading private dataset {DEFAULT_REPO}@{DEFAULT_REVISION}; authenticate with hf auth login if needed.",
+        f"Downloading dataset {DEFAULT_REPO}@{DEFAULT_REVISION} from Hugging Face.",
         flush=True,
     )
     return Path(

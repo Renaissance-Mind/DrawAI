@@ -3,8 +3,8 @@
 Standalone reconstruction and editability evaluation for final SVG predictions.
 The protocol contains **39 metrics: 9 rule-based metrics and 30 rubric metrics**.
 
-Dataset: [caopu/DrawAI-Bench-Lite](https://huggingface.co/datasets/caopu/DrawAI-Bench-Lite)
-(private; access required). It contains 80 images across knowledge maps, posters,
+Dataset: [caopu/DrawAI-Bench-Lite](https://huggingface.co/datasets/caopu/DrawAI-Bench-Lite).
+It contains 80 images across knowledge maps, posters,
 presentation slides, and scientific figures, together with element annotations.
 It is a standalone dataset with continuous sample IDs `0001` through `0080`.
 Images are `images/0001.png` through `images/0080.png`; matching annotations are
@@ -77,7 +77,6 @@ executable can be selected with `DRAWAI_SVG_RENDERER_BROWSER`.
 ## Dataset
 
 ```bash
-hf auth login
 drawai-dataset download --local-dir data/DrawAI-Bench-Lite
 drawai-dataset verify --local-dir data/DrawAI-Bench-Lite
 ```
@@ -87,15 +86,15 @@ Dataset discovery uses `--dataset` when given, then `DRAWAI_EVALUATION_DATASET`,
 then `data/DrawAI-Bench-Lite` in the current directory, then the pinned Hugging
 Face cache. The default local copy must match the published dataset version.
 If no current local dataset is available, the evaluator downloads the images
-and annotations automatically using your Hugging Face authentication. For a
-dataset stored elsewhere, configure it once:
+and annotations automatically from Hugging Face. For a dataset stored elsewhere,
+configure it once:
 
 ```bash
 export DRAWAI_EVALUATION_DATASET=/path/to/DrawAI-Bench-Lite
 ```
 
 The default dataset is version `2.0.0`, pinned to revision
-`8d99285ca440a8e96096103d96bcac704a6a9cc0`.
+`711808882430bb59526e89218f6621baa1dda4d0`.
 Use `--revision <dataset-commit>` to select another snapshot. Images retain their original
 resolution; `canvas` in the annotation JSON defines the element coordinate
 system. The scorer resizes the reference image to that canvas before comparison.
