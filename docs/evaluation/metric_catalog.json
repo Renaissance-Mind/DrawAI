@@ -1,0 +1,862 @@
+{
+  "metrics": [
+    {
+      "metric_id": "reconstruction.global.structural_match",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "结构匹配",
+        "en": "Structural match"
+      },
+      "calculator": "SSIM",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "ssim",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.global.edge_alignment",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "边缘对齐",
+        "en": "Edge alignment"
+      },
+      "calculator": "Edge F1",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "edge_f1",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.global.pixel_error",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "像素误差",
+        "en": "Pixel error"
+      },
+      "calculator": "MSE",
+      "method": "rule",
+      "direction": "down",
+      "rule_key": "mse",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.global.overall_readability",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "整体可读性",
+        "en": "Overall readability"
+      },
+      "calculator": "VLM Score",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "global",
+      "criterion": "overall_readability",
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.global.layout_skeleton",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "布局骨架",
+        "en": "Layout skeleton"
+      },
+      "calculator": "Layout QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "global",
+      "criterion": "layout_skeleton",
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.global.visual_hierarchy",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "整图视觉还原",
+        "en": "Global Visual Fidelity"
+      },
+      "tertiary": {
+        "zh": "视觉层级",
+        "en": "Visual hierarchy"
+      },
+      "calculator": "Hierarchy QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "global",
+      "criterion": "visual_hierarchy",
+      "kind": null
+    },
+    {
+      "metric_id": "reconstruction.text.text_content",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "文本内容",
+        "en": "Text content"
+      },
+      "calculator": "Text F1",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "text_f1",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.position_lines",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "位置与行列",
+        "en": "Position lines"
+      },
+      "calculator": "Layout QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "position_lines",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.alignment_spacing",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "对齐与间距",
+        "en": "Alignment spacing"
+      },
+      "calculator": "Layout QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "alignment_spacing",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.overflow_occlusion",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "溢出遮挡",
+        "en": "Overflow occlusion"
+      },
+      "calculator": "Occlusion QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "overflow_occlusion",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.color_emphasis",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "色彩强调",
+        "en": "Color emphasis"
+      },
+      "calculator": "Style QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "color_emphasis",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.font_appearance",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "字体观感",
+        "en": "Font appearance"
+      },
+      "calculator": "Style QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "font_appearance",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.text.style_consistency",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "文本保真度",
+        "en": "Text Fidelity"
+      },
+      "tertiary": {
+        "zh": "样式一致性",
+        "en": "Style consistency"
+      },
+      "calculator": "Style QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "text",
+      "criterion": "style_consistency",
+      "kind": "text"
+    },
+    {
+      "metric_id": "reconstruction.image.image_regions",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "图像保真度",
+        "en": "Image Fidelity"
+      },
+      "tertiary": {
+        "zh": "图像区域",
+        "en": "Image Regions"
+      },
+      "calculator": "Region MSE",
+      "method": "rule",
+      "direction": "down",
+      "rule_key": "image_region_mse",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "image"
+    },
+    {
+      "metric_id": "reconstruction.image.image_alignment",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "图像保真度",
+        "en": "Image Fidelity"
+      },
+      "tertiary": {
+        "zh": "图像对齐",
+        "en": "Image Alignment"
+      },
+      "calculator": "Image mIoU",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "image_miou",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "image"
+    },
+    {
+      "metric_id": "reconstruction.formula.symbol_retention",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "公式保真度",
+        "en": "Formula Fidelity"
+      },
+      "tertiary": {
+        "zh": "符号保留",
+        "en": "Symbol retention"
+      },
+      "calculator": "Formula QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "formula",
+      "criterion": "symbol_retention",
+      "kind": "formula"
+    },
+    {
+      "metric_id": "reconstruction.formula.structure_relation",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "公式保真度",
+        "en": "Formula Fidelity"
+      },
+      "tertiary": {
+        "zh": "结构关系",
+        "en": "Structure relation"
+      },
+      "calculator": "Formula QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "formula",
+      "criterion": "structure_relation",
+      "kind": "formula"
+    },
+    {
+      "metric_id": "reconstruction.formula.position_readability",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "公式保真度",
+        "en": "Formula Fidelity"
+      },
+      "tertiary": {
+        "zh": "位置可读性",
+        "en": "Position readability"
+      },
+      "calculator": "Formula QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "formula",
+      "criterion": "position_readability",
+      "kind": "formula"
+    },
+    {
+      "metric_id": "reconstruction.shape.existence_coverage",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "Shape 保真度",
+        "en": "Shape Fidelity"
+      },
+      "tertiary": {
+        "zh": "存在覆盖",
+        "en": "Existence coverage"
+      },
+      "calculator": "Shape QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "existence_coverage",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "reconstruction.shape.visual_attributes",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "Shape 保真度",
+        "en": "Shape Fidelity"
+      },
+      "tertiary": {
+        "zh": "视觉属性",
+        "en": "Visual attributes"
+      },
+      "calculator": "Shape QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "visual_attributes",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "reconstruction.shape.neighbor_relation",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "Shape 保真度",
+        "en": "Shape Fidelity"
+      },
+      "tertiary": {
+        "zh": "相邻关系",
+        "en": "Neighbor relation"
+      },
+      "calculator": "Shape QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "neighbor_relation",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "reconstruction.connector.path_presence",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "连接线保真度",
+        "en": "Connector Fidelity"
+      },
+      "tertiary": {
+        "zh": "路径存在",
+        "en": "Path presence"
+      },
+      "calculator": "Connector QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "path_presence",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "reconstruction.connector.endpoint_direction",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "连接线保真度",
+        "en": "Connector Fidelity"
+      },
+      "tertiary": {
+        "zh": "端点方向",
+        "en": "Endpoint direction"
+      },
+      "calculator": "Connector QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "endpoint_direction",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "reconstruction.connector.line_style_noise",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "连接线保真度",
+        "en": "Connector Fidelity"
+      },
+      "tertiary": {
+        "zh": "线型干扰",
+        "en": "Line style noise"
+      },
+      "calculator": "Connector QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "line_style_noise",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "reconstruction.table.grid_structure",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "表格保真度",
+        "en": "Table Fidelity"
+      },
+      "tertiary": {
+        "zh": "网格结构",
+        "en": "Grid structure"
+      },
+      "calculator": "Table QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "grid_structure",
+      "kind": "table"
+    },
+    {
+      "metric_id": "reconstruction.table.content_ownership",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "表格保真度",
+        "en": "Table Fidelity"
+      },
+      "tertiary": {
+        "zh": "内容归属",
+        "en": "Content ownership"
+      },
+      "calculator": "Table QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "content_ownership",
+      "kind": "table"
+    },
+    {
+      "metric_id": "reconstruction.table.readability_alignment",
+      "primary": {
+        "zh": "还原性",
+        "en": "Reconstruction"
+      },
+      "secondary": {
+        "zh": "表格保真度",
+        "en": "Table Fidelity"
+      },
+      "tertiary": {
+        "zh": "可读对齐",
+        "en": "Readability alignment"
+      },
+      "calculator": "Table QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "readability_alignment",
+      "kind": "table"
+    },
+    {
+      "metric_id": "editability.text.text_boxes",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "文本可编辑性",
+        "en": "Text Editability"
+      },
+      "tertiary": {
+        "zh": "文本框",
+        "en": "Text boxes"
+      },
+      "calculator": "Box Recall",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "text_box_recall",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "text"
+    },
+    {
+      "metric_id": "editability.image.image_sources",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "图像组件可编辑性",
+        "en": "Image Editability"
+      },
+      "tertiary": {
+        "zh": "图像源对象",
+        "en": "Image Sources"
+      },
+      "calculator": "Image Recall",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "image_recall",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "image"
+    },
+    {
+      "metric_id": "editability.shape.object_independence",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "Shape 可编辑性",
+        "en": "Shape Editability"
+      },
+      "tertiary": {
+        "zh": "对象独立性",
+        "en": "Object independence"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "object_independence",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "editability.shape.box_placement",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "Shape 可编辑性",
+        "en": "Shape Editability"
+      },
+      "tertiary": {
+        "zh": "框位置",
+        "en": "Box placement"
+      },
+      "calculator": "BBox QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "box_placement",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "editability.shape.conflict_diagnosis",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "Shape 可编辑性",
+        "en": "Shape Editability"
+      },
+      "tertiary": {
+        "zh": "冲突诊断",
+        "en": "Conflict diagnosis"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "shape",
+      "criterion": "conflict_diagnosis",
+      "kind": "shape"
+    },
+    {
+      "metric_id": "editability.connector.independent_path",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "连接线可编辑性",
+        "en": "Connector Editability"
+      },
+      "tertiary": {
+        "zh": "独立路径",
+        "en": "Independent path"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "independent_path",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "editability.connector.endpoint_control",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "连接线可编辑性",
+        "en": "Connector Editability"
+      },
+      "tertiary": {
+        "zh": "端点控制",
+        "en": "Endpoint control"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "endpoint_control",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "editability.connector.mis_merge_check",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "连接线可编辑性",
+        "en": "Connector Editability"
+      },
+      "tertiary": {
+        "zh": "误合并检查",
+        "en": "Mis merge check"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "connector",
+      "criterion": "mis_merge_check",
+      "kind": "connector"
+    },
+    {
+      "metric_id": "editability.formula.editable_representation",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "公式可编辑性",
+        "en": "Formula Editability"
+      },
+      "tertiary": {
+        "zh": "可编辑表示",
+        "en": "Editable representation"
+      },
+      "calculator": "Object Recall",
+      "method": "rule",
+      "direction": "up",
+      "rule_key": "formula_editable_representation",
+      "rubric_group": null,
+      "criterion": null,
+      "kind": "formula"
+    },
+    {
+      "metric_id": "editability.table.table_regions",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "表格可编辑性",
+        "en": "Table Editability"
+      },
+      "tertiary": {
+        "zh": "独立表格区域",
+        "en": "Table region independence"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "table_region_independence",
+      "kind": "table"
+    },
+    {
+      "metric_id": "editability.table.editable_grid",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "表格可编辑性",
+        "en": "Table Editability"
+      },
+      "tertiary": {
+        "zh": "可编辑网格",
+        "en": "Editable grid"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "editable_grid",
+      "kind": "table"
+    },
+    {
+      "metric_id": "editability.table.text_ownership",
+      "primary": {
+        "zh": "可编辑性",
+        "en": "Editability"
+      },
+      "secondary": {
+        "zh": "表格可编辑性",
+        "en": "Table Editability"
+      },
+      "tertiary": {
+        "zh": "文本归属",
+        "en": "Text ownership"
+      },
+      "calculator": "VLM-QA",
+      "method": "rubric",
+      "direction": "up",
+      "rule_key": null,
+      "rubric_group": "table",
+      "criterion": "text_ownership",
+      "kind": "table"
+    }
+  ]
+}

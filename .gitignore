@@ -54,3 +54,12 @@ build/
 superpowers/
 .worktrees/
 input.png
+
+# Evaluation runtime and local inputs
+.runtime/
+.pytest_cache/
+.ruff_cache/
+predictions/
+.env
+.env.*
+auth.json

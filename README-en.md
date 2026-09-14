@@ -189,6 +189,7 @@ The PPTX export path always uses the bundled native-shape converter, mapping SVG
 ## 📚 Documentation
 
 - [Runtime options, ports, and model paths](docs/zh-CN/runtime-options.md)
+- [Evaluation guide: dataset, single-image and batch SVG evaluation](docs/en/evaluation.md)
 - [Changelog](CHANGELOG.md)
 
 ## ❓ FAQ

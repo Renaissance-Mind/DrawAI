@@ -30,6 +30,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+evaluation = [
+    "huggingface-hub>=1.7,<2",
+    "openai-codex==0.1.0b3",
+    "opencv-python-headless==4.13.0.92",
+    "scikit-image==0.26.0",
+]
 local-runtime = [
     "paddlepaddle",
     "safetensors",
@@ -46,9 +52,14 @@ drawai = "drawai.cli:main"
 drawai-explainer = "drawai.explainer_app:main"
 drawai-local-services = "drawai.local_services:main"
 drawai-workbench-api = "drawai.workbench.api:main"
+drawai-dataset = "drawai_evaluation.dataset:main"
+drawai-evaluate = "drawai_evaluation.batch:main"
+drawai-rubric = "drawai_evaluation.rubric:main"
+drawai-merge = "drawai_evaluation.merge:main"
+drawai-scores = "drawai_evaluation.scores:main"
 
 [tool.uv]
 prerelease = "allow"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/drawai"]
+packages = ["src/drawai", "src/drawai_evaluation"]

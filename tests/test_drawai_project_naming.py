@@ -118,6 +118,11 @@ def test_pyproject_exposes_drawai_only_console_scripts():
         "drawai-explainer": "drawai.explainer_app:main",
         "drawai-local-services": "drawai.local_services:main",
         "drawai-workbench-api": "drawai.workbench.api:main",
+        "drawai-dataset": "drawai_evaluation.dataset:main",
+        "drawai-evaluate": "drawai_evaluation.batch:main",
+        "drawai-rubric": "drawai_evaluation.rubric:main",
+        "drawai-merge": "drawai_evaluation.merge:main",
+        "drawai-scores": "drawai_evaluation.scores:main",
     }
 
 
