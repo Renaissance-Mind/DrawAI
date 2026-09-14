@@ -95,7 +95,7 @@ export DRAWAI_EVALUATION_DATASET=/path/to/DrawAI-Bench-Lite
 ```
 
 The default dataset is version `2.0.0`, pinned to revision
-`174c6a05dedf1a6a9d52823fbb0ab2f8ef864fc9`.
+`8d99285ca440a8e96096103d96bcac704a6a9cc0`.
 Use `--revision <dataset-commit>` to select another snapshot. Images retain their original
 resolution; `canvas` in the annotation JSON defines the element coordinate
 system. The scorer resizes the reference image to that canvas before comparison.

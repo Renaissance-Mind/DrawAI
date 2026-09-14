@@ -12,7 +12,7 @@ from typing import Any
 from PIL import Image
 
 DEFAULT_REPO = "caopu/DrawAI-Bench-Lite"
-DEFAULT_REVISION = "174c6a05dedf1a6a9d52823fbb0ab2f8ef864fc9"
+DEFAULT_REVISION = "8d99285ca440a8e96096103d96bcac704a6a9cc0"
 DEFAULT_DATASET_VERSION = "2.0.0"
 SCHEMA = "drawai.evaluation_dataset.v1"
 KINDS = {"text", "image", "shape", "connector", "formula", "table"}
