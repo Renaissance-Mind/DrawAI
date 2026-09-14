@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from drawai_evaluation.batch import load_completed_candidates
-from drawai_evaluation.dataset import dataset_path, load_dataset_manifest
+from drawai_evaluation.dataset import dataset_path, load_dataset_manifest, resolve_dataset_root
 from drawai_evaluation.renderer import referenced_asset_hashes
 
 
@@ -56,6 +56,25 @@ def test_dataset_rejects_tampered_annotation(dataset: Path):
 def test_dataset_rejects_path_escape(dataset: Path):
     with pytest.raises(ValueError, match="relative"):
         dataset_path(dataset, "../outside.json")
+
+
+def test_dataset_location_can_be_configured_once(dataset: Path, tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("DRAWAI_EVALUATION_DATASET", str(dataset))
+    assert resolve_dataset_root() == dataset
+    explicit = tmp_path / "explicit"
+    explicit.mkdir()
+    assert resolve_dataset_root(explicit) == explicit
+    with pytest.raises(FileNotFoundError):
+        resolve_dataset_root(tmp_path / "missing")
+
+
+def test_default_local_dataset_is_used_without_network(dataset: Path, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("DRAWAI_EVALUATION_DATASET", raising=False)
+    monkeypatch.chdir(tmp_path)
+    local = tmp_path / "data/DrawAI-Bench-Lite"
+    local.parent.mkdir()
+    local.symlink_to(dataset, target_is_directory=True)
+    assert resolve_dataset_root() == dataset
 
 
 def test_batch_skips_unfinished_and_preserves_completed_identity(dataset: Path, tmp_path: Path):

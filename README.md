@@ -19,7 +19,8 @@ supported and its coverage is reported.
 | Original reference image | Downloaded dataset | Visual reconstruction target |
 | GT element annotation JSON | Downloaded dataset | Target object kinds, text, geometry, and positions |
 | Final candidate `.svg` | Your method's output | Reconstructed appearance and editable object structure |
-| `candidates.jsonl` | You | Associates each SVG with its `bench_id`, method, model, and completion status |
+| Sample ID (single) or SVG directory (batch) | You | Matches predictions to benchmark cases |
+| Internal candidate manifest | Generated automatically by the evaluator | Records the matched IDs and SVG paths |
 | Candidate `rendered.png` | Generated automatically by the evaluator | Visual comparison with the reference image |
 
 The evaluator renders each candidate SVG with Chromium. Rule metrics compare
@@ -56,6 +57,11 @@ npm install --prefix .runtime @openai/codex@0.144.4
 .runtime/node_modules/.bin/codex login
 ```
 
+The evaluator discovers this local `.runtime` installation automatically. You
+can also use a `codex` executable on `PATH`, set `DRAWBENCH_CODEX_BIN` once, or
+pass `--codex-bin` explicitly. The Rubric judge runs through the **Codex Python
+SDK**; the 9 Rule metrics use local Python computation and Chromium rendering.
+
 The judge reads the authenticated user's `~/.codex/auth.json` into an ephemeral
 home and removes that temporary home after each attempt. Set `--host-codex-home`
 when the authentication file is stored elsewhere. No credentials belong in
@@ -72,67 +78,113 @@ drawai-dataset download --local-dir data/DrawAI-Bench-Lite
 drawai-dataset verify --local-dir data/DrawAI-Bench-Lite
 ```
 
+After this one-time setup, the evaluation commands below need no dataset flag.
+Dataset discovery uses `--dataset` when given, then `DRAWAI_EVALUATION_DATASET`,
+then `data/DrawAI-Bench-Lite` in the current directory, then the pinned Hugging
+Face cache. If no local dataset is available, the evaluator downloads the images
+and annotations automatically using your Hugging Face authentication. For a
+dataset stored elsewhere, configure it once:
+
+```bash
+export DRAWAI_EVALUATION_DATASET=/path/to/DrawAI-Bench-Lite
+```
+
 The default dataset revision is `b53667b7cf0f1acd8a52aed33c22e952ab6eddd4`.
 Use `--revision <dataset-commit>` to select another snapshot. Images retain their original
 resolution; `canvas` in the annotation JSON defines the element coordinate
 system. The scorer resizes the reference image to that canvas before comparison.
 Dataset verification checks the original-image and annotation checksums.
 
-## Predictions
+## Single-Image Evaluation
 
-For example, keep a completed SVG and its manifest together in this layout:
+Provide the sample ID and your final SVG path:
+
+```bash
+drawai-evaluate --id kmap_ai_013 --svg ./result.svg
+```
+
+`--id` accepts either a unique short ID, such as `kmap_ai_013`, or the complete
+`bench_id`, such as `knowledge_maps/ai_generated_50/kmap_ai_013`. The SVG filename
+can be arbitrary. Unknown or ambiguous IDs fail with a clear error.
+
+The command prints the result directory and, when the full evaluation finishes,
+the Overall, Reconstruction, Editability, Rule, and Rubric scores. To run only
+the deterministic Rule stage:
+
+```bash
+drawai-evaluate --id kmap_ai_013 --svg ./result.svg --rule-only
+```
+
+## Directory Evaluation
+
+Match the original image's relative path, changing `.png` to `.svg`. For example,
+dataset `images/knowledge_maps/ai_generated_50/kmap_ai_013.png` corresponds to
+`predictions/knowledge_maps/ai_generated_50/kmap_ai_013.svg`:
 
 ```text
-candidates.jsonl
+predictions/
+  knowledge_maps/
+    ai_generated_50/
+      kmap_ai_013.svg
+      kmap_ai_015.svg
+  ppt_slides/
+    human_100/
+      ppt_grad_v7_060.svg
+```
+
+Then specify only the directory:
+
+```bash
+drawai-evaluate --svg-dir ./predictions
+```
+
+A flat directory also works when the short IDs are unique in the dataset:
+
+```text
 predictions/
   kmap_ai_013.svg
+  kmap_ai_015.svg
+  ppt_grad_v7_060.svg
 ```
 
-Create `candidates.jsonl` with one JSON object per line, one row per prediction:
+Use the same `--svg-dir` command for either layout. The current 80-case dataset
+has unique short IDs. If both layouts contain a match for the same case, the
+command fails rather than selecting one arbitrarily. Only exact paths/names are
+matched; unrelated SVGs (for example, asset files) are listed as ignored.
 
-```json
-{"bench_id":"knowledge_maps/ai_generated_50/kmap_ai_013","method":"my-method","model":"my-model","candidate_svg":"predictions/kmap_ai_013.svg","status":"completed"}
+Place final SVGs in the matching paths. Missing cases are skipped and listed in
+`coverage.json`, so you can evaluate a completed subset and rerun the command as
+more SVGs become available. Existing malformed SVGs raise errors. Keep unfinished
+outputs under temporary names until they are ready. To require all 80 cases:
+
+```bash
+drawai-evaluate --svg-dir ./predictions --require-all
 ```
 
-| Field | Meaning |
-|---|---|
-| `bench_id` | Exact case identifier from the dataset's `manifest.json` |
-| `candidate_svg` | Final SVG path, absolute or relative to `candidates.jsonl` |
-| `method` | Label for your method; use a non-empty name without path separators |
-| `model` | Label for the generating model, also without path separators |
-| `status` | Set to `completed` only when the final SVG is ready; other states are skipped |
+## Options and Execution
 
-`model` is a result-grouping label; it does not select the Rubric judge. The
-judge remains `gpt-5.6-sol`. SVG filenames are arbitrary because `bench_id`
-provides the association. Multiple settings can share a manifest, with one
-unique completed row per `(bench_id, method, model)`.
+`--dataset`, `--output-root`, `--method`, and `--model` are optional. The default
+output directory is `results/<input-name>-<hash>` under the current working
+directory; its name is stable for the same input path and labels, enabling reuse.
+The default labels are `candidate` and `unspecified`. For named comparisons:
+
+```bash
+drawai-evaluate --svg-dir ./predictions \
+  --method my-method --model my-model --output-root results/my-experiment
+```
+
+`--model` labels the generating model. It does not change the Rubric judge,
+which remains `gpt-5.6-sol` with `high` reasoning by default.
 
 Embed image/font resources in the SVG or keep local references resolvable from
 its directory. Remote resources must be embedded for reproducibility. The asset
 audit records missing local images, and the rendering is scored as submitted.
-
-## Evaluate
-
-```bash
-drawai-evaluate \
-  --dataset data/DrawAI-Bench-Lite \
-  --candidates candidates.jsonl \
-  --output-root results/my-experiment \
-  --codex-bin .runtime/node_modules/.bin/codex
-```
 
 Defaults are Rule concurrency 8, Rubric concurrency 40, three attempts, and an
 1800-second timeout per attempt. The CLI freezes completed predictions in a
 snapshot, renders and scores them, runs the rubric groups required by the GT
 elements, and merges only fully validated candidates. A per-output-directory
 lock prevents duplicate batch launches.
-
-For deterministic Rule evaluation without judge calls:
-
-```bash
-drawai-evaluate --dataset data/DrawAI-Bench-Lite \
-  --candidates candidates.jsonl --output-root results/my-experiment --rule-only
-```
 
 Run the same command after adding completed predictions to evaluate incrementally.
 Unchanged Rule outputs and strictly validated Rubric outputs are reused. Changes
@@ -141,14 +193,40 @@ affected evidence. Judge usage-limit exits return code 75; wait until the report
 retry time before resuming. Other nonzero exits preserve diagnostics under
 `sdk_runs/<group>/attempt_*`. The runner never fills missing scores with zero.
 
+## Advanced Manifest Input
+
+The existing manifest interface remains available for arbitrary file layouts
+or multiple method/model settings in one run:
+
+```bash
+drawai-evaluate --candidates candidates.jsonl
+```
+
+Each JSONL row contains the full `bench_id`, SVG path, labels, and completion state:
+
+```json
+{"bench_id":"knowledge_maps/ai_generated_50/kmap_ai_013","method":"my-method","model":"my-model","candidate_svg":"predictions/kmap_ai_013.svg","status":"completed"}
+```
+
+Paths are absolute or relative to the manifest. Only `completed` rows are
+evaluated. The `(bench_id, method, model)` combination must be unique; labels
+must be non-empty names without path separators. A JSON array or JSON object
+with a `candidates` array is also accepted. `--svg`, `--svg-dir`, and `--candidates`
+are mutually exclusive.
+
 ## Outputs and Scores
 
 Each candidate has `rendered.png`, `rule_based_eval.json`, `rule_provenance.json`,
 `rubric/*.json`, `sdk_runs/`, and a `full_evaluation.json` with exactly 39 metrics.
-The output root contains the candidate snapshot, asset audit, task manifest,
+The output root contains `input_candidates.json`, `coverage.json`, the candidate
+snapshot, asset audit, task manifest,
 scheduler summary, metric catalog, and long/wide comparison CSVs. During Rubric
 evaluation, partial merges expose only candidates whose required groups pass
 schema and provenance validation.
+
+`coverage.json` lists which benchmark cases were found or missing. The merged
+summary's `partial` field describes scoring completion of the selected predictions;
+it does not mean that a partial prediction folder covered all 80 benchmark cases.
 
 ```bash
 drawai-scores --evaluation-root results/my-experiment

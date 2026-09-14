@@ -15,12 +15,19 @@ from urllib.parse import unquote, urlsplit
 
 from lxml import etree
 
-from drawai_evaluation.dataset import dataset_path, load_dataset_manifest
+from drawai_evaluation.dataset import dataset_path, load_dataset_manifest, resolve_dataset_root
+from drawai_evaluation.inputs import (
+    default_output_root,
+    folder_predictions,
+    prediction_entry,
+    resolve_case_id,
+)
 from drawai_evaluation.renderer import (
     _browser_renderer_path,
     _render_svg_with_browser,
     referenced_asset_hashes,
 )
+from drawai_evaluation.rubric import default_codex_bin
 
 SNAPSHOT_SCHEMA = "drawbench.evaluation_candidate_snapshot.v2"
 
@@ -532,16 +539,33 @@ def _utc_now() -> str:
 
 
 def load_completed_candidates(
-    dataset_root: Path, candidate_manifest: Path, evaluation_root: Path
+    dataset_root: Path,
+    candidate_manifest: Path,
+    evaluation_root: Path,
+    *,
+    dataset: dict[str, Any] | None = None,
 ) -> tuple[list[EvaluationCandidate], dict[str, int]]:
-    dataset = load_dataset_manifest(dataset_root)
-    cases = {row["bench_id"]: row for row in dataset["cases"]}
     content = candidate_manifest.read_text(encoding="utf-8")
     if candidate_manifest.suffix == ".jsonl":
         entries = [json.loads(line) for line in content.splitlines() if line.strip()]
     else:
         payload = json.loads(content)
         entries = payload if isinstance(payload, list) else payload["candidates"]
+    return candidates_from_entries(
+        dataset_root, entries, evaluation_root, base_dir=candidate_manifest.parent, dataset=dataset
+    )
+
+
+def candidates_from_entries(
+    dataset_root: Path,
+    entries: list[dict[str, Any]],
+    evaluation_root: Path,
+    *,
+    base_dir: Path,
+    dataset: dict[str, Any] | None = None,
+) -> tuple[list[EvaluationCandidate], dict[str, int]]:
+    dataset = dataset if dataset is not None else load_dataset_manifest(dataset_root)
+    cases = {row["bench_id"]: row for row in dataset["cases"]}
     candidates = []
     seen = set()
     skipped = 0
@@ -568,7 +592,7 @@ def load_completed_candidates(
         case = cases[bench_id]
         svg = Path(row["candidate_svg"]).expanduser()
         if not svg.is_absolute():
-            svg = candidate_manifest.parent / svg
+            svg = base_dir / svg
         svg = svg.resolve(strict=True)
         xml = etree.fromstring(
             svg.read_bytes(), etree.XMLParser(resolve_entities=False, no_network=True)
@@ -631,13 +655,36 @@ def write_asset_audit(candidates: list[EvaluationCandidate], snapshot: Path) -> 
     return result
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate completed SVG predictions with 39 metrics."
+        description="Evaluate a single SVG by sample ID or a folder of matching SVGs."
     )
-    parser.add_argument("--dataset", type=Path, required=True)
-    parser.add_argument("--candidates", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--svg", type=Path, help="Final SVG for the sample given by --id")
+    source.add_argument(
+        "--svg-dir", type=Path, help="Folder containing <bench_id>.svg or <short-ID>.svg"
+    )
+    source.add_argument("--candidates", type=Path, help="Advanced: prediction JSON/JSONL manifest")
+    parser.add_argument(
+        "--id", dest="case_id", help="Full bench_id or unique short ID; required with --svg"
+    )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        help="Dataset directory; otherwise use local data, env, or the pinned HF cache",
+    )
+    parser.add_argument(
+        "--output-root", type=Path, help="Output directory; default: results/<input-name>-<hash>"
+    )
+    parser.add_argument("--method", default="candidate", help="Optional generating-method label")
+    parser.add_argument(
+        "--model",
+        default="unspecified",
+        help="Optional generating-model label; does not change the judge",
+    )
+    parser.add_argument(
+        "--require-all", action="store_true", help="Folder mode: require every dataset sample"
+    )
     parser.add_argument("--rule-concurrency", type=int, default=8)
     parser.add_argument("--rubric-concurrency", type=int, default=40)
     parser.add_argument("--rubric-max-attempts", type=int, default=3)
@@ -646,31 +693,92 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--codex-bin", type=Path)
     parser.add_argument("--host-codex-home", type=Path, default=Path.home() / ".codex")
     parser.add_argument("--rule-only", action="store_true")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
+    if bool(args.svg) != bool(args.case_id):
+        parser.error(
+            "single-image evaluation requires both --id and --svg; --id applies only to --svg"
+        )
+    if args.require_all and not args.svg_dir:
+        parser.error("--require-all applies only to --svg-dir")
     if args.rule_concurrency < 1 or not 1 <= args.rubric_concurrency <= 150:
         parser.error("Rule concurrency must be positive and Rubric concurrency must be 1-150")
     if args.rubric_max_attempts < 1 or args.rubric_timeout_seconds <= 0:
         parser.error("retry count and timeout must be positive")
-    args.dataset = args.dataset.expanduser().resolve(strict=True)
-    args.candidates = args.candidates.expanduser().resolve(strict=True)
+    source = (args.svg or args.svg_dir or args.candidates).expanduser().resolve(strict=True)
+    if not args.svg_dir and not source.is_file():
+        parser.error(f"input must be a file: {source}")
+    args.dataset = resolve_dataset_root(args.dataset)
+    dataset = load_dataset_manifest(args.dataset)
+    match_report: dict[str, Any] = {}
+    entries = None
+    if args.svg:
+        args.case_id = resolve_case_id(dataset["cases"], args.case_id)
+        entries = [prediction_entry(args.case_id, source, args.method, args.model)]
+        mode = "single"
+        match_report = {
+            "requested_case_count": 1,
+            "matched_case_count": 1,
+            "missing_case_ids": [],
+            "ignored_svg_paths": [],
+        }
+    elif args.svg_dir:
+        entries, match_report = folder_predictions(
+            dataset["cases"],
+            source,
+            method=args.method,
+            model=args.model,
+            require_all=args.require_all,
+        )
+        mode = "folder"
+    else:
+        mode = "manifest"
+    if args.output_root is None:
+        args.output_root = default_output_root(
+            source, method=args.method, model=args.model, case_id=args.case_id or ""
+        )
     args.output_root = args.output_root.expanduser().resolve()
     args.output_root.mkdir(parents=True, exist_ok=True)
     args.evaluation_tools_dir = Path(__file__).parent
     args.rule_python = sys.executable
     args.force_rule = False
-    if args.codex_bin:
-        args.codex_bin = args.codex_bin.expanduser().resolve(strict=True)
+    if not args.rule_only:
+        args.codex_bin = (args.codex_bin or default_codex_bin()).expanduser()
+        if not args.codex_bin.is_file():
+            parser.error(
+                "Codex executable not found; install the documented CLI or set --codex-bin"
+            )
+        args.codex_bin = args.codex_bin.resolve(strict=True)
     with (args.output_root / ".evaluation.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise RuntimeError("another batch already owns this evaluation root") from error
-        candidates, coverage = load_completed_candidates(
-            args.dataset, args.candidates, args.output_root
-        )
+        if entries is None:
+            candidates, coverage = load_completed_candidates(
+                args.dataset, source, args.output_root, dataset=dataset
+            )
+        else:
+            candidates, coverage = candidates_from_entries(
+                args.dataset, entries, args.output_root, base_dir=source.parent, dataset=dataset
+            )
+        coverage = {**coverage, **match_report, "input_mode": mode, "input_source": str(source)}
         if not candidates:
             print("No completed candidates in the input manifest.")
             return 0
+        _write_json(args.output_root / "coverage.json", coverage)
+        _write_json(
+            args.output_root / "input_candidates.json",
+            {
+                "candidates": [
+                    prediction_entry(c.bench_id, c.candidate_svg, c.dag, c.lane) for c in candidates
+                ],
+            },
+        )
         snapshot = args.output_root / "candidate_snapshot.json"
         _write_json(
             snapshot,
@@ -688,7 +796,20 @@ def main(argv: list[str] | None = None) -> int:
             f"completed_candidates={len(candidates)} skipped_unfinished={coverage['skipped_unfinished_count']} unresolved_images={audit['unresolved_local_image_href_count']}",
             flush=True,
         )
-        return run_evaluation_candidates(args, snapshot_path=snapshot, candidates=candidates)
+        print(f"dataset={args.dataset}\nresults={args.output_root}", flush=True)
+        if match_report:
+            print(
+                f"matched={match_report['matched_case_count']}/{match_report['requested_case_count']} "
+                f"missing={len(match_report['missing_case_ids'])} "
+                f"ignored_svg_files={len(match_report['ignored_svg_paths'])}; see coverage.json",
+                flush=True,
+            )
+        status = run_evaluation_candidates(args, snapshot_path=snapshot, candidates=candidates)
+        if status == 0 and not args.rule_only:
+            from drawai_evaluation.scores import summarize
+
+            print(json.dumps(summarize(args.output_root), ensure_ascii=False, indent=2))
+        return status
 
 
 if __name__ == "__main__":

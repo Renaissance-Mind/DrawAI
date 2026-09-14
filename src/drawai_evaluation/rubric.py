@@ -148,7 +148,16 @@ FORBIDDEN_COMMAND_PATHS = (
     "/prompts/",
     "/traces/",
 )
-DEFAULT_CODEX_BIN = Path(shutil.which("codex") or "codex")
+
+
+def default_codex_bin() -> Path:
+    configured = os.environ.get("DRAWBENCH_CODEX_BIN")
+    if configured:
+        return Path(configured).expanduser()
+    local = Path(".runtime/node_modules/.bin/codex")
+    if local.is_file():
+        return local.resolve()
+    return Path(shutil.which("codex") or "codex")
 
 
 def criteria_for_group(group: str) -> tuple[str, ...]:
@@ -1202,9 +1211,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=float, default=1800)
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--host-codex-home", default=str(Path.home() / ".codex"))
-    parser.add_argument(
-        "--codex-bin", default=os.environ.get("DRAWBENCH_CODEX_BIN", str(DEFAULT_CODEX_BIN))
-    )
+    parser.add_argument("--codex-bin", default=str(default_codex_bin()))
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--archive-unverified-outputs", action="store_true")
     parser.add_argument("--worker-task-json")

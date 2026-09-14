@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from collections import Counter
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -14,6 +15,54 @@ DEFAULT_REPO = "caopu/DrawAI-Bench-Lite"
 DEFAULT_REVISION = "b53667b7cf0f1acd8a52aed33c22e952ab6eddd4"
 SCHEMA = "drawai.evaluation_dataset.v1"
 KINDS = {"text", "image", "shape", "connector", "formula", "table"}
+DEFAULT_LOCAL_DIR = Path("data/DrawAI-Bench-Lite")
+
+
+def resolve_dataset_root(explicit: Path | None = None) -> Path:
+    """Use a configured dataset, a local download, or the pinned Hub snapshot."""
+    configured = explicit or os.environ.get("DRAWAI_EVALUATION_DATASET")
+    if configured:
+        return Path(configured).expanduser().resolve(strict=True)
+    if DEFAULT_LOCAL_DIR.exists():
+        return DEFAULT_LOCAL_DIR.resolve(strict=True)
+
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    try:
+        cached = Path(
+            snapshot_download(
+                DEFAULT_REPO, repo_type="dataset", revision=DEFAULT_REVISION, local_files_only=True
+            )
+        )
+    except LocalEntryNotFoundError:
+        cached = None
+    if cached and (cached / "manifest.json").is_file():
+        manifest = json.loads((cached / "manifest.json").read_text(encoding="utf-8"))
+        if all(
+            (cached / row[key]).is_file()
+            for row in manifest["cases"]
+            for key in ("image", "annotation")
+        ):
+            return cached
+    print(
+        f"Downloading private dataset {DEFAULT_REPO}@{DEFAULT_REVISION}; authenticate with hf auth login if needed.",
+        flush=True,
+    )
+    return Path(
+        snapshot_download(
+            DEFAULT_REPO,
+            repo_type="dataset",
+            revision=DEFAULT_REVISION,
+            allow_patterns=[
+                "manifest.json",
+                "images/**",
+                "annotations/**",
+                "README.md",
+                "SHA256SUMS",
+            ],
+        )
+    )
 
 
 def sha256_file(path: Path) -> str:
@@ -80,7 +129,7 @@ def load_dataset_manifest(root: Path, *, verify: bool = True) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download or verify the evaluation dataset.")
     parser.add_argument("action", choices=("download", "verify"))
-    parser.add_argument("--local-dir", type=Path, default=Path("data/DrawAI-Bench-Lite"))
+    parser.add_argument("--local-dir", type=Path, default=DEFAULT_LOCAL_DIR)
     parser.add_argument("--repo-id", default=DEFAULT_REPO)
     parser.add_argument("--revision", default=DEFAULT_REVISION)
     args = parser.parse_args()

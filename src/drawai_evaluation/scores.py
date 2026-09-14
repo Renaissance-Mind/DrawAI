@@ -42,7 +42,11 @@ def summarize(evaluation_root: Path) -> dict:
             values = [s[key] for s in candidates if s.get(key) is not None]
             row[key] = round(100 * sum(values) / len(values), 2) if values else None
         rows.append(row)
-    return {"scale": "0-100, higher is better", "partial": summary["partial"], "results": rows}
+    result = {"scale": "0-100, higher is better", "partial": summary["partial"], "results": rows}
+    coverage_path = evaluation_root / "coverage.json"
+    if coverage_path.is_file():
+        result["coverage"] = json.loads(coverage_path.read_text())
+    return result
 
 
 def main() -> int:
