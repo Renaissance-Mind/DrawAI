@@ -5560,6 +5560,12 @@ button.asset-status-unsupported {
   font-weight: 620;
 }
 
+.upload-requirement-field textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 .upload-confirmation-actions {
   flex: 0 0 auto;
   display: flex;

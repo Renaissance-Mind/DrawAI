@@ -501,6 +501,7 @@ def create_app(
                 rmbg_base_url=resolved_settings.rmbg_base_url,
                 agent_settings=settings_snapshot.agent_settings.to_dict(),
                 execution_mode=execution_mode,
+                user_requirement=str(payload.get("user_requirement") or "").strip(),
             )
             resolved_store.update_case_config_path(case.case_id, config_path)
         resolved_runner.submit_batch(batch.batch_id)

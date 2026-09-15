@@ -183,6 +183,7 @@ async def _invoke_drawai_tool_agent_async(
                 final_text = str(assistant_message.get("content") or "")
                 break
             finalize_text: str | None = None
+            followup_messages: list[Mapping[str, Any]] = []
             for tool_call in tool_calls:
                 tool_call_count += 1
                 result = tool_runtime.execute_tool_call(tool_call)
@@ -194,7 +195,7 @@ async def _invoke_drawai_tool_agent_async(
                     }
                 )
                 if result.followup_message is not None:
-                    messages.append(result.followup_message)
+                    followup_messages.append(result.followup_message)
                 function = tool_call.get("function")
                 tool_name = str(function.get("name") if isinstance(function, Mapping) else "")
                 if tool_name == "finalize" and result.payload.get("ok") is True:
@@ -206,6 +207,7 @@ async def _invoke_drawai_tool_agent_async(
                 )
                 if auto_finalize_text is not None:
                     finalize_text = auto_finalize_text
+            messages.extend(followup_messages)
             if finalize_text is not None:
                 final_text = finalize_text
                 break

@@ -442,6 +442,7 @@ class WorkbenchRunner:
             rmbg_base_url=self.settings.rmbg_base_url,
             agent_settings=settings_snapshot.agent_settings.to_dict(),
             execution_mode=batch.execution_mode,
+            user_requirement=_read_user_requirement(case.config_path),
         )
         self.store.update_case_config_path(case.case_id, config_path)
         return self.store.get_case(case.case_id)
@@ -459,6 +460,7 @@ class WorkbenchRunner:
                 template,
                 agent_settings,
                 execution_mode=batch.execution_mode,
+                user_requirement=_read_user_requirement(case.config_path),
                 processor_operation_config=resolved_processor_operation_config_from_settings(
                     settings_snapshot.processor_settings,
                     api_presets=settings_snapshot.api_presets,
@@ -1620,6 +1622,7 @@ def _workflow_template_with_agent_settings(
     *,
     execution_mode: str = "default",
     processor_operation_config: Mapping[str, Any] | None = None,
+    user_requirement: str = "",
 ) -> WorkflowTemplate:
     mode = execution_mode.strip().lower()
     if mode not in {"default", "agent"}:
@@ -1632,6 +1635,17 @@ def _workflow_template_with_agent_settings(
         base_config = {**dict(node.config), "node_id": node.node_id}
         if node.node_id == "page_spec_refine" and processor_operation_config:
             base_config.update(processor_operation_config)
+        if user_requirement and node.node_id in {"page_spec_refine", "svg_compose"}:
+            base_config["task"] = (
+                f"{base_config.get('task', '')}\n\n"
+                "## User Requirement\n"
+                "Treat this as the design brief for the final PPT/SVG. Apply it to layout, wording, "
+                "style, emphasis, and visual treatment when it is consistent with the workflow contract. "
+                "It may intentionally restyle the source image, but do not omit required content or break the output schema:\n"
+                f"{user_requirement}"
+            )
+            if node.node_id == "page_spec_refine":
+                base_config["page_spec_task_customized"] = True
         config = dict(base_config)
         if _uses_workbench_default_agent_settings(config):
             config = apply_workbench_agent_settings_to_node_config(config, settings)
@@ -2109,6 +2123,7 @@ def create_case_config(
     rmbg_base_url: str = "",
     agent_settings: Mapping[str, Any] | None = None,
     execution_mode: str = "default",
+    user_requirement: str = "",
 ) -> Path:
     base_path = Path(base_config_path).expanduser().resolve()
     with base_path.open("r", encoding="utf-8") as handle:
@@ -2121,6 +2136,10 @@ def create_case_config(
     input_config["image"] = str(Path(source_image).expanduser().resolve(strict=False))
     input_config["output_dir"] = str(Path(output_dir).expanduser().resolve(strict=False))
     payload["input"] = input_config
+    if user_requirement.strip():
+        payload["user_requirement"] = user_requirement.strip()
+    else:
+        payload.pop("user_requirement", None)
     if sam3_base_url:
         sam3_config = payload.get("sam3")
         if not isinstance(sam3_config, dict):
@@ -2164,6 +2183,19 @@ def create_case_config(
     target.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
     load_drawai_config(target, validate_input_exists=False)
     return target
+
+
+def _read_user_requirement(config_path: str | Path) -> str:
+    path = Path(config_path).expanduser().resolve(strict=False)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+    except (OSError, yaml.YAMLError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    value = payload.get("user_requirement")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def copy_source_image(source: str | Path, target_dir: str | Path) -> Path:

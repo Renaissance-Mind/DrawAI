@@ -7697,6 +7697,7 @@ function NewBatchForm({
   const [pendingUpload, setPendingUpload] = useState<UploadConfirmation | null>(null);
   const [selectedUploadIds, setSelectedUploadIds] = useState<Set<string>>(() => new Set());
   const [taskTitle, setTaskTitle] = useState("");
+  const [userRequirement, setUserRequirement] = useState("");
   const [workflowTemplates, setWorkflowTemplates] = useState<WorkflowTemplate[]>([]);
   const [selectedWorkflowTemplateId, setSelectedWorkflowTemplateId] = useState("default_drawai_dag");
   const [selectedExecutionMode, setSelectedExecutionMode] = useState<UploadEngineMode>("agent");
@@ -7929,6 +7930,7 @@ function NewBatchForm({
       form.set("max_concurrent_cases", "10");
       form.set("auto_run_svg_after_analysis", "true");
       form.set("workflow_template_id", selectedWorkflowTemplateId);
+      form.set("user_requirement", userRequirement.trim());
       form.set("execution_mode", "agent");
       form.set("agent_settings", JSON.stringify(normalizedAgentSettings));
       pendingUpload.files.forEach((item) => form.append("files", item.file, item.relativePath));
@@ -8021,6 +8023,16 @@ function NewBatchForm({
                     onChange={(event) => setTaskTitle(event.target.value)}
                     placeholder={uploadTaskTitleFromConfirmation(pendingUpload)}
                     autoComplete="off"
+                  />
+                </label>
+                <label className="settings-field upload-requirement-field">
+                  <span>生成要求（可选）</span>
+                  <textarea
+                    value={userRequirement}
+                    disabled={submitting}
+                    onChange={(event) => setUserRequirement(event.target.value)}
+                    placeholder="例如：保留原图内容，使用蓝色商务风，标题更醒目，输出适合汇报的 PPT。"
+                    rows={3}
                   />
                 </label>
                 <div className="upload-settings-section">
