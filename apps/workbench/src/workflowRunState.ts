@@ -77,7 +77,11 @@ export function currentCaseRecord(detailCase: CaseRecord, progressCase?: CaseRec
       stale_from_stage: detailCase.stale_from_stage
     };
   }
-  return { ...detailCase, ...progressCase };
+  return {
+    ...detailCase,
+    ...progressCase,
+    user_requirement: progressCase.user_requirement || detailCase.user_requirement
+  };
 }
 
 export function mergedStageRuns(progressStageRuns: unknown, detailStageRuns: unknown): StageRunRecord[] {

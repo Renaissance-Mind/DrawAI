@@ -4585,6 +4585,12 @@ function DagRunPanel({
         </div>
         <em>{dagRunCaseIdentifier(currentCase)}</em>
       </header>
+      {currentCase.user_requirement && (
+        <section className="dag-run-requirement" aria-label="生成要求">
+          <span>生成要求</span>
+          <p>{currentCase.user_requirement}</p>
+        </section>
+      )}
       {loadError && <ErrorDetail message={loadError} />}
       <div className="dag-run-body">
         <div className="dag-run-canvas">
@@ -7697,7 +7703,7 @@ function NewBatchForm({
   const [pendingUpload, setPendingUpload] = useState<UploadConfirmation | null>(null);
   const [selectedUploadIds, setSelectedUploadIds] = useState<Set<string>>(() => new Set());
   const [taskTitle, setTaskTitle] = useState("");
-  const [userRequirement, setUserRequirement] = useState("");
+  const [requirementsByUploadId, setRequirementsByUploadId] = useState<Record<string, string>>({});
   const [workflowTemplates, setWorkflowTemplates] = useState<WorkflowTemplate[]>([]);
   const [selectedWorkflowTemplateId, setSelectedWorkflowTemplateId] = useState("default_drawai_dag");
   const [selectedExecutionMode, setSelectedExecutionMode] = useState<UploadEngineMode>("agent");
@@ -7712,6 +7718,7 @@ function NewBatchForm({
   const uploadFileRows = useMemo(() => pendingUpload?.files.map((item) => ({
     id: uploadFileId(item),
     label: uploadFileLabel(item),
+    fieldName: `user_requirement:${uploadFileLabel(item)}`,
     size: formatBytes(item.file.size)
   })) || [], [pendingUpload]);
   const selectedCount = uploadFileRows.filter((row) => selectedUploadIds.has(row.id)).length;
@@ -7771,6 +7778,14 @@ function NewBatchForm({
     }
     const validIds = new Set(pendingUpload.files.map((item) => uploadFileId(item)));
     setSelectedUploadIds((current) => new Set([...current].filter((id) => validIds.has(id))));
+    setRequirementsByUploadId((current) => {
+      const next: Record<string, string> = {};
+      for (const item of pendingUpload.files) {
+        const id = uploadFileId(item);
+        if (current[id]) next[id] = current[id];
+      }
+      return next;
+    });
   }, [pendingUpload]);
 
   async function handleDrop(event: DragEvent<HTMLElement>) {
@@ -7812,6 +7827,7 @@ function NewBatchForm({
     if (files.length === 0) {
       setPendingUpload(null);
       setTaskTitle("");
+      setRequirementsByUploadId({});
       setUploadError("");
       return;
     }
@@ -7819,6 +7835,7 @@ function NewBatchForm({
     if (confirmation.images.length === 0) {
       setPendingUpload(null);
       setTaskTitle("");
+      setRequirementsByUploadId({});
       setUploadError("没有剩余支持的图片。");
       return;
     }
@@ -7927,13 +7944,24 @@ function NewBatchForm({
       const form = new FormData();
       form.set("name", taskTitle.trim() || uploadTaskTitleFromConfirmation(pendingUpload));
       form.set("input_mode", "upload");
-      form.set("max_concurrent_cases", "10");
+      form.set("max_concurrent_cases", "1");
       form.set("auto_run_svg_after_analysis", "true");
       form.set("workflow_template_id", selectedWorkflowTemplateId);
-      form.set("user_requirement", userRequirement.trim());
       form.set("execution_mode", "agent");
       form.set("agent_settings", JSON.stringify(normalizedAgentSettings));
-      pendingUpload.files.forEach((item) => form.append("files", item.file, item.relativePath));
+      const requirementsBySource: Record<string, string> = {};
+      const requirementsByFile = pendingUpload.files.map((item) => ({
+        filename: uploadFileLabel(item),
+        requirement: (requirementsByUploadId[uploadFileId(item)] || "").trim()
+      }));
+      pendingUpload.files.forEach((item) => {
+        const label = uploadFileLabel(item);
+        const requirement = (requirementsByUploadId[uploadFileId(item)] || "").trim();
+        if (requirement) requirementsBySource[label] = requirement;
+        form.append("files", item.file, item.relativePath);
+      });
+      form.set("user_requirements", JSON.stringify(requirementsBySource));
+      form.set("user_requirements_by_file", JSON.stringify(requirementsByFile));
       const detail = await createUploadBatch(form);
       await onCreated(detail);
       onSubmitted();
@@ -8025,16 +8053,29 @@ function NewBatchForm({
                     autoComplete="off"
                   />
                 </label>
-                <label className="settings-field upload-requirement-field">
-                  <span>生成要求（可选）</span>
-                  <textarea
-                    value={userRequirement}
-                    disabled={submitting}
-                    onChange={(event) => setUserRequirement(event.target.value)}
-                    placeholder="例如：保留原图内容，使用蓝色商务风，标题更醒目，输出适合汇报的 PPT。"
-                    rows={3}
-                  />
-                </label>
+                <div className="upload-settings-section upload-requirements-section">
+                  <span className="upload-setting-label">每张图片的生成要求（可选）</span>
+                  <div className="upload-requirement-list">
+                    {uploadFileRows.map((row, index) => (
+                      <label className="settings-field upload-requirement-field" key={row.id}>
+                        <span>{uploadFileRows.length > 1 ? `${index + 1}. ${row.label}` : row.label}</span>
+                        <textarea
+                          name={row.fieldName}
+                          value={requirementsByUploadId[row.id] || ""}
+                          disabled={submitting}
+                          onChange={(event) =>
+                            setRequirementsByUploadId((current) => ({
+                              ...current,
+                              [row.id]: event.target.value
+                            }))
+                          }
+                          placeholder="例如：保留原图内容，使用蓝色商务风，标题更醒目，输出适合汇报的 PPT。"
+                          rows={2}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <div className="upload-settings-section">
                   <span className="upload-setting-label">工作流</span>
                   <div className="upload-workflow-grid" aria-label="选择工作流">

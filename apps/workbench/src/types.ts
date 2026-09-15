@@ -235,6 +235,7 @@ export interface CaseRecord {
   stage: string;
   source_image_path: string;
   preview_url?: string;
+  user_requirement?: string;
   editor_ready?: boolean;
   run_root: string;
   config_path: string;

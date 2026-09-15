@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import time
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
 import urllib.error
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from lxml import etree
 from PIL import Image
+import yaml
 
 from ..artifacts import write_json
 from .assets import process_asset_plan_elements, read_asset_draft, validate_asset_plan, write_asset_draft
@@ -478,6 +480,8 @@ def create_app(
                 local_dir=payload.get("local_dir"),
                 upload_files=upload_files,
                 generated_image_urls=_string_list_field(payload.get("generated_image_urls") or payload.get("image_urls")),
+                user_requirements=_user_requirements_by_source(payload),
+                upload_requirements=_user_requirements_by_file(payload),
             )
         except HTTPException as exc:
             resolved_store.update_batch_status(batch.batch_id, "failed", error_message=str(exc.detail))
@@ -485,14 +489,14 @@ def create_app(
         for source in sources:
             case = resolved_store.create_case(
                 batch_id=batch.batch_id,
-                name=source.name,
-                source_image_path=source,
+                name=source.path.name,
+                source_image_path=source.path,
                 config_path=base_config,
             )
             write_case_settings_snapshot(case.run_root, settings_snapshot)
             config_path = create_case_config(
                 base_config_path=base_config,
-                source_image=source,
+                source_image=source.path,
                 output_dir=case.run_root,
                 target_path=Path(case.run_root) / "drawai.config.yaml",
                 sam3_base_url=resolved_settings.sam3_base_url,
@@ -501,7 +505,7 @@ def create_app(
                 rmbg_base_url=resolved_settings.rmbg_base_url,
                 agent_settings=settings_snapshot.agent_settings.to_dict(),
                 execution_mode=execution_mode,
-                user_requirement=str(payload.get("user_requirement") or "").strip(),
+                user_requirement=source.user_requirement,
             )
             resolved_store.update_case_config_path(case.case_id, config_path)
         resolved_runner.submit_batch(batch.batch_id)
@@ -1392,6 +1396,12 @@ def _images_api_response_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class _CollectedSource:
+    path: Path
+    user_requirement: str = ""
+
+
 async def _collect_sources(
     store: WorkbenchStore,
     batch_id: str,
@@ -1400,7 +1410,9 @@ async def _collect_sources(
     local_dir: Any,
     upload_files: list[Any],
     generated_image_urls: list[str],
-) -> list[Path]:
+    user_requirements: Mapping[str, str],
+    upload_requirements: Sequence[str],
+) -> list[_CollectedSource]:
     if input_mode == "local_dir":
         if not local_dir:
             raise HTTPException(status_code=400, detail="local image path or directory is required")
@@ -1408,35 +1420,90 @@ async def _collect_sources(
         if root.is_file():
             if root.suffix.lower() not in IMAGE_EXTENSIONS:
                 raise HTTPException(status_code=400, detail=f"local path is not a supported image file: {root}")
-            sources = [root]
+            sources = [_CollectedSource(root, _source_requirement(user_requirements, root.name))]
         elif root.is_dir():
-            sources = sorted(path for path in root.iterdir() if path.suffix.lower() in IMAGE_EXTENSIONS and path.is_file())
+            sources = [
+                _CollectedSource(path, _source_requirement(user_requirements, path.name))
+                for path in sorted(path for path in root.iterdir() if path.suffix.lower() in IMAGE_EXTENSIONS and path.is_file())
+            ]
         else:
             raise HTTPException(status_code=400, detail=f"local path does not exist: {root}")
     else:
         upload_root = store.uploads_root / batch_id
         upload_root.mkdir(parents=True, exist_ok=True)
         sources = []
-        for upload in upload_files:
+        for upload_index, upload in enumerate(upload_files):
             filename = str(getattr(upload, "filename", "") or "upload.png")
+            upload_requirement = upload_requirements[upload_index].strip() if upload_index < len(upload_requirements) else ""
             suffix = Path(filename).suffix.lower()
             if suffix in IMAGE_EXTENSIONS:
+                source_label = _safe_upload_relative_path(filename).as_posix()
                 target = _unique_upload_path(upload_root / _safe_upload_relative_path(filename))
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("wb") as handle:
                     shutil.copyfileobj(upload.file, handle)
-                sources.append(target)
+                sources.append(_CollectedSource(target, upload_requirement or _source_requirement(user_requirements, source_label, filename)))
                 continue
             if suffix not in ARCHIVE_EXTENSIONS:
                 continue
             target = _unique_upload_path(upload_root / _safe_filename(filename))
             with target.open("wb") as handle:
                 shutil.copyfileobj(upload.file, handle)
-            sources.extend(_extract_zip_image_sources(target, upload_root / f"{target.stem}_extracted"))
-        sources.extend(_materialize_generated_image_urls(generated_image_urls, upload_root))
+            archive_requirement = upload_requirement or _source_requirement(user_requirements, filename)
+            sources.extend(
+                _CollectedSource(path, _source_requirement(user_requirements, path.name) or archive_requirement)
+                for path in _extract_zip_image_sources(target, upload_root / f"{target.stem}_extracted")
+            )
+        sources.extend(_CollectedSource(path) for path in _materialize_generated_image_urls(generated_image_urls, upload_root))
     if not sources:
         raise HTTPException(status_code=400, detail="no supported image files found")
     return sources
+
+
+def _user_requirements_by_source(payload: Mapping[str, Any]) -> dict[str, str]:
+    raw = payload.get("user_requirements")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="user_requirements must be valid JSON") from exc
+        if not isinstance(parsed, Mapping):
+            raise HTTPException(status_code=400, detail="user_requirements must be a JSON object")
+        return {str(key): str(value).strip() for key, value in parsed.items() if str(value).strip()}
+    fallback = str(payload.get("user_requirement") or "").strip()
+    return {"*": fallback} if fallback else {}
+
+
+def _user_requirements_by_file(payload: Mapping[str, Any]) -> list[str]:
+    raw = payload.get("user_requirements_by_file")
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="user_requirements_by_file must be valid JSON") from exc
+    if not isinstance(parsed, Sequence) or isinstance(parsed, str | bytes):
+        raise HTTPException(status_code=400, detail="user_requirements_by_file must be a JSON array")
+    values: list[str] = []
+    for item in parsed:
+        if isinstance(item, Mapping):
+            values.append(str(item.get("requirement") or "").strip())
+        else:
+            values.append(str(item or "").strip())
+    return values
+
+
+def _source_requirement(requirements: Mapping[str, str], *keys: str) -> str:
+    for key in keys:
+        value = requirements.get(str(key))
+        if value:
+            return value
+    for key in keys:
+        name = Path(str(key).replace("\\", "/")).name
+        value = requirements.get(name)
+        if value:
+            return value
+    return requirements.get("*", "")
 
 
 def _materialize_generated_image_urls(values: list[str], upload_root: Path) -> list[Path]:
@@ -2604,6 +2671,7 @@ def _case_to_api_with_preview(store: WorkbenchStore, case: CaseRecord) -> dict[s
         None,
     )
     payload["preview_url"] = source_preview_url or (preview.to_api()["url"] if preview else "")
+    payload["user_requirement"] = _case_user_requirement(case.config_path)
     payload["editor_ready"] = (Path(case.run_root) / "reports" / "workbench" / "asset_draft.json").is_file()
     payload["compatibility_mode"] = (
         classification.mode
@@ -2613,6 +2681,21 @@ def _case_to_api_with_preview(store: WorkbenchStore, case: CaseRecord) -> dict[s
     payload["can_fork_from_source"] = classification.can_fork_from_source
     payload["workflow_breakpoint_node_id"] = workflow_breakpoint_node_id(case.run_root)
     return payload
+
+
+def _case_user_requirement(config_path: str | Path) -> str:
+    path = Path(config_path).expanduser().resolve(strict=False)
+    if not path.is_file():
+        return ""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+    except (OSError, yaml.YAMLError):
+        return ""
+    if not isinstance(payload, Mapping):
+        return ""
+    value = payload.get("user_requirement")
+    return value.strip() if isinstance(value, str) else ""
 
 
 STANDARD_PROGRESS_FILES = (

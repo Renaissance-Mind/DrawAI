@@ -3071,8 +3071,8 @@ select:focus {
 
 .dag-run-card {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -3115,8 +3115,35 @@ select:focus {
   white-space: nowrap;
 }
 
+.dag-run-requirement {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  background: #f8fafc;
+}
+
+.dag-run-requirement span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.dag-run-requirement p {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .dag-run-body {
   min-height: 0;
+  flex: 1 1 auto;
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 18px;
@@ -5558,6 +5585,15 @@ button.asset-status-unsupported {
 
 .upload-title-field input {
   font-weight: 620;
+}
+
+.upload-requirements-section {
+  gap: 10px;
+}
+
+.upload-requirement-list {
+  display: grid;
+  gap: 10px;
 }
 
 .upload-requirement-field textarea {

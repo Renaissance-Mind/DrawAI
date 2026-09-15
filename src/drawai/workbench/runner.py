@@ -1637,12 +1637,13 @@ def _workflow_template_with_agent_settings(
             base_config.update(processor_operation_config)
         if user_requirement and node.node_id in {"page_spec_refine", "svg_compose"}:
             base_config["task"] = (
-                f"{base_config.get('task', '')}\n\n"
                 "## User Requirement\n"
-                "Treat this as the design brief for the final PPT/SVG. Apply it to layout, wording, "
-                "style, emphasis, and visual treatment when it is consistent with the workflow contract. "
-                "It may intentionally restyle the source image, but do not omit required content or break the output schema:\n"
-                f"{user_requirement}"
+                "This is the user's design brief for this specific image and it has priority over pixel-faithful copying. "
+                "If the requirement asks for restyling, simplification, emphasis, layout changes, or content changes, "
+                "produce the final SVG/PPT according to that brief instead of merely tracing the source image. "
+                "Keep the output schema valid and preserve source content only when the brief does not ask to change it.\n"
+                f"{user_requirement}\n\n"
+                f"{base_config.get('task', '')}"
             )
             if node.node_id == "page_spec_refine":
                 base_config["page_spec_task_customized"] = True
