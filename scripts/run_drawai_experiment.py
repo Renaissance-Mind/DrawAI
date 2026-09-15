@@ -25,6 +25,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from drawai.experiment_artifacts import next_timestamped_run_dir, safe_run_slug
+from drawai.local_setup import runtime_venv_python
 
 
 RUN_SCHEMA = "drawai.run_manifest.v1"
@@ -282,7 +283,7 @@ def _maybe_reexec_local_runtime(args: argparse.Namespace, repo_root: Path) -> No
     if not args.local_inprocess or args.dry_run or os.environ.get("DRAWAI_LOCAL_RUNTIME_REEXEC") == "1":
         return
     runtime_root = _runtime_root_path(args.local_runtime_root, repo_root)
-    venv_python = runtime_root / ".venv" / "bin" / "python"
+    venv_python = runtime_venv_python(runtime_root)
     if not venv_python.exists():
         raise FileNotFoundError(
             f"Local DrawAI runtime venv not found: {venv_python}. "

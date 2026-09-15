@@ -584,7 +584,7 @@ def _empty_torch_cache() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     mps = getattr(torch, "mps", None)
-    if mps is not None and hasattr(torch.mps, "empty_cache"):
+    if mps is not None and hasattr(torch.mps, "empty_cache") and _torch_mps_available(torch):
         torch.mps.empty_cache()
 
 
