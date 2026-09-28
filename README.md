@@ -1,10 +1,11 @@
 <h1 align="center">DrawAI：让位图可编辑</h1>
 
 <p align="center">
-  <a href="https://github.com/Renaissance-Mind/DrawAI-dev"><img alt="Repository" src="https://img.shields.io/badge/repo-DrawAI-111827"></a>
+  <a href="https://github.com/Renaissance-Mind/DrawAI"><img alt="Repository" src="https://img.shields.io/badge/repo-DrawAI-111827"></a>
   <a href="https://drawai.renaissancemind.ai/demo"><img alt="Demo" src="https://img.shields.io/badge/demo-online-F59E0B"></a>
   <a href="https://drawai.renaissancemind.ai"><img alt="Website" src="https://img.shields.io/badge/website-DrawAI-0EA5E9"></a>
   <a href="https://arxiv.org/abs/2608.00548"><img alt="arXiv:2608.00548" src="https://img.shields.io/badge/arXiv-2608.00548-DC2626"></a>
+  <a href="https://huggingface.co/datasets/caopu/DrawAI-Bench-Lite"><img alt="Hugging Face Dataset" src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E?logo=huggingface"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-2563EB">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-7C3AED">
   <a href="README-en.md">English</a>
@@ -169,7 +170,7 @@ Workbench 的任务和上传文件默认写到：
 
 ## 💬 联系我们
 
-欢迎通过 [GitHub Issue](https://github.com/Renaissance-Mind/DrawAI-dev/issues) 反馈问题，也欢迎直接提交 PR。想参与测试或了解最新进展，也可以扫码加入 DrawAI 微信群。
+欢迎通过 [GitHub Issue](https://github.com/Renaissance-Mind/DrawAI/issues) 反馈问题，也欢迎直接提交 PR。想参与测试或了解最新进展，也可以扫码加入 DrawAI 微信群。
 
 <p align="center">
   <img src="wechat.jpg" alt="DrawAI 微信群二维码" width="260">
@@ -216,3 +217,14 @@ DrawAI 的设计和实现参考了这些开源项目的思路与实践：
 DrawAI 源码以 Apache-2.0 发布，源码层面允许商用、修改和再分发。
 
 第三方模型、模型权重、字体和外部服务分别遵循各自许可证。
+
+## 引用
+
+```bibtex
+@article{cao2026drawai,
+  title={DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable},
+  author={Cao, Pu and Kong, Qingye and Yin, Xuedan and Zhao, Xuekun and Yan, Rupeng and Song, Qing and Zhang, Yao and Yang, Lu},
+  journal={arXiv preprint arXiv:2608.00548},
+  year={2026}
+}
+```

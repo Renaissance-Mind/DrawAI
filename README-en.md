@@ -1,10 +1,11 @@
 <h1 align="center">DrawAI: Make Raster Figures Editable</h1>
 
 <p align="center">
-  <a href="https://github.com/Renaissance-Mind/DrawAI-dev"><img alt="Repository" src="https://img.shields.io/badge/repo-DrawAI-111827"></a>
+  <a href="https://github.com/Renaissance-Mind/DrawAI"><img alt="Repository" src="https://img.shields.io/badge/repo-DrawAI-111827"></a>
   <a href="https://drawai.renaissancemind.ai/demo"><img alt="Demo" src="https://img.shields.io/badge/demo-online-F59E0B"></a>
   <a href="https://drawai.renaissancemind.ai"><img alt="Website" src="https://img.shields.io/badge/website-DrawAI-0EA5E9"></a>
   <a href="https://arxiv.org/abs/2608.00548"><img alt="arXiv:2608.00548" src="https://img.shields.io/badge/arXiv-2608.00548-DC2626"></a>
+  <a href="https://huggingface.co/datasets/caopu/DrawAI-Bench-Lite"><img alt="Hugging Face Dataset" src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E?logo=huggingface"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-2563EB">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-7C3AED">
   <a href="README.md">简体中文</a>
@@ -169,7 +170,7 @@ Workbench tasks and uploaded files are stored by default under:
 
 ## 💬 Contact Us
 
-Feel free to open a [GitHub issue](https://github.com/Renaissance-Mind/DrawAI-dev/issues) or submit a PR. You can also scan the QR code to join the DrawAI WeChat group for testing and updates.
+Feel free to open a [GitHub issue](https://github.com/Renaissance-Mind/DrawAI/issues) or submit a PR. You can also scan the QR code to join the DrawAI WeChat group for testing and updates.
 
 <p align="center">
   <img src="wechat.jpg" alt="DrawAI WeChat group QR code" width="260">
@@ -216,3 +217,14 @@ DrawAI's design and implementation were informed by ideas and practices from the
 DrawAI source code is released under Apache-2.0. The source-code license permits commercial use, modification, and redistribution.
 
 Third-party models, model weights, fonts, and external services follow their own upstream terms.
+
+## Citation
+
+```bibtex
+@article{cao2026drawai,
+  title={DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable},
+  author={Cao, Pu and Kong, Qingye and Yin, Xuedan and Zhao, Xuekun and Yan, Rupeng and Song, Qing and Zhang, Yao and Yang, Lu},
+  journal={arXiv preprint arXiv:2608.00548},
+  year={2026}
+}
+```
