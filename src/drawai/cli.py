@@ -45,6 +45,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .tooling import drawai_tool_cli
 
         return drawai_tool_cli(args_list[1:])
+    if args_list and args_list[0] == "ppt":
+        from .pptx_cli import pptx_cli
+
+        return pptx_cli(args_list[1:])
 
     parser = argparse.ArgumentParser(description="Run the DrawAI SVG pipeline.")
     parser.add_argument("--config", required=True, help="Path to a DrawAI pipeline YAML config.")

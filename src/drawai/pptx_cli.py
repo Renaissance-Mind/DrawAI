@@ -1,0 +1,80 @@
+"""Machine-readable template editing commands for humans and agents."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+from typing import Sequence
+
+
+def pptx_cli(argv: Sequence[str] | None = None) -> int:
+    from .pptx_editing import PptxEditPlan, edit_pptx, inspect_pptx, render_pptx, validate_pptx_package
+
+    parser = argparse.ArgumentParser(prog="drawai ppt", description="Inspect and edit existing PPTX templates using Python.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("schema", help="Print the JSON Schema for edit plans.")
+    inspect = commands.add_parser("inspect", help="List slide objects, shape IDs, layouts, text and geometry.")
+    inspect.add_argument("source", type=Path)
+    inspect.add_argument("--output", type=Path, help="Write the inventory JSON instead of printing it.")
+    inspect.add_argument("--preview-dir", type=Path, help="Also render the original slides.")
+    edit = commands.add_parser("edit", help="Apply a JSON plan and save a new PPTX; never overwrite the template.")
+    edit.add_argument("source", type=Path)
+    edit.add_argument("--plan", required=True, type=Path)
+    edit.add_argument("--output", required=True, type=Path)
+    edit.add_argument("--report", type=Path)
+    edit.add_argument("--preview-dir", type=Path, help="Also render the final PPTX for visual verification.")
+    render = commands.add_parser("render", help="Render the actual PPTX into PDF and slide PNGs.")
+    render.add_argument("source", type=Path)
+    render.add_argument("--output-dir", required=True, type=Path)
+    validate = commands.add_parser("validate", help="Check package XML and internal resource relationships.")
+    validate.add_argument("source", type=Path)
+    for command in (inspect, edit, render):
+        command.add_argument("--renderer", help="LibreOffice soffice executable; defaults to PATH.")
+        command.add_argument("--rasterizer", help="Poppler pdftoppm executable; defaults to PATH.")
+    args = parser.parse_args(argv)
+    try:
+        json_output = args.output if args.command == "inspect" else args.report if args.command == "edit" else None
+        if json_output:
+            if json_output.suffix.lower() != ".json" or json_output.exists():
+                raise ValueError("Choose a new .json filename for the inventory or report")
+            inputs = [args.source]
+            if args.command == "edit":
+                inputs.extend([args.plan, args.output])
+            if any(json_output.resolve() == path.resolve() for path in inputs):
+                raise ValueError("Inventory/report paths must differ from the source, plan and output PPTX")
+        if args.command == "schema":
+            result = PptxEditPlan.model_json_schema()
+        elif args.command == "inspect":
+            result = inspect_pptx(args.source)
+            if args.preview_dir:
+                result["preview"] = render_pptx(args.source, args.preview_dir,
+                                                renderer=args.renderer, rasterizer=args.rasterizer)
+            if args.output:
+                _write_json(args.output, result)
+                return 0
+        elif args.command == "edit":
+            plan = json.loads(args.plan.read_text(encoding="utf-8"))
+            result = edit_pptx(args.source, plan, args.output, asset_root=args.plan.resolve().parent)
+            if args.preview_dir:
+                result["preview"] = render_pptx(args.output, args.preview_dir,
+                                                renderer=args.renderer, rasterizer=args.rasterizer)
+            if args.report:
+                _write_json(args.report, result)
+        elif args.command == "render":
+            result = render_pptx(args.source, args.output_dir,
+                                 renderer=args.renderer, rasterizer=args.rasterizer)
+        else:
+            result = validate_pptx_package(args.source)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:  # CLI boundary: surface the actual error and return a failure code.
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+
+def _write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")

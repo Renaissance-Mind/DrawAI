@@ -37,6 +37,23 @@ class DrawAITool:
 
 def drawai_tool_registry() -> dict[str, DrawAITool]:
     return {
+        "ppt": DrawAITool(
+            tool_id="ppt",
+            summary="读取和编辑现有 PPTX 模板，保留原生对象，并插入 DrawAI SVG 转出的原生图形。",
+            parameters=(
+                "inspect <pptx> [--output <json>] [--preview-dir <dir>]: 列出真实页面、shape_id、版式、文字和几何信息。",
+                "schema: 输出 drawai.pptx_edit_plan.v1 JSON Schema。",
+                "edit <pptx> --plan <json> --output <new.pptx> [--report <json>] [--preview-dir <dir>]: 执行编辑计划；素材路径相对于计划文件。",
+                "render <pptx> --output-dir <dir>: 使用 LibreOffice 和 Poppler 输出真实 PPTX 的 PDF 和 PNG。",
+                "validate <pptx>: 检查 XML 和内部素材引用。",
+                "页面编号从 1 开始；shape_id 是 inspect 给出的页面内对象 ID；位置和字号使用 96 DPI px。",
+            ),
+            examples=(
+                "ppt inspect template.pptx --output template.json --preview-dir template-preview",
+                "ppt edit template.pptx --plan edit-plan.json --output edited.pptx --report edit-report.json --preview-dir edited-preview",
+            ),
+            runner=_ppt_tool,
+        ),
         "format": DrawAITool(
             tool_id="format",
             summary="检查并校验 DrawAI workflow 文件格式。",
@@ -232,6 +249,12 @@ def resolve_drawai_tool_command_prefix(repo_root: str | Path, *, cwd: str | Path
             "tool",
         ]
     )
+
+
+def _ppt_tool(argv: Sequence[str]) -> int:
+    from .pptx_cli import pptx_cli
+
+    return pptx_cli(argv)
 
 
 def _format_tool(argv: Sequence[str]) -> int:

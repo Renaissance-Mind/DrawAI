@@ -1683,6 +1683,8 @@ class SvgToPptCompiler:
         svg_path: str | Path,
         output_path: str | Path,
         report_path: str | Path | None = None,
+        *,
+        check_full_slide_editability: bool = True,
     ) -> dict[str, Any]:
         from drawai._vendor.svg_pptx_converter.svg_to_pptx.pptx_builder import create_pptx_with_native_svg
 
@@ -1762,7 +1764,11 @@ class SvgToPptCompiler:
             "conversion_trace_path": str(trace_path),
             "pptx_structure": pptx_structure,
         }
-        if pptx_structure.get("is_single_screenshot_like"):
+        # A template insertion is a page fragment: a local image with a label
+        # can be legitimate even though the whole-slide screenshot heuristic
+        # would reject the same counts as a complete reconstruction.
+        report["full_slide_editability_checked"] = check_full_slide_editability
+        if check_full_slide_editability and pptx_structure.get("is_single_screenshot_like"):
             report["status"] = "error"
             report["issues"] = [
                 {
