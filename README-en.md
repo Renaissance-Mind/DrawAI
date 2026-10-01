@@ -189,6 +189,7 @@ The PPTX export path always uses the bundled native-shape converter, mapping SVG
 
 ## 📚 Documentation
 
+- [drawai-ppt standalone skill: create/edit PPTX with Python and extend the implementation](skills/drawai-ppt/SKILL.md)
 - [Edit existing PPTX templates: inspect objects, edit native content and insert SVG](docs/en/pptx-editing.md)
 - [Runtime options, ports, and model paths](docs/zh-CN/runtime-options.md)
 - [Evaluation guide: dataset, single-image and batch SVG evaluation](docs/en/evaluation.md)

@@ -2,6 +2,8 @@
 
 DrawAI 使用 Python 读取现有 PPTX、执行对象编辑计划，并保存为新文件。新图形通过现有 SVG → DrawingML 转换器插入模板页面，保留原生形状、文字、图片和 Office Math。模板编辑不需要 OpenAI 的 Artifact Tool，也不需要运行图像重建模型。
 
+从空白文稿创建 PPTX 可使用 `drawai ppt create --plan create-plan.json --output deck.pptx`，计划格式为 `drawai.pptx_create_plan.v1`。创建和编辑共用原生对象操作，新增文本框与预设形状分别使用 `add_text` 和 `add_shape`。完整的独立 Agent 使用流程和代码扩展方式见 [drawai-ppt skill](../../skills/drawai-ppt/SKILL.md)。
+
 ## 读取模板
 
 ```bash
@@ -54,6 +56,8 @@ CLI 中的素材路径相对于**计划 JSON 所在目录**解析；SVG 内的�
 
 | 操作 | 用途与字段 |
 | --- | --- |
+| `add_text` | 使用 `frame`、`text`、可选 `style` 和 `name` 创建原生文本框 |
+| `add_shape` | 使用 `geometry`、`frame`、填充、边框和可选文字创建原生预设形状 |
 | `replace_text` | 在指定文本对象中替换 `find` 为 `text`，支持跨文字 run 匹配，保留原有段落和文字样式；不跨段落或换行匹配 |
 | `set_text` | 设置整个文本框的 `text`；新段落沿用对应原段落的属性和首个 run 的样式，可提供 `style` |
 | `replace_image` | 替换指定图片的 `path`；`fit: preserve` 保留位置与裁剪，`cover` 根据新图片重新居中裁剪 |
@@ -68,7 +72,7 @@ CLI 中的素材路径相对于**计划 JSON 所在目录**解析；SVG 内的�
 | `add_slide` | 使用检查结果中的 `layout_id` 追加页面，复用该版式及母版 |
 | `duplicate_slide` | 复制指定 `slide` 并追加到末尾；复制图表、工作簿与备注，后续修改副本图表不会改变原页 |
 
-`text_style` 和 `style` 接受 `font_family`、`font_size`、`bold`、`italic`、`underline` 和 RGB `color`。未指定的属性沿用原对象。`set_text` 用首个 run 的样式排新内容；需要保留混合样式时用 `replace_text`。
+`text_style` 和 `style` 接受 `font_family`、`font_size`、`bold`、`italic`、`underline`、RGB `color`、`alignment`、`vertical_alignment`、`line_spacing` 和 `word_wrap`。未指定的属性沿用原对象。`set_text` 用首个 run 的样式排新内容；需要保留混合样式时用 `replace_text`。
 
 类别图表的数据示例：
 

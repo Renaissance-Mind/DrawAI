@@ -39,10 +39,11 @@ def drawai_tool_registry() -> dict[str, DrawAITool]:
     return {
         "ppt": DrawAITool(
             tool_id="ppt",
-            summary="读取和编辑现有 PPTX 模板，保留原生对象，并插入 DrawAI SVG 转出的原生图形。",
+            summary="用 Python 创建和编辑原生 PPTX，复用模板并插入 DrawAI SVG 转出的原生图形。",
             parameters=(
                 "inspect <pptx> [--output <json>] [--preview-dir <dir>]: 列出真实页面、shape_id、版式、文字和几何信息。",
-                "schema: 输出 drawai.pptx_edit_plan.v1 JSON Schema。",
+                "schema [--mode create|edit]: 输出创建或编辑计划的 JSON Schema。",
+                "create --plan <json> --output <new.pptx> [--report <json>] [--preview-dir <dir>]: 从空白页面创建原生 PPTX。",
                 "edit <pptx> --plan <json> --output <new.pptx> [--report <json>] [--preview-dir <dir>]: 执行编辑计划；素材路径相对于计划文件。",
                 "render <pptx> --output-dir <dir>: 使用 LibreOffice 和 Poppler 输出真实 PPTX 的 PDF 和 PNG。",
                 "validate <pptx>: 检查 XML 和内部素材引用。",

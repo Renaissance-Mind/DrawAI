@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
 import os
@@ -22,7 +23,8 @@ from pptx import Presentation
 from pptx.chart.data import BubbleChartData, CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_SHAPE_TYPE, PP_PLACEHOLDER_TYPE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -33,6 +35,7 @@ from pptx.util import Pt
 
 EMU_PER_PX = 9525
 EDIT_PLAN_SCHEMA = "drawai.pptx_edit_plan.v1"
+CREATE_PLAN_SCHEMA = "drawai.pptx_create_plan.v1"
 _R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
@@ -58,6 +61,33 @@ class TextStyle(StrictModel):
     italic: bool | None = None
     underline: bool | None = None
     color: str | None = Field(default=None, pattern=r"^#?[0-9a-fA-F]{6}$")
+    alignment: Literal["left", "center", "right", "justify"] | None = None
+    vertical_alignment: Literal["top", "middle", "bottom"] | None = None
+    line_spacing: float | None = Field(default=None, gt=0)
+    word_wrap: bool | None = None
+
+
+class AddText(StrictModel):
+    op: Literal["add_text"]
+    slide: int = Field(ge=1)
+    frame: Frame
+    text: str
+    style: TextStyle | None = None
+    name: str | None = None
+
+
+class AddShape(StrictModel):
+    op: Literal["add_shape"]
+    slide: int = Field(ge=1)
+    frame: Frame
+    geometry: str = "rect"
+    fill: str = Field(default="none", pattern=r"^(none|#?[0-9a-fA-F]{6})$")
+    line_color: str = Field(default="none", pattern=r"^(none|#?[0-9a-fA-F]{6})$")
+    line_width: float = Field(default=1, ge=0)
+    rotation: float = 0
+    text: str | None = None
+    text_style: TextStyle | None = None
+    name: str | None = None
 
 
 class TargetOperation(StrictModel):
@@ -170,7 +200,7 @@ class DuplicateSlide(StrictModel):
 
 Operation = Annotated[
     SetText | ReplaceText | ReplaceImage | SetTableCells | SetChartData | SetGeometry
-    | SetStyle | AddSvg | AddImage | AddTable | AddChart | AddSlide | DuplicateSlide,
+    | SetStyle | AddSvg | AddImage | AddTable | AddChart | AddSlide | DuplicateSlide | AddText | AddShape,
     Field(discriminator="op"),
 ]
 
@@ -178,6 +208,19 @@ Operation = Annotated[
 class PptxEditPlan(StrictModel):
     schema_: Literal["drawai.pptx_edit_plan.v1"] = Field(alias="schema")
     source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    operations: list[Operation] = Field(min_length=1)
+
+
+class SlideSize(StrictModel):
+    width: float = Field(default=1280, gt=0)
+    height: float = Field(default=720, gt=0)
+
+
+class PptxCreatePlan(StrictModel):
+    schema_: Literal["drawai.pptx_create_plan.v1"] = Field(alias="schema")
+    slide_size: SlideSize = Field(default_factory=SlideSize)
+    slide_count: int = Field(default=1, ge=1)
+    title: str | None = None
     operations: list[Operation] = Field(min_length=1)
 
 
@@ -361,7 +404,17 @@ def _shape(slide: Any, shape_id: int):
 def _style_text(frame: Any, style: TextStyle | None) -> None:
     if style is None:
         return
+    if style.vertical_alignment is not None:
+        frame.vertical_anchor = {"top": MSO_ANCHOR.TOP, "middle": MSO_ANCHOR.MIDDLE,
+                                 "bottom": MSO_ANCHOR.BOTTOM}[style.vertical_alignment]
+    if style.word_wrap is not None:
+        frame.word_wrap = style.word_wrap
     for paragraph in frame.paragraphs:
+        if style.alignment is not None:
+            paragraph.alignment = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER,
+                                   "right": PP_ALIGN.RIGHT, "justify": PP_ALIGN.JUSTIFY}[style.alignment]
+        if style.line_spacing is not None:
+            paragraph.line_spacing = Pt(style.line_spacing * 0.75)
         fonts = [paragraph.font, *(run.font for run in paragraph.runs)]
         for font in fonts:
             if style.font_family is not None:
@@ -604,6 +657,35 @@ def _apply_operation(prs: Any, operation: Any, root: Path, temp: Path) -> dict[s
         _copy_slide(prs, slide)
         return {"slide": len(prs.slides), "source_slide": operation.slide}
     result = {"slide": operation.slide}
+    if isinstance(operation, (AddText, AddShape)):
+        frame = _dimensions(operation.frame)
+        if isinstance(operation, AddText):
+            shape = slide.shapes.add_textbox(*frame)
+            _set_text(shape.text_frame, operation.text, operation.style)
+        else:
+            aliases = {"rect": "RECTANGLE", "round_rect": "ROUNDED_RECTANGLE",
+                       "roundRect": "ROUNDED_RECTANGLE", "ellipse": "OVAL"}
+            geometry = aliases.get(operation.geometry, operation.geometry.upper())
+            if geometry not in MSO_AUTO_SHAPE_TYPE.__members__:
+                raise PptxEditError(f"Unsupported shape geometry: {operation.geometry}")
+            shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE[geometry], *frame)
+            if operation.fill == "none":
+                shape.fill.background()
+            else:
+                shape.fill.solid()
+                shape.fill.fore_color.rgb = RGBColor.from_string(operation.fill.lstrip("#"))
+            if operation.line_color == "none":
+                shape.line.fill.background()
+            else:
+                shape.line.color.rgb = RGBColor.from_string(operation.line_color.lstrip("#"))
+            shape.line.width = Pt(operation.line_width * 0.75)
+            shape.rotation = operation.rotation
+            if operation.text is not None:
+                _set_text(shape.text_frame, operation.text, operation.text_style)
+        if operation.name:
+            shape.name = operation.name
+        result["shape_id"] = shape.shape_id
+        return result
     if isinstance(operation, AddSvg):
         result.update(_insert_svg(prs, slide, operation, root, temp))
         return result
@@ -708,18 +790,50 @@ def edit_pptx(source_path: str | Path, plan: dict[str, Any] | PptxEditPlan,
     source_digest = _sha256(source)
     if parsed.source_sha256 and parsed.source_sha256 != source_digest:
         raise PptxEditError("The template changed after inspection; inspect it again before editing")
+    root = Path(asset_root).expanduser().resolve(strict=True) if asset_root else source.parent
+    return _execute_plan(Presentation(str(source)), parsed.operations, output_path, root,
+                         source=source, source_digest=source_digest)
+
+
+def create_pptx(plan: dict[str, Any] | PptxCreatePlan, output_path: str | Path,
+                *, asset_root: str | Path | None = None) -> dict[str, Any]:
+    """Create native slides from a plan, using the same objects as template edits."""
+    parsed = plan if isinstance(plan, PptxCreatePlan) else PptxCreatePlan.model_validate(plan)
+    prs = Presentation()
+    prs.slide_width = round(parsed.slide_size.width * EMU_PER_PX)
+    prs.slide_height = round(parsed.slide_size.height * EMU_PER_PX)
+    # Blank layouts retain latent footer/date placeholders; those do not become
+    # content objects when a slide is created.
+    metadata_types = {PP_PLACEHOLDER_TYPE.DATE, PP_PLACEHOLDER_TYPE.FOOTER,
+                      PP_PLACEHOLDER_TYPE.SLIDE_NUMBER, PP_PLACEHOLDER_TYPE.HEADER}
+    blank = next((layout for layout in prs.slide_layouts
+                  if all(shape.placeholder_format.type in metadata_types for shape in layout.placeholders)), None)
+    if blank is None:
+        raise PptxEditError("The default presentation has no blank content layout")
+    for _ in range(parsed.slide_count):
+        prs.slides.add_slide(blank)
+    props = prs.core_properties
+    props.title = parsed.title or Path(output_path).stem
+    props.author = props.last_modified_by = "DrawAI"
+    props.created = props.modified = datetime.now(timezone.utc)
+    props.revision = 1
+    root = Path(asset_root).expanduser().resolve(strict=True) if asset_root else Path.cwd()
+    return _execute_plan(prs, parsed.operations, output_path, root)
+
+
+def _execute_plan(prs: Any, operations: list[Operation], output_path: str | Path,
+                  root: Path, *, source: Path | None = None,
+                  source_digest: str | None = None) -> dict[str, Any]:
     output = Path(output_path).expanduser().resolve(strict=False)
     if output.suffix.lower() != ".pptx":
         raise PptxEditError("The output filename must end in .pptx")
     if output == source or output.exists():
         raise PptxEditError("Choose a new output filename; existing files are never overwritten")
-    root = Path(asset_root).expanduser().resolve(strict=True) if asset_root else source.parent
-    prs = Presentation(str(source))
     output.parent.mkdir(parents=True, exist_ok=True)
     results = []
     with tempfile.TemporaryDirectory(prefix=".drawai-pptx-", dir=output.parent) as temp_name:
         temp = Path(temp_name)
-        for index, operation in enumerate(parsed.operations):
+        for index, operation in enumerate(operations):
             operation_dir = temp / str(index)
             operation_dir.mkdir()
             results.append({"op": operation.op, **_apply_operation(prs, operation, root, operation_dir)})
@@ -730,12 +844,12 @@ def edit_pptx(source_path: str | Path, plan: dict[str, Any] | PptxEditPlan,
         reopened = Presentation(str(draft))
         if len(reopened.slides) != len(prs.slides):
             raise PptxEditError("Exported slide count does not match the edited deck")
-        if _sha256(source) != source_digest:
+        if source is not None and _sha256(source) != source_digest:
             raise PptxEditError("Source presentation changed while editing")
         # Atomic, exclusive publication; a concurrent output is not overwritten.
         os.link(draft, output)
-    return {"schema": "drawai.pptx_edit_report.v1", "status": "ok",
-            "source_pptx": str(source), "source_sha256": source_digest,
+    return {"schema": "drawai.pptx_edit_report.v1" if source else "drawai.pptx_create_report.v1", "status": "ok",
+            "source_pptx": str(source) if source else None, "source_sha256": source_digest,
             "output_pptx": str(output), "output_sha256": _sha256(output),
             "slide_count": len(prs.slides), "operations": results,
             "package_validation": validation}

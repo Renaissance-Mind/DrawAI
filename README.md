@@ -189,6 +189,7 @@ DrawAI 的目标不是把原图简单塞进 PPT，而是尽量生成可编辑、
 
 ## 📚 更多文档
 
+- [drawai-ppt 独立 skill：使用 Python 创建、编辑 PPT，并扩展对应代码](skills/drawai-ppt/SKILL.md)
 - [编辑现有 PPTX 模板：对象检查、原生编辑与 SVG 插入](docs/zh-CN/pptx-editing.md)
 - [运行方式、参数、端口和模型路径](docs/zh-CN/runtime-options.md)
 - [评测指南：数据集、单图与批量 SVG 评测](docs/zh-CN/evaluation.md)

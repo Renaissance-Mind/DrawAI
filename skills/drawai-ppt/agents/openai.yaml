@@ -1,0 +1,3 @@
+interface:
+  display_name: "DrawAI PPT"
+  short_description: "Create and edit PPTX with Python and native SVG objects"

@@ -2,6 +2,8 @@
 
 DrawAI uses Python to inspect and edit existing PPTX files and save a new deck. SVG insertions reuse DrawAI's native DrawingML converter, including editable shapes, text, local pictures and Office Math. This path does not require OpenAI Artifact Tool or image reconstruction models.
 
+Use `drawai ppt create --plan create-plan.json --output deck.pptx` to create a new deck with `drawai.pptx_create_plan.v1`. Creation and editing share native operations; `add_text` and `add_shape` add text boxes and preset shapes. The [drawai-ppt skill](../../skills/drawai-ppt/SKILL.md) provides the standalone agent workflow and implementation extension guide.
+
 ```bash
 uv run drawai ppt inspect template.pptx --output template.json
 uv run drawai ppt schema > edit-plan.schema.json
@@ -34,6 +36,8 @@ The inventory identifies Office Math and other preserved compatibility objects. 
 
 | Operation | Purpose |
 | --- | --- |
+| `add_text` | Add a native text box with `frame`, `text`, optional `style` and `name` |
+| `add_shape` | Add a native preset shape with `geometry`, `frame`, fill, line and optional text |
 | `replace_text` | Replace `find` with `text` within paragraphs, including matches spanning runs; retain existing run formatting |
 | `set_text` | Replace the full text frame, retaining corresponding paragraph properties and each paragraph's first-run style; optional `style` |
 | `replace_image` | Replace picture `path`; `fit: preserve` keeps placement/crop, `cover` recomputes centered crop |
@@ -48,7 +52,7 @@ The inventory identifies Office Math and other preserved compatibility objects. 
 | `add_slide` | Append a slide using an existing `layout_id` |
 | `duplicate_slide` | Append a copy of `slide`, cloning mutable chart/workbook/notes parts so later edits are independent |
 
-Text styles accept `font_family`, `font_size`, `bold`, `italic`, `underline` and six-digit RGB `color`. Unspecified attributes retain their existing values. For mixed-format text, prefer `replace_text`; `set_text` formats new content with the template paragraph's first-run style.
+Text styles accept `font_family`, `font_size`, `bold`, `italic`, `underline`, six-digit RGB `color`, `alignment`, `vertical_alignment`, `line_spacing` and `word_wrap`. Unspecified attributes retain their existing values. For mixed-format text, prefer `replace_text`; `set_text` formats new content with the template paragraph's first-run style.
 
 Category chart data has `categories` and `series: [{name, values}]`, with one value per category. Scatter series use `points: [[x,y], ...]`; bubble series use `[[x,y,size], ...]`. New charts support `column`, `bar`, `line`, `area`, `pie`, `doughnut`, `scatter` and `bubble`. Data editing requires native charts/tables, not pictures of them.
 
