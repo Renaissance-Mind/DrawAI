@@ -1,0 +1,314 @@
+{
+  "schema": "pptx.schema_inventory.v1",
+  "source_repository": "https://github.com/dotnet/Open-XML-SDK",
+  "source_revision": "431ab05cf160248cc3885a4a766026d4f8243792",
+  "sources": [
+    {
+      "file": "schemas_microsoft_com_ink_2010_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_ink_2010_main.json",
+      "sha256": "67422df5e64f98b030aa508138acd851249d1b9759af80578a3bab24bf9498c4"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2007_8_2_chart.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2007_8_2_chart.json",
+      "sha256": "a87f03fff8a2e9bcafb6b2d770b1b1d408ef597cbcc743d5d0077d770b56d79d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2008_diagram.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2008_diagram.json",
+      "sha256": "654979dbf3b39e9becf790f248a5e94ed17faebee9bc5eaa88c56b6a3fe0a181"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_chartDrawing.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_chartDrawing.json",
+      "sha256": "c8e17d0597d9f499a495fbdf0e9c087854ddfbd58b95ea1118f69877734ca223"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_compatibility.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_compatibility.json",
+      "sha256": "df4113bfb5ecfa17d9e92dec00008fcece290f1e93e627b53b2ac4f6c82b7c4d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_diagram.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_diagram.json",
+      "sha256": "e4615901e46c5621ce309c6b3509ad59e2d65bcc7d59d036e1f5a197fc18150f"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_main.json",
+      "sha256": "bbbb587330d261e22db3b52e23f9ca5945f26274c1ef60286b087ef083e0922b"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_picture.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_picture.json",
+      "sha256": "b5678ca6ffc7864369099096ef29a98e54714fef611d04a18c35f7a0554f567f"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2010_slicer.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2010_slicer.json",
+      "sha256": "39945ea6b76e18e471adecfb5e611693cc48764cb12821e5a91f2caa103e0a8f"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2012_chart.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2012_chart.json",
+      "sha256": "bc4d7331cc4f9c879489ba99359680614d272b5ed369e93ffc2cacdade45f0e5"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2012_chartStyle.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2012_chartStyle.json",
+      "sha256": "01c1c3f7e1cf03ba776bbdcf90b21713958eaeb1885fe377d95fbd2ec4cb1909"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2012_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2012_main.json",
+      "sha256": "62d8ca4b81a2b546372cc1df1aac8d6647872a2309341c472f62c2abb6b78ef5"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2012_timeslicer.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2012_timeslicer.json",
+      "sha256": "9f0229bc2d558383fccdb3861cd551c21c2a82b1d3d6d8f1ad3d94204f61348b"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2013_main_command.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2013_main_command.json",
+      "sha256": "1550d92f8a18a6ad2b570b1e8d087b64ea380c9cccd971059c35852f3889ac70"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2014_chart.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2014_chart.json",
+      "sha256": "4ef679353604243f111f8b219efebadee3f0ec381576d906b452f619dcbbc054"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2014_chart_ac.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2014_chart_ac.json",
+      "sha256": "2c49d1583e325f02106ea8738444078b2f737813803fc9730e6a3ac9789c4996"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2014_chartex.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2014_chartex.json",
+      "sha256": "8a858dc4ef574ddae9438aa7cf3c1b1ef0c3e7210475951755d709ab4b2ee0f8"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2014_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2014_main.json",
+      "sha256": "0e6817250af1cc8fc848294e0697cf0d4b42b32afad186de035c7943d7419854"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2016_11_diagram.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2016_11_diagram.json",
+      "sha256": "3a5c7ec64cad99eda8a738d1493afb07c1b78202207bcbd80fc796c02bda11f0"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2016_11_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2016_11_main.json",
+      "sha256": "0eda50aa8a7edf001ebd584ceb72f9dfd1d553618f61c06e18b34f48188021d8"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2016_12_diagram.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2016_12_diagram.json",
+      "sha256": "d8f06d22ef161d79e457593b010411df14c1da2d73b1dd15f3a2636a1c60c8a6"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2016_SVG_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2016_SVG_main.json",
+      "sha256": "5c04ac7a4eee2bab828a73d9392108fa8ecd960c919cd0a5af6c2f7261e8708c"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2016_ink.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2016_ink.json",
+      "sha256": "d74615bcb11a4dc9a5a315abb87a9edcd5c91670a5bb39081610d3959dd33e00"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2017_03_chart.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2017_03_chart.json",
+      "sha256": "4a0e550873587c3e4aaa4710716633aad5042e16e83422c0df2c38475d609fdb"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2017_decorative.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2017_decorative.json",
+      "sha256": "d3a2bd422815aa2c2b9dfaa17e407bfe26cd3851e4fbfbe4505fd3338cb8108d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2017_model3d.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2017_model3d.json",
+      "sha256": "379f3f6991fa43cb841c0453c8341cb76317a39f9bdc821c5289a53b92e6a443"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2018_animation.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2018_animation.json",
+      "sha256": "3e5fb82238a8b3434869f34e1132db342e484d1b8815da98fe4a83c3ead41665"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2018_animation_model3d.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2018_animation_model3d.json",
+      "sha256": "280b1213ffd14b11d2eafa565a9f013c4797929345b733ebb597fd2855c2142d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2018_hyperlinkcolor.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2018_hyperlinkcolor.json",
+      "sha256": "d4385ad1be21551631eed6afca5749d86edb086bcb7526152d41f9048bfa484d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2018_sketchyshapes.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2018_sketchyshapes.json",
+      "sha256": "ef5d5f127bc0539fc4ff0642c26df75a3c3e8b6ffc9999136c08cad674226209"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2020_classificationShape.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2020_classificationShape.json",
+      "sha256": "f4a69b11b5e697125e4f86c4e421ac850f0b41d0cd7cc16c255420459d79f03e"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2021_livefeed.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2021_livefeed.json",
+      "sha256": "114615c92e2c84901b7cba7f2e4af3e2aeb4b4cc447f15a3caf27bcfa84e4762"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2021_oembed.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2021_oembed.json",
+      "sha256": "bc7ed659d9c478c787ff6b0cc7c5cba0afc526d4bc066ab08607d3697d151d3b"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2021_scriptlink.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2021_scriptlink.json",
+      "sha256": "5f5759961754a2b105f678833735c09fd67583945ffdb8c1d6fa900dca16968b"
+    },
+    {
+      "file": "schemas_microsoft_com_office_drawing_2022_imageformula.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_drawing_2022_imageformula.json",
+      "sha256": "ca0b8cfd923eed546ca61b5351adeaf1005db200c1a365e7313d2879a2d9b655"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2010_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2010_main.json",
+      "sha256": "d4d46ab1d4cfce8ba7dedef4dfcbabd20b137d876b83aeb13b406911dfe4df4c"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2012_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2012_main.json",
+      "sha256": "95bd6787306dcafe9ddfa9e5110953a1314aaf73fad3f1fd520ee2c818d6be3b"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2012_roamingSettings.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2012_roamingSettings.json",
+      "sha256": "a6b97f1ff0204bca8ba4287584309643fab862fc4fd98fa0369e78a49917b175"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2013_main_command.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2013_main_command.json",
+      "sha256": "e32c43433d1527ae172780e01016f0fb5ba70ec3011a396d66fce433d13d5228"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2015_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2015_main.json",
+      "sha256": "6cab0dd7e30116c89ab13d8b6c7efa2c8c326634ec0d63c5a2c9c448c1629ff5"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2017_10_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2017_10_main.json",
+      "sha256": "b5029423db8bc7a1ff908725ec25efda18dd9329aa972b14e69e7d8b294cefdc"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2017_3_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2017_3_main.json",
+      "sha256": "64f47c47512886f98d49015c549d095d9e0afd1be85caadd719735d29becea6d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2018_4_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2018_4_main.json",
+      "sha256": "872fe28920c3d42fe4eed574662f54fcf89c2e4e887c26046bea9944bbec48b5"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2018_8_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2018_8_main.json",
+      "sha256": "a8d47ac5d7e2824a16d239b70f9b1f8097167c5c41a5513181aaaba6b0ab993a"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2019_12_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2019_12_main.json",
+      "sha256": "d9f2c344893bd9f2ed4469e550d152d2c2f0a41481e4dd23c9cb87f44e860035"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2019_9_main_command.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2019_9_main_command.json",
+      "sha256": "de5b07c97758a9fee71b09dd4efb307ecf950535bf1fd7cbfd26a31c0199c373"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2020_02_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2020_02_main.json",
+      "sha256": "9489fb415b829c440d0a2d6b2353855d7fbfd00b952f9fc3a5e03464b5176f8d"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2021_06_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2021_06_main.json",
+      "sha256": "566bf04d6d32c55df340fa0aa9f79544071a3373dcd5e171cf8db4e3ab9a7301"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2022_03_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2022_03_main.json",
+      "sha256": "eea46411847290a52c8b91ea5ccd08577f76b73fe2918043254ad63834fd6ca4"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2022_08_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2022_08_main.json",
+      "sha256": "bfae05b48f1fe7f81ee581e069750ea7519dd79329906c5311154924744995fa"
+    },
+    {
+      "file": "schemas_microsoft_com_office_powerpoint_2023_02_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_microsoft_com_office_powerpoint_2023_02_main.json",
+      "sha256": "f9e88ba05e92978f502a787af8ff40dfd1d8f3c58cb43f1e816772a8dd5a2179"
+    },
+    {
+      "file": "schemas_openxmlformats_org_drawingml_2006_chart.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_drawingml_2006_chart.json",
+      "sha256": "cc504f44275968b6c33386a2a21e34a112cac06865392f5a74483b2e80ed7c61"
+    },
+    {
+      "file": "schemas_openxmlformats_org_drawingml_2006_chartDrawing.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_drawingml_2006_chartDrawing.json",
+      "sha256": "1edf4f5c5264788cacd0c9774620d360f5c223b8f82ea937736eebc361561a77"
+    },
+    {
+      "file": "schemas_openxmlformats_org_drawingml_2006_diagram.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_drawingml_2006_diagram.json",
+      "sha256": "afd79f99aeb0b03f38d281911337f945455ecd6884ab96ec1ea81473be761548"
+    },
+    {
+      "file": "schemas_openxmlformats_org_drawingml_2006_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_drawingml_2006_main.json",
+      "sha256": "e760b534c96ee02745d2a8084f1be362826da4470a85d0b0102a67c3b1678ab7"
+    },
+    {
+      "file": "schemas_openxmlformats_org_drawingml_2006_picture.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_drawingml_2006_picture.json",
+      "sha256": "4a46ae4893068706255ac07e2f91b38804eced21e9485880096396c951de88ee"
+    },
+    {
+      "file": "schemas_openxmlformats_org_officeDocument_2006_custom-properties.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_officeDocument_2006_custom-properties.json",
+      "sha256": "886433fa2ac586b31076ae4387d38a17ff1326d6c6c4d1b4e97377ebde236d4b"
+    },
+    {
+      "file": "schemas_openxmlformats_org_officeDocument_2006_extended-properties.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_officeDocument_2006_extended-properties.json",
+      "sha256": "1f4b02438ca1522235df5c037cc53b977216b6d372cf7ceb48bae4c78de3de49"
+    },
+    {
+      "file": "schemas_openxmlformats_org_officeDocument_2006_math.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_officeDocument_2006_math.json",
+      "sha256": "237395f1e5cee42e34ab12675251f5c01c212fe0dac5484aa36ffcbdfa58d892"
+    },
+    {
+      "file": "schemas_openxmlformats_org_presentationml_2006_main.json",
+      "url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/431ab05cf160248cc3885a4a766026d4f8243792/data/schemas/schemas_openxmlformats_org_presentationml_2006_main.json",
+      "sha256": "b1fef2102bb6d422f39f102110dfec4b1980dd4dcf8c0eee40600130c8aaa2b8"
+    }
+  ],
+  "counts": {
+    "schemas": 60,
+    "types": 2009,
+    "properties": 8692,
+    "enums": 241
+  },
+  "scope": "PPTX/PowerPoint, shared DrawingML, charts, diagrams, math, metadata and drawing extensions; shared types need PPTX-context applicability checks."
+}

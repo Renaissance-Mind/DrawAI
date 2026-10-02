@@ -1,0 +1,4 @@
+python-pptx>=1.0.2,<2
+lxml>=5,<7
+Pillow>=10,<13
+pydantic>=2.9,<3

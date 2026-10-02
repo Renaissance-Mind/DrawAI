@@ -76,20 +76,24 @@ def test_create_native_objects_then_edit_generated_template(tmp_path):
 
 def test_skill_launcher_runs_outside_repo_and_after_relocation(tmp_path):
     plan = tmp_path / "create-plan.json"
-    plan.write_text(json.dumps(create_plan()))
+    standalone_plan = create_plan()
+    standalone_plan["schema"] = "pptx.create_plan.v1"
+    plan.write_text(json.dumps(standalone_plan))
     output = tmp_path / "deck.pptx"
     env = {"PATH": os.environ.get("PATH", os.defpath)}
-    result = subprocess.run([sys.executable, str(LAUNCHER), "create", "--plan", str(plan),
+    result = subprocess.run([sys.executable, "-I", str(LAUNCHER), "create", "--plan", str(plan),
                              "--output", str(output)], cwd=tmp_path, env=env,
                             check=True, capture_output=True, text=True)
     assert json.loads(result.stdout)["slide_count"] == 2
-    relocated = tmp_path / "relocated" / "scripts" / "ppt.py"
-    relocated.parent.mkdir(parents=True)
-    shutil.copy2(LAUNCHER, relocated)
-    result = subprocess.run([sys.executable, str(relocated), "--repo-root", str(REPO),
-                             "inspect", str(output)], cwd=tmp_path, env=env,
+    relocated_root = tmp_path / "relocated"
+    shutil.copytree(REPO / "skills" / "drawai-ppt", relocated_root,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    relocated = relocated_root / "scripts" / "ppt.py"
+    result = subprocess.run([sys.executable, "-I", str(relocated), "inspect", str(output)], cwd=tmp_path, env=env,
                             check=True, capture_output=True, text=True)
     assert json.loads(result.stdout)["slides"][0]["shapes"][0]["text"] == "Original title"
+    subprocess.run([sys.executable, "-I", str(relocated_root / "scripts" / "check.py")],
+                   cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
 
 
 def test_create_cli_and_current_schema(tmp_path, capsys):
