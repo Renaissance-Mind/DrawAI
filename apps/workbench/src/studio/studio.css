@@ -142,6 +142,11 @@
   min-height: 24px;
   padding: 3px;
 }
+.studio-download-path {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .studio-toast {
   position: fixed;
   z-index: 100;

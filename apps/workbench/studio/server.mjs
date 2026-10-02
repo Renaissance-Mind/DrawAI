@@ -118,8 +118,8 @@ export const TOOLS = [
   ),
   tool(
     "drawai_artifact",
-    "Register a real local output file with task_id, kind and slide_id. Kinds: image/svg/pptx/preview/reference_preview/document/report. Native editable objects are required for PPTX conversion results. read returns asset base64; select chooses a prior image version; import_image uploads an existing image as a slide; archive exports a complete project ZIP.",
-    ["register", "read", "select", "import_image", "archive"],
+    "Register a real local output file with task_id, kind and slide_id. Kinds: image/svg/pptx/preview/reference_preview/document/report. Native editable objects are required for PPTX conversion results. read returns asset base64; select chooses a prior image version; import_image uploads an existing image as a slide; archive returns a complete project ZIP. save_download saves the registered asset (asset_id) or project ZIP (omit asset_id) to Downloads/DrawAI on this host without overwriting existing files, and returns the actual saved path, size and SHA-256.",
+    ["register", "read", "select", "import_image", "archive", "save_download"],
   ),
 ];
 
@@ -150,7 +150,7 @@ export function createMcpServer(store = new StudioStore()) {
   let workbench;
   const getWorkbench = () => (workbench ??= loadWorkbenchResource());
   const server = new Server(
-    { name: "drawai-studio", version: "2.0.1" },
+    { name: "drawai-studio", version: "2.0.2" },
     { capabilities: { tools: {}, resources: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -290,9 +290,12 @@ export async function startHttp(store, port) {
         Buffer.concat(chunks).toString("utf8"),
       );
       // The browser development endpoint cannot read arbitrary filesystem paths.
-      if (name === "drawai_artifact" && args.action === "register")
+      if (
+        name === "drawai_artifact" &&
+        ["register", "save_download"].includes(args.action)
+      )
         throw new Error(
-          "Register local outputs through the agent MCP tool or CLI",
+          "Local file operations require the agent MCP tool or CLI",
         );
       const data = await dispatch(store, name, args);
       res.setHeader("Content-Type", "application/json");

@@ -96,8 +96,11 @@ export class StudioStore {
   constructor(
     root = process.env.DRAWAI_STUDIO_HOME ||
       path.join(os.homedir(), ".local/share/drawai/studio"),
+    downloadsRoot = process.env.DRAWAI_STUDIO_DOWNLOADS_DIR ||
+      path.join(os.homedir(), "Downloads", "DrawAI"),
   ) {
     this.root = path.resolve(root);
+    this.downloadsRoot = path.resolve(downloadsRoot);
   }
   async ready() {
     await mkdir(this.root, { recursive: true });
@@ -370,9 +373,43 @@ export class StudioStore {
   }
   async readAsset(projectId, assetId) {
     const project = await this.read(projectId);
+    const { asset, bytes } = await this.assetBytes(project, assetId);
+    return { asset, data_base64: bytes.toString("base64") };
+  }
+  async assetBytes(project, assetId) {
     const asset = lookup(project.assets, assetId, "Asset");
     const bytes = await readFile(await this.assetPath(project, assetId));
-    return { asset, data_base64: bytes.toString("base64") };
+    if (digest(bytes) !== asset.sha256)
+      throw new Error("Asset bytes no longer match the registered file");
+    return { asset, bytes };
+  }
+  async saveDownload(args) {
+    const data = args.asset_id
+      ? await this.readAsset(args.project_id, args.asset_id)
+      : await this.artifactAction({ action: "archive", project_id: args.project_id });
+    const bytes = Buffer.from(data.data_base64, "base64");
+    const filename = path.basename(data.asset?.filename || data.filename)
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+      .replace(/[. ]+$/, "");
+    const { name, ext } = path.parse(filename || "download");
+    await mkdir(this.downloadsRoot, { recursive: true });
+    for (let index = 0; index < 10000; index++) {
+      const outputName = `${name}${index ? ` (${index})` : ""}${ext}`;
+      const destination = path.join(this.downloadsRoot, outputName);
+      try {
+        await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+      } catch (error) {
+        if (error.code === "EEXIST") continue;
+        throw error;
+      }
+      return {
+        saved_path: destination,
+        filename: outputName,
+        size: bytes.length,
+        sha256: digest(bytes),
+      };
+    }
+    throw new Error("Too many files with this download name");
   }
   async referenceAction(args) {
     return this.mutate(args.project_id, async (p) => {
@@ -698,15 +735,16 @@ export class StudioStore {
     });
   }
   async artifactAction(args) {
+    if (args.action === "save_download") return this.saveDownload(args);
     if (args.action === "read")
       return this.readAsset(args.project_id, args.asset_id);
     if (args.action === "archive") {
       const p = await this.read(args.project_id);
       const files = { "project.json": strToU8(JSON.stringify(p, null, 2)) };
-      for (const asset of p.assets)
-        files[asset.relative_path] = new Uint8Array(
-          await readFile(await this.assetPath(p, asset.id)),
-        );
+      for (const asset of p.assets) {
+        const { bytes } = await this.assetBytes(p, asset.id);
+        files[asset.relative_path] = new Uint8Array(bytes);
+      }
       for (const task of p.tasks) {
         files[`tasks/${task.id}/request.json`] = new Uint8Array(
           await readFile(

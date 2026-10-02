@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
@@ -19,7 +19,7 @@ const serverPath = new URL("../server.mjs", import.meta.url).pathname;
 async function workspace(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "drawai-studio-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  return new StudioStore(root);
+  return new StudioStore(root, path.join(root, "downloads"));
 }
 async function imageBytes() {
   return readFile(sourceImage);
@@ -428,6 +428,74 @@ test("browser downloads return exact registered bytes and reject unrelated origi
       .status,
     403,
   );
+  const saveFromBrowser = await fetch(`${url.split("/api/")[0]}/api/studio/call`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "drawai_artifact",
+      arguments: { action: "save_download", project_id: project.id, asset_id: asset.id },
+    }),
+  });
+  assert.equal(saveFromBrowser.status, 400);
+  assert.match((await saveFromBrowser.json()).error, /MCP tool or CLI/);
+});
+
+test("local downloads preserve registered bytes and cannot overwrite files or choose another path", async (t) => {
+  const store = await workspace(t);
+  const { project } = await store.create({ title: "Download integrity" });
+  const bytes = await imageBytes();
+  const { asset } = await store.artifactAction({
+    action: "import_image",
+    project_id: project.id,
+    slide_id: project.slides[0].id,
+    filename: "../页面.png",
+    data_base64: bytes.toString("base64"),
+  });
+  await mkdir(store.downloadsRoot, { recursive: true });
+  const existing = path.join(store.downloadsRoot, "页面.png");
+  await writeFile(existing, bytes);
+  const receipts = await Promise.all([0, 1].map(() => store.artifactAction({
+    action: "save_download",
+    project_id: project.id,
+    asset_id: asset.id,
+    filename: "../../redirect.png",
+    source_path: "/not-a-project-asset.png",
+  })));
+  assert.equal(new Set(receipts.map((r) => r.saved_path)).size, 2);
+  for (const receipt of receipts) {
+    assert.equal(path.dirname(receipt.saved_path), store.downloadsRoot);
+    assert.match(receipt.filename, /^页面 \([12]\)\.png$/);
+    assert.equal(receipt.sha256, asset.sha256);
+    assert.equal(receipt.size, bytes.length);
+    assert.deepEqual(await readFile(receipt.saved_path), bytes);
+  }
+  assert.deepEqual(await readFile(existing), bytes);
+  const current = await store.read(project.id);
+  await writeFile(await store.assetPath(current, asset.id), Buffer.from("changed bytes"));
+  await assert.rejects(store.artifactAction({
+    action: "save_download", project_id: project.id, asset_id: asset.id,
+  }), /no longer match/);
+  assert.equal((await readdir(store.downloadsRoot)).length, 3);
+});
+
+test("project download saves a real archive with source assets and immutable requests", async (t) => {
+  const store = await workspace(t);
+  const { project } = await store.create({ title: "项目归档" });
+  const bytes = await imageBytes();
+  const { asset } = await store.artifactAction({
+    action: "import_image", project_id: project.id, slide_id: project.slides[0].id,
+    filename: "页面.png", data_base64: bytes.toString("base64"),
+  });
+  const { task } = await store.taskAction({
+    action: "create", project_id: project.id, kind: "generate", slide_ids: [project.slides[0].id],
+  });
+  const receipt = await store.artifactAction({ action: "save_download", project_id: project.id });
+  const archive = await readFile(receipt.saved_path);
+  assert.equal(createHash("sha256").update(archive).digest("hex"), receipt.sha256);
+  const files = unzipSync(archive);
+  assert.deepEqual(Buffer.from(files[asset.relative_path]), bytes);
+  assert.equal(JSON.parse(Buffer.from(files["project.json"]).toString()).id, project.id);
+  assert.ok(files[`tasks/${task.id}/request.json`]);
 });
 
 test("stdio MCP exposes the real workbench resource and round-trips project state", async (t) => {
@@ -439,7 +507,11 @@ test("stdio MCP exposes the real workbench resource and round-trips project stat
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [serverPath],
-    env: { ...process.env, DRAWAI_STUDIO_HOME: store.root },
+    env: {
+      ...process.env,
+      DRAWAI_STUDIO_HOME: store.root,
+      DRAWAI_STUDIO_DOWNLOADS_DIR: store.downloadsRoot,
+    },
   });
   t.after(() => client.close());
   await client.connect(transport);
@@ -453,6 +525,25 @@ test("stdio MCP exposes the real workbench resource and round-trips project stat
     arguments: { action: "create", title: "MCP project" },
   });
   assert.equal(created.structuredContent.project.title, "MCP project");
+  const bytes = await imageBytes();
+  const imported = await client.callTool({
+    name: "drawai_artifact",
+    arguments: {
+      action: "import_image", project_id: created.structuredContent.project.id,
+      slide_id: created.structuredContent.project.slides[0].id,
+      filename: "MCP download.png", data_base64: bytes.toString("base64"),
+    },
+  });
+  const downloaded = await client.callTool({
+    name: "drawai_artifact",
+    arguments: {
+      action: "save_download", project_id: created.structuredContent.project.id,
+      asset_id: imported.structuredContent.asset.id,
+    },
+  });
+  assert.equal(downloaded.isError, undefined);
+  assert.deepEqual(await readFile(downloaded.structuredContent.saved_path), bytes);
+  assert.equal(downloaded.structuredContent.sha256, imported.structuredContent.asset.sha256);
   const opened = await client.callTool({
     name: "drawai_open_workbench",
     arguments: { project_id: created.structuredContent.project.id },

@@ -14,7 +14,7 @@ const plugin = path.join(marketplace, 'drawai');
 await mkdir(path.join(plugin, '.codex-plugin'), { recursive: true });
 for (const skill of ['drawai-studio', 'drawai-simple', 'drawai-ppt']) await cp(path.join(root, 'skills', skill), path.join(plugin, 'skills', skill), { recursive: true });
 const manifest = {
-  name: 'drawai', version: '2.0.1', description: 'Create slide images and editable PPT in the current Codex conversation with a visual workbench.',
+  name: 'drawai', version: '2.0.2', description: 'Create slide images and editable PPT in the current Codex conversation with a visual workbench.',
   author: { name: 'Renaissance Mind' }, license: 'Apache-2.0', skills: './skills/', mcpServers: './.mcp.json',
   interface: { displayName: 'DrawAI', shortDescription: '视觉参考、PPT 图片与可编辑 PowerPoint', defaultPrompt: ['打开 DrawAI 工作台，开始制作 PPT'], category: 'Productivity', capabilities: ['Interactive', 'Read', 'Write'] },
 };

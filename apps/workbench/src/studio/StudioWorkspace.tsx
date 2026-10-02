@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { connectStudio, fileBase64, type StudioRuntime } from "./runtime";
+import { connectStudio, fileBase64, type StudioRuntime, type DownloadReceipt } from "./runtime";
 import type {
   StudioProject,
   StudioTask,
@@ -42,6 +42,7 @@ export default function StudioWorkspace() {
   draftValue.current = draft;
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [downloadReceipt, setDownloadReceipt] = useState<DownloadReceipt>();
   const [pending, setPending] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -356,18 +357,11 @@ export default function StudioWorkspace() {
     });
   }
   async function download(asset: StudioAsset) {
-    const data = await runtime!.call<{
-      asset: StudioAsset;
-      data_base64: string;
-    }>("drawai_artifact", {
-      action: "read",
+    const receipt = await runtime!.download({
       project_id: project!.id,
       asset_id: asset.id,
     });
-    await runtime!.download(asset.filename, asset.mime_type, data.data_base64, {
-      project_id: project!.id,
-      asset_id: asset.id,
-    });
+    if (receipt) setDownloadReceipt(receipt);
   }
   async function sendTask(task: StudioTask) {
     await runtime!.send(task.prompt);
@@ -435,7 +429,7 @@ export default function StudioWorkspace() {
     .find((image) => image.id !== currentImage?.id);
 
   return (
-    <div className="studio-app app-root" data-studio-revision="3">
+    <div className="studio-app app-root" data-studio-revision="4">
       <header className="app-topbar studio-topbar">
         <div className="brand-row">
           <span className="studio-logo">
@@ -503,6 +497,17 @@ export default function StudioWorkspace() {
         <div className="studio-toast" role="status">
           <Icon name="check" />
           {notice}
+        </div>
+      )}
+      {downloadReceipt && (
+        <div className="studio-notice" role="status">
+          <div>
+            已保存：{downloadReceipt.filename}
+            <div className="studio-download-path">{downloadReceipt.saved_path}</div>
+          </div>
+          <button onClick={() => setDownloadReceipt(undefined)} aria-label="关闭下载提示">
+            <Icon name="close" size={15} />
+          </button>
         </div>
       )}
       <input
@@ -607,15 +612,8 @@ export default function StudioWorkspace() {
                 disabled={Boolean(pending)}
                 onClick={() =>
                   void perform("archive", async () => {
-                    const data = await call("drawai_artifact", {
-                      action: "archive",
-                    });
-                    await runtime!.download(
-                      data.filename!,
-                      data.mime_type!,
-                      data.data_base64!,
-                      { project_id: project.id },
-                    );
+                    const receipt = await runtime!.download({ project_id: project.id });
+                    if (receipt) setDownloadReceipt(receipt);
                   })
                 }
               >

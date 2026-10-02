@@ -64,6 +64,8 @@ node apps/workbench/studio/cli.mjs drawai_task @task-update.json
 
 CLI 与插件必须使用相同的 `DRAWAI_STUDIO_HOME`。文件上传上限为 48 MB。项目删除会移动到该目录下的 `.trash`，保留恢复能力。
 
+下载按钮会检测宿主是否提供文件下载能力。未提供时，通过插件的 `drawai_artifact` / `save_download` 将已登记的文件或项目 ZIP 保存到运行插件的主机上的 `~/Downloads/DrawAI`，并在界面显示实际路径。文件会校验 SHA-256；遇到重名自动添加序号，不覆盖已有文件。浏览器开发视图使用浏览器自身的下载流程。测试环境可通过 `DRAWAI_STUDIO_DOWNLOADS_DIR` 指定隔离目录。
+
 ## 浏览器开发与验证
 
 本轮只实现插件执行模式。浏览器开发视图可以管理同一份项目并创建任务请求，通过复制请求交给会话执行；它不运行独立 Agent SDK 后端。

@@ -26,12 +26,17 @@ export interface StudioRuntime {
   call<T>(name: string, args?: Record<string, unknown>): Promise<T>;
   send(prompt: string): Promise<void>;
   context(value: unknown): Promise<void>;
-  download(
-    filename: string,
-    mimeType: string,
-    base64: string,
-    resource?: { project_id: string; asset_id?: string },
-  ): Promise<void>;
+  download(resource: DownloadResource): Promise<DownloadReceipt | void>;
+}
+export interface DownloadResource {
+  project_id: string;
+  asset_id?: string;
+}
+export interface DownloadReceipt {
+  filename: string;
+  saved_path: string;
+  size: number;
+  sha256: string;
 }
 
 function unpack<T>(result: McpResult): T {
@@ -46,22 +51,10 @@ function unpack<T>(result: McpResult): T {
   if (!text) throw new Error("DrawAI returned no result");
   return JSON.parse(text) as T;
 }
-function fileBlob(mime: string, base64: string): Blob {
-  const raw = atob(base64);
-  const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
-  return new Blob([bytes], { type: mime });
-}
-
-function saveBlob(filename: string, mime: string, base64: string) {
-  const url = URL.createObjectURL(fileBlob(mime, base64));
-  saveLink(filename, url);
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
-}
-
-function saveLink(filename: string, url: string) {
+function saveLink(url: string) {
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.download = "";
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -154,7 +147,7 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     }>(
       "ui/initialize",
       {
-        appInfo: { name: "DrawAI Workbench", version: "2.0.1" },
+        appInfo: { name: "DrawAI Workbench", version: "2.0.2" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       },
@@ -162,6 +155,10 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     );
     bridge.notify("ui/notifications/initialized");
     const capabilities = result.hostCapabilities || {};
+    const call = async <T>(name: string, args = {}) =>
+      unpack<T>(
+        await bridge.request<McpResult>("tools/call", { name, arguments: args }),
+      );
     return {
       mode: "codex",
       canSend: Boolean(capabilities.message),
@@ -172,13 +169,7 @@ async function initializeRuntime(): Promise<StudioRuntime> {
           bridge.projectListeners.delete(listener);
         };
       },
-      call: async <T>(name: string, args = {}) =>
-        unpack<T>(
-          await bridge.request<McpResult>("tools/call", {
-            name,
-            arguments: args,
-          }),
-        ),
+      call,
       send: async (prompt) => {
         if (!capabilities.message)
           throw new Error(
@@ -195,9 +186,23 @@ async function initializeRuntime(): Promise<StudioRuntime> {
             content: [{ type: "text", text: JSON.stringify(value) }],
           });
       },
-      download: async (filename, mimeType, base64) => {
-        // Some desktop releases accept a structured-cloned Blob through this
-        // same RPC. Retry only a schema rejection, never a host refusal/timeout.
+      download: async (resource) => {
+        const save = () => call<DownloadReceipt>("drawai_artifact", {
+          action: "save_download",
+          ...resource,
+        });
+        if (!capabilities.downloadFile) return save();
+        const data = await call<{
+          asset?: { filename: string; mime_type: string };
+          filename?: string;
+          mime_type?: string;
+          data_base64: string;
+        }>("drawai_artifact", {
+          action: resource.asset_id ? "read" : "archive",
+          ...resource,
+        });
+        const filename = data.asset?.filename || data.filename!;
+        const mimeType = data.asset?.mime_type || data.mime_type!;
         try {
           await bridge.request("ui/download-file", {
             contents: [
@@ -206,18 +211,15 @@ async function initializeRuntime(): Promise<StudioRuntime> {
                 resource: {
                   uri: `drawai-download:///${encodeURIComponent(filename)}`,
                   mimeType,
-                  blob: base64,
+                  blob: data.data_base64,
                 },
               },
             ],
           });
         } catch (error) {
-          if (!(error instanceof McpRpcError) || error.code !== -32602)
+          if (!(error instanceof McpRpcError) || error.code !== -32601)
             throw error;
-          await bridge.request("ui/download-file", {
-            blob: fileBlob(mimeType, base64),
-            name: filename,
-          });
+          return save();
         }
       },
     };
@@ -248,7 +250,9 @@ async function initializeRuntime(): Promise<StudioRuntime> {
       context: async (value) => {
         host.setWidgetState?.({ modelContent: value });
       },
-      download: async (name, mime, data) => saveBlob(name, mime, data),
+      download: async (resource) => unpack<DownloadReceipt>(
+        await host.callTool("drawai_artifact", { action: "save_download", ...resource }),
+      ),
     };
   }
   return {
@@ -273,15 +277,12 @@ async function initializeRuntime(): Promise<StudioRuntime> {
       );
     },
     context: async () => {},
-    download: async (name, mime, data, resource) => {
-      if (resource)
-        saveLink(
-          name,
-          resource.asset_id
-            ? `/api/studio/files/${encodeURIComponent(resource.project_id)}/${encodeURIComponent(resource.asset_id)}`
-            : `/api/studio/archive/${encodeURIComponent(resource.project_id)}`,
-        );
-      else saveBlob(name, mime, data);
+    download: async (resource) => {
+      saveLink(
+        resource.asset_id
+          ? `/api/studio/files/${encodeURIComponent(resource.project_id)}/${encodeURIComponent(resource.asset_id)}`
+          : `/api/studio/archive/${encodeURIComponent(resource.project_id)}`,
+      );
     },
   };
 }
