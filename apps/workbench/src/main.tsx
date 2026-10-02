@@ -1,12 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
 import "./styles.css";
-import "./imagegen.css";
-import "./workflowCanvas.css";
+import StudioWorkspace from "./studio/StudioWorkspace";
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <StudioWorkspace />
   </React.StrictMode>
 );

@@ -29,34 +29,21 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 <a id="quick-start"></a>
 ## ⚡ Quick Start
 
-### Option 1: 🧑‍💻 Workbench
+### Option 1: Codex plugin workbench
 
-Workbench starts the model services, backend API, and frontend together. It is more convenient for repeated testing, batch uploads, progress inspection, and artifact review.
-
-```bash
-uv run drawai setup local
-uv run drawai workbench
-```
-
-Open the frontend:
-
-```text
-http://127.0.0.1:5174/
-```
-
-To make the Workbench available on your local network, bind it to all network interfaces:
+The `drawai-v2` workbench manages presentation projects, pages, visual references, and production tasks. Combine real reference images with uploaded PPT format templates, then let the current Codex conversation generate slide images and reconstruct editable PowerPoint outputs.
 
 ```bash
-uv run drawai workbench --host 0.0.0.0
+cd apps/workbench
+npm ci
+npm run build:plugin
+cd ../..
+node scripts/install_studio_plugin.mjs
 ```
 
-Then visit it with the machine's real LAN IP, for example:
+Load the plugin and open DrawAI from a Codex conversation. The installer connects the local MCP project service and packages `drawai-studio`, `drawai-simple`, and `drawai-ppt`. The workbench retains the existing light design and adapts to narrow conversation panels.
 
-```text
-http://192.168.50.10:5174/
-```
-
-Remote model services, split Workbench API deployment, ports, and staged config-file runs are documented in [runtime options](docs/zh-CN/runtime-options.md).
+See the [plugin setup and workflow guide](docs/zh-CN/studio-plugin.md) for persistence, task execution, and browser development.
 
 ### Option 2: 🖥️ CLI
 

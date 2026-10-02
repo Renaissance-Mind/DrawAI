@@ -29,34 +29,21 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 <a id="quick-start"></a>
 ## ⚡ 快速上手
 
-### 方式一：🧑‍💻 Workbench 图形化工作台
+### 方式一：Codex 插件工作台
 
-Workbench 会一起启动模型服务、后端 API 和前端页面。它更适合反复测试、批量上传、看阶段进度和检查中间结果。
-
-```bash
-uv run drawai setup local
-uv run drawai workbench
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:5174/
-```
-
-如果要让局域网里的其他机器访问 Workbench，把服务监听到所有网卡：
+`drawai-v2` 工作台管理 PPT 项目、页面、视觉参考与制作任务。模板库支持将真实图像参考与用户上传的 PPT 格式模板组合使用。生成和转可编辑任务交给当前 Codex 会话，产物保存后回到工作台。
 
 ```bash
-uv run drawai workbench --host 0.0.0.0
+cd apps/workbench
+npm ci
+npm run build:plugin
+cd ../..
+node scripts/install_studio_plugin.mjs
 ```
 
-然后用服务器真实 IP 访问，例如：
+加载插件后，在 Codex 会话中打开 DrawAI 工作台。安装器接入本地 MCP 项目服务，并打包 `drawai-studio`、`drawai-simple` 和 `drawai-ppt`。工作台采用现有的浅色设计，并适配会话旁的窄面板。
 
-```text
-http://192.168.50.10:5174/
-```
-
-更细的远程模型服务、Workbench API 分离部署、端口和配置文件分阶段运行，统一放在[运行参数文档](docs/zh-CN/runtime-options.md)里。
+[插件安装、项目存储、制作流程与浏览器调试](docs/zh-CN/studio-plugin.md)。
 
 ### 方式二：🖥️ CLI 命令行终端
 
@@ -87,7 +74,7 @@ uv run drawai setup local --device mps
 uv run drawai run /path/to/your/image.png --local --device mps
 ```
 
-## 🧰 运行前需要准备什么
+## 🧰 经典 CLI 管线的运行环境
 
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)

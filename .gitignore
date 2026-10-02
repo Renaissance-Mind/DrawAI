@@ -8,6 +8,9 @@ node_modules/
 .streamlit/credentials.toml
 AGENTS.md
 data/
+!apps/workbench/studio/data/
+apps/workbench/studio/data/*
+!apps/workbench/studio/data/visual-reference-templates.json
 results/
 logs/
 docs/agent-memory.md
@@ -42,6 +45,7 @@ test_codex_*.py
 # Packaging artifacts
 *.egg-info/
 dist/
+dist-plugin/
 build/
 
 # 编辑器配置
