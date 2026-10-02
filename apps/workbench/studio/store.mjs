@@ -630,6 +630,8 @@ export class StudioStore {
     return this.mutate(args.project_id, async (p) => {
       const task = lookup(p.tasks, args.task_id, "Task");
       if (args.action === "cancel") {
+        if (["completed", "failed", "cancelled"].includes(task.status))
+          return { task };
         task.status = "cancelled";
         task.message = "已取消；当前会话中的执行请同时停止";
       } else if (args.action === "update") {
@@ -705,6 +707,13 @@ export class StudioStore {
         files[asset.relative_path] = new Uint8Array(
           await readFile(await this.assetPath(p, asset.id)),
         );
+      for (const task of p.tasks) {
+        files[`tasks/${task.id}/request.json`] = new Uint8Array(
+          await readFile(
+            path.join(this.projectPath(p.id), "tasks", task.id, "request.json"),
+          ),
+        );
+      }
       const bytes = zipSync(files, { level: 1 });
       return {
         filename: `${p.title.replace(/[^\p{L}\p{N}._-]/gu, "_")}.drawai.zip`,

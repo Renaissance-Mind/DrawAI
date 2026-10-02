@@ -339,6 +339,26 @@ export default function StudioWorkspace() {
     setRequest(undefined);
     setNotice("任务已发送到当前会话");
   }
+  async function cancelTask(task: StudioTask) {
+    const result = await call("drawai_task", {
+      action: "cancel",
+      task_id: task.id,
+    });
+    if (result.task?.status !== "cancelled") {
+      setNotice("任务已结束，无需取消");
+      return;
+    }
+    if (runtime!.canSend) {
+      await runtime!.send(
+        `用户已在 DrawAI 工作台取消任务 ${task.id}（项目 ${project!.id}）。请检查已记录的 cancelled 状态，停止该任务的后续步骤与产物登记。`,
+      );
+    }
+    setNotice(
+      runtime!.canSend
+        ? "已取消，并通知当前会话停止此任务"
+        : "已记录取消；执行中的会话也需要停止此任务",
+    );
+  }
   async function startTask(kind: TaskKind) {
     await savePage();
     let requestInstruction = instruction;
@@ -667,12 +687,7 @@ export default function StudioWorkspace() {
                           className="danger"
                           disabled={Boolean(pending)}
                           onClick={() =>
-                            void perform("cancel", async () => {
-                              await call("drawai_task", {
-                                action: "cancel",
-                                task_id: task.id,
-                              });
-                            })
+                            void perform("cancel", () => cancelTask(task))
                           }
                         >
                           取消

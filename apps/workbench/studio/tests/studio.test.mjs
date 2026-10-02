@@ -222,6 +222,12 @@ test("tasks require real output files and do not overwrite a newer slide revisio
   const entries = unzipSync(Buffer.from(exported.data_base64, "base64"));
   assert.ok(entries["project.json"]);
   assert.ok(entries[registered.asset.relative_path]);
+  assert.deepEqual(
+    JSON.parse(
+      Buffer.from(entries[`tasks/${task.id}/request.json`]).toString("utf8"),
+    ),
+    JSON.parse(await readFile(task.request_path, "utf8")),
+  );
 });
 
 test("cancellation and changed artifact bytes cannot be reported as successful completion", async (t) => {
@@ -272,7 +278,7 @@ test("cancellation and changed artifact bytes cannot be reported as successful c
   );
 });
 
-test("late message acknowledgment cannot regress progress or completed work", async (t) => {
+test("late message acknowledgment and cancellation cannot regress completed work", async (t) => {
   const store = await workspace(t);
   const { project } = await store.create({ title: "Message race" });
   const page = project.slides[0];
@@ -321,6 +327,12 @@ test("late message acknowledgment cannot regress progress or completed work", as
     ).task.status,
     "completed",
   );
+  const cancelled = await store.taskAction({
+    action: "cancel",
+    project_id: project.id,
+    task_id: task.id,
+  });
+  assert.equal(cancelled.task.status, "completed");
 });
 
 test("duplicating a slide preserves its real image and scoped references with independent IDs", async (t) => {
