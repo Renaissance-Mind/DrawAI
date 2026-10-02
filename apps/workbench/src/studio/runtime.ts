@@ -183,20 +183,21 @@ async function initializeRuntime(): Promise<StudioRuntime> {
           });
       },
       download: async (filename, mimeType, base64) => {
-        if (capabilities.downloadFile)
-          await bridge.request("ui/download-file", {
-            contents: [
-              {
-                type: "resource",
-                resource: {
-                  uri: `drawai-download:///${encodeURIComponent(filename)}`,
-                  mimeType,
-                  blob: base64,
-                },
+        // Desktop hosts can implement this standard RPC without advertising
+        // downloadFile. Let the host handle the user's request and report any
+        // refusal instead of silently attempting a sandboxed Blob download.
+        await bridge.request("ui/download-file", {
+          contents: [
+            {
+              type: "resource",
+              resource: {
+                uri: `drawai-download:///${encodeURIComponent(filename)}`,
+                mimeType,
+                blob: base64,
               },
-            ],
-          });
-        else saveBlob(filename, mimeType, base64);
+            },
+          ],
+        });
       },
     };
   }
