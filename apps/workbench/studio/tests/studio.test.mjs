@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { unzipSync } from "fflate";
@@ -443,13 +444,10 @@ test("stdio MCP exposes the real workbench resource and round-trips project stat
   t.after(() => client.close());
   await client.connect(transport);
   const listed = await client.listTools();
-  assert.ok(
-    listed.tools.some(
-      (tool) =>
-        tool.name === "drawai_open_workbench" &&
-        tool._meta.ui.resourceUri === "ui://drawai/workbench.html",
-    ),
-  );
+  const uiUri = listed.tools.find(
+    (tool) => tool.name === "drawai_open_workbench",
+  )._meta.ui.resourceUri;
+  assert.match(uiUri, /^ui:\/\/drawai\/workbench-[a-f0-9]{16}\.html$/);
   const created = await client.callTool({
     name: "drawai_project",
     arguments: { action: "create", title: "MCP project" },
@@ -463,10 +461,15 @@ test("stdio MCP exposes the real workbench resource and round-trips project stat
     opened.structuredContent.project.id,
     created.structuredContent.project.id,
   );
-  const resource = await client.readResource({
-    uri: "ui://drawai/workbench.html",
-  });
+  assert.equal(opened._meta.ui.resourceUri, uiUri);
+  assert.equal((await client.listResources()).resources[0].uri, uiUri);
+  const resource = await client.readResource({ uri: uiUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+  const hash = createHash("sha256")
+    .update(resource.contents[0].text)
+    .digest("hex")
+    .slice(0, 16);
+  assert.equal(uiUri, `ui://drawai/workbench-${hash}.html`);
   assert.ok(resource.contents[0].text.includes("ui/message"));
   assert.ok(resource.contents[0].text.includes("视觉参考模板库"));
   assert.doesNotMatch(resource.contents[0].text, /<script\b[^>]*src=/);

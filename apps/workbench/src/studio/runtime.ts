@@ -46,10 +46,14 @@ function unpack<T>(result: McpResult): T {
   if (!text) throw new Error("DrawAI returned no result");
   return JSON.parse(text) as T;
 }
-function saveBlob(filename: string, mime: string, base64: string) {
+function fileBlob(mime: string, base64: string): Blob {
   const raw = atob(base64);
   const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  return new Blob([bytes], { type: mime });
+}
+
+function saveBlob(filename: string, mime: string, base64: string) {
+  const url = URL.createObjectURL(fileBlob(mime, base64));
   saveLink(filename, url);
   setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
@@ -61,6 +65,12 @@ function saveLink(filename: string, url: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+class McpRpcError extends Error {
+  constructor(message: string, readonly code?: number) {
+    super(message);
+  }
 }
 
 class McpBridge {
@@ -100,7 +110,10 @@ class McpBridge {
       this.pending.delete(value.id);
       if (value.error)
         pending.reject(
-          new Error(value.error.message || "Codex request failed"),
+          new McpRpcError(
+            value.error.message || "Codex request failed",
+            value.error.code,
+          ),
         );
       else pending.resolve(value.result);
     });
@@ -141,7 +154,7 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     }>(
       "ui/initialize",
       {
-        appInfo: { name: "DrawAI Workbench", version: "2.0.0" },
+        appInfo: { name: "DrawAI Workbench", version: "2.0.1" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       },
@@ -183,21 +196,29 @@ async function initializeRuntime(): Promise<StudioRuntime> {
           });
       },
       download: async (filename, mimeType, base64) => {
-        // Desktop hosts can implement this standard RPC without advertising
-        // downloadFile. Let the host handle the user's request and report any
-        // refusal instead of silently attempting a sandboxed Blob download.
-        await bridge.request("ui/download-file", {
-          contents: [
-            {
-              type: "resource",
-              resource: {
-                uri: `drawai-download:///${encodeURIComponent(filename)}`,
-                mimeType,
-                blob: base64,
+        // Some desktop releases accept a structured-cloned Blob through this
+        // same RPC. Retry only a schema rejection, never a host refusal/timeout.
+        try {
+          await bridge.request("ui/download-file", {
+            contents: [
+              {
+                type: "resource",
+                resource: {
+                  uri: `drawai-download:///${encodeURIComponent(filename)}`,
+                  mimeType,
+                  blob: base64,
+                },
               },
-            },
-          ],
-        });
+            ],
+          });
+        } catch (error) {
+          if (!(error instanceof McpRpcError) || error.code !== -32602)
+            throw error;
+          await bridge.request("ui/download-file", {
+            blob: fileBlob(mimeType, base64),
+            name: filename,
+          });
+        }
       },
     };
   }

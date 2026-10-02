@@ -16,7 +16,9 @@ node scripts/install_studio_plugin.mjs
 
 安装器创建本地 marketplace 并安装 `drawai@drawai-local`，打包 `drawai-studio`、`drawai-simple` 和 `drawai-ppt` 三个 Skills。这个开发安装指向当前 checkout 的项目服务与前端构建，适合在 `drawai-v2` worktree 中迭代；移动 checkout 后重新安装。插件通过标准 MCP stdio 连接运行，不需要图像生成 API key、模型服务或独立 Agent 进程。
 
-在能加载该插件的 Codex 会话中调用 `drawai_open_workbench`。工作台显示在会话旁。新装插件若尚未出现在会话工具中，需要让客户端重新加载插件工具。发送能力由 MCP Apps 握手中的 `message` 能力确认，工作台不会把普通浏览器误报为已连接的 Codex 会话。
+安装后在新建的 Codex 聊天中调用 `drawai_open_workbench`。工作台显示在会话旁。发送能力由 MCP Apps 握手中的 `message` 能力确认，工作台不会把普通浏览器误报为已连接的 Codex 会话。
+
+修改前端后，重新运行 `npm run build:plugin` 和安装器，然后在新聊天中打开工作台。已有聊天可能继续使用原来的 MCP 连接，仅关闭面板不能保证更新。安装器把构建标识写入连接配置，界面资源 URI 使用内容哈希，避免新连接取回旧界面缓存。资源 URI 是宿主的缓存键，见 [OpenAI 插件 UI 文档](https://developers.openai.com/plugins/build/chatgpt-ui#embed-the-component-in-the-server-response)。
 
 默认项目目录为 `~/.local/share/drawai/studio`。开发或测试时可隔离数据：
 

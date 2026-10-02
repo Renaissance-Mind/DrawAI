@@ -7,13 +7,21 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { StudioStore } from "./store.mjs";
 import { searchTemplates, findTemplate } from "./catalog.mjs";
 
-const UI_URI = "ui://drawai/workbench.html";
+async function loadWorkbenchResource() {
+  const text = await readFile(
+    new URL("../dist-plugin/workbench.html", import.meta.url),
+    "utf8",
+  );
+  const revision = createHash("sha256").update(text).digest("hex").slice(0, 16);
+  return { uri: `ui://drawai/workbench-${revision}.html`, text };
+}
 const parameters = {
   action: { type: "string" },
   project_id: { type: "string" },
@@ -62,7 +70,6 @@ export const TOOLS = [
       properties: { project_id: { type: "string" } },
     },
     _meta: {
-      ui: { resourceUri: UI_URI },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
   },
@@ -138,13 +145,24 @@ export async function dispatch(store, name, args = {}) {
 }
 
 export function createMcpServer(store = new StudioStore()) {
+  // A resource URI is a host cache key. Pin its bytes for this connection;
+  // rebuilding and reconnecting produces a new URI instead of a stale iframe.
+  let workbench;
+  const getWorkbench = () => (workbench ??= loadWorkbenchResource());
   const server = new Server(
-    { name: "drawai-studio", version: "2.0.0" },
+    { name: "drawai-studio", version: "2.0.1" },
     { capabilities: { tools: {}, resources: {} } },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS,
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const { uri } = await getWorkbench();
+    return {
+      tools: TOOLS.map((entry) =>
+        entry.name === "drawai_open_workbench"
+          ? { ...entry, _meta: { ...entry._meta, ui: { resourceUri: uri } } }
+          : entry,
+      ),
+    };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const data = await dispatch(
@@ -162,6 +180,9 @@ export function createMcpServer(store = new StudioStore()) {
           },
         ],
         structuredContent: data,
+        ...(request.params.name === "drawai_open_workbench"
+          ? { _meta: { ui: { resourceUri: (await getWorkbench()).uri } } }
+          : {}),
       };
     } catch (error) {
       return {
@@ -173,22 +194,19 @@ export function createMcpServer(store = new StudioStore()) {
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: [
       {
-        uri: UI_URI,
+        uri: (await getWorkbench()).uri,
         name: "DrawAI Workbench",
         mimeType: "text/html;profile=mcp-app",
       },
     ],
   }));
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    if (request.params.uri !== UI_URI) throw new Error("Unknown resource");
-    const text = await readFile(
-      new URL("../dist-plugin/workbench.html", import.meta.url),
-      "utf8",
-    );
+    const { uri, text } = await getWorkbench();
+    if (request.params.uri !== uri) throw new Error("Unknown resource");
     return {
       contents: [
         {
-          uri: UI_URI,
+          uri,
           mimeType: "text/html;profile=mcp-app",
           text,
           _meta: {

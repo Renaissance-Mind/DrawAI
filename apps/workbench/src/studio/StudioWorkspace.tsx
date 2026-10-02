@@ -435,7 +435,7 @@ export default function StudioWorkspace() {
     .find((image) => image.id !== currentImage?.id);
 
   return (
-    <div className="studio-app app-root" data-studio-revision="2">
+    <div className="studio-app app-root" data-studio-revision="3">
       <header className="app-topbar studio-topbar">
         <div className="brand-row">
           <span className="studio-logo">
