@@ -15,7 +15,17 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="drawai-ppt", description="Create and edit native PPTX using Python.")
     commands = parser.add_subparsers(dest="command", required=True)
     schema = commands.add_parser("schema", help="Print the JSON Schema for create/edit plans.")
-    schema.add_argument("--mode", choices=("create", "edit"), default="edit")
+    schema.add_argument("--mode", choices=("create", "edit", "document"), default="document")
+    imported = commands.add_parser("import", help="Import PPTX/SVG into a portable document; embed the template package.")
+    imported.add_argument("source", type=Path)
+    imported.add_argument("--output", required=True, type=Path)
+    exported = commands.add_parser("export", help="Export one document model to editable PPTX and static SVG.")
+    exported.add_argument("source", type=Path)
+    exported.add_argument("--pptx", type=Path)
+    exported.add_argument("--svg-dir", type=Path)
+    exported.add_argument("--profile", choices=("strict_native", "compatible"), default="strict_native")
+    exported.add_argument("--report", type=Path)
+    capabilities = commands.add_parser("capabilities", help="Print implementation and preservation coverage of the property matrix.")
     create = commands.add_parser("create", help="Create an editable deck from a JSON plan.")
     create.add_argument("--plan", required=True, type=Path)
     create.add_argument("--output", required=True, type=Path)
@@ -36,7 +46,7 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
     render.add_argument("--output-dir", required=True, type=Path)
     validate = commands.add_parser("validate", help="Check package XML and internal resource relationships.")
     validate.add_argument("source", type=Path)
-    for command in (inspect, edit, create, render):
+    for command in (inspect, edit, create, render, exported):
         command.add_argument("--renderer", help="LibreOffice soffice executable; defaults to PATH.")
         command.add_argument("--rasterizer", help="Poppler pdftoppm executable; defaults to PATH.")
     args = parser.parse_args(argv)
@@ -50,8 +60,29 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
                 inputs.extend([args.plan, args.output])
             if any(json_output.resolve() == path.resolve() for path in inputs):
                 raise ValueError("Inventory/report paths must differ from the source, plan and output PPTX")
-        if args.command == "schema":
-            result = (PptxCreatePlan if args.mode == "create" else PptxEditPlan).model_json_schema()
+        if args.command == "capabilities":
+            from .document.capabilities import capability_report
+            result = capability_report()
+        elif args.command == "import":
+            from .document.importer import import_pptx, import_svg
+            document = import_pptx(args.source) if args.source.suffix.lower() == ".pptx" else import_svg(args.source)[0]
+            document.save(args.output)
+            result = {"document": str(args.output.resolve()), "pages": len(document.pages)}
+        elif args.command == "export":
+            from .document.export import export_pptx
+            from .document.svg import export_svg
+            if not args.pptx and not args.svg_dir:
+                raise ValueError("Choose --pptx, --svg-dir or both")
+            result = {}
+            if args.pptx:
+                result["pptx"] = export_pptx(args.source, args.pptx, profile=args.profile)
+            if args.svg_dir:
+                result["svg"] = export_svg(args.source, args.svg_dir, profile=args.profile, renderer=args.renderer, rasterizer=args.rasterizer)
+            if args.report:
+                _write_json(args.report, result)
+        elif args.command == "schema":
+            from .document.model import Document
+            result = (Document if args.mode == "document" else PptxCreatePlan if args.mode == "create" else PptxEditPlan).model_json_schema()
         elif args.command == "inspect":
             result = inspect_pptx(args.source)
             if args.preview_dir:

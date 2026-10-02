@@ -58,3 +58,10 @@ SDK 元数据是实现参考，不是规范的替代品。其部分默认值、�
 - [PackageProperties.Revision](https://learn.microsoft.com/en-us/dotnet/api/system.io.packaging.packageproperties.revision?view=windowsdesktop-9.0)：原始修订值保留字符串，不强制转成整数。
 
 SVG 标准表达能力、具体查看器支持和当前导出器实现分别验证。静态 SVG 不承担 PowerPoint 时间树、放映、原生图表编辑、工作簿来源、嵌入对象激活和授权策略的完整语义。
+
+## 静态 SVG 排版后端
+
+- [LibreOffice SVG 导出器](https://github.com/LibreOffice/core/blob/master/filter/source/svg/svgexport.cxx)：页面、母版、背景、文字及演示元数据的实际导出实现。
+- [LibreOffice SVG 过滤器](https://github.com/LibreOffice/core/blob/master/filter/source/svg/svgfilter.cxx)：命令行页面选择与可见页面处理。
+
+2026-10-02 结合真实文件检查静态输出：移除播放脚本后需要显示实际页面并显式引用页面背景和母版对象。矩形/shape 渐变在 SVG 过滤器中的差异通过局部 PDF 图片回退记录；这些是实际后端行为及处理策略，不表示 SVG 与所有 PowerPoint 特性原生等价。

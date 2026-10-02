@@ -240,13 +240,15 @@ def enrich(catalog, inventory):
 
 
 def render(catalog, references):
+    from pptx_skill.document.capabilities import capability_report
+    implementation={row['id']:row for row in capability_report()['properties']}
     rows = catalog["properties"]
     with (references / "export-capabilities.csv").open("w", encoding="utf-8-sig", newline="") as stream:
-        fields = ["domain", "id", "label", "value_description", "value_source", "pptx_mapping", "svg_mapping", "exporter_status", "test_status", "value_type", "canonical_unit"]
+        fields = ["domain", "id", "label", "value_description", "value_source", "pptx_mapping", "svg_mapping", "exporter_status", "test_status", "value_type", "canonical_unit", "implementation_mode", "implementation_conditions"]
         writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n", extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
-    lines = ["# PPTX / SVG 属性矩阵", "", "表中列出具体取值和格式表达方式。格式可表达不等于当前代码已经实现；统一文档导出器仍待实现，代码与验证状态单列。", "",
+        writer.writerows({**r,'implementation_mode':implementation[r['id']]['authoring'],'implementation_conditions':implementation[r['id']]['conditions']} for r in rows)
+    lines = ["# PPTX / SVG 属性矩阵", "", "表中列出具体取值和格式表达方式。格式目标、实际代码和验证状态分别记录；详细调用条件见 [当前实现矩阵](implementation-capabilities.md)。统一文档已可导出 PPTX 和静态 SVG，仍须按属性的实际处理方式使用。", "",
              "枚举保留完整选项：原生枚举使用其 XML 值；统一语义选项明确注明来源。大列表在同一单元格内展开，不以 enum 或省略号替代。", "",
              "箭头 sm/med/lg 是相对线宽的类别，不是固定像素值。SVG 能画出对应宽度和长度，但需 marker 几何映射；精确视觉等价仍需 PowerPoint 对照标定。", ""]
     for group in catalog["domains"]:
@@ -254,8 +256,9 @@ def render(catalog, references):
         for row in rows:
             if row["domain"] != group["id"]:
                 continue
-            cells = [f"{row['label']}<br>`{row['id']}`", row["value_description"], row["pptx_mapping"], row["svg_mapping"],
-                     "统一导出器未实现；未验证" if row["test_status"] == "not_tested" else row["exporter_status"] + "; " + row["test_status"]]
+            mode=implementation[row['id']]['authoring']
+            status={'native_authoring':'原生属性 API（有条件）','native_preservation':'模板保留 / 显式 XML 绑定','host_required':'宿主 / 容器流程'}[mode]
+            cells = [f"{row['label']}<br>`{row['id']}`", row["value_description"], row["pptx_mapping"], row["svg_mapping"],status+'；完整验证仍按用例记录']
             lines.append("| " + " | ".join(str(cell).replace("|", "\\|").replace("\n", " ") for cell in cells) + " |")
         lines.append("")
     (references / "export-capabilities.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

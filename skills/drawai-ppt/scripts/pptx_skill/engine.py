@@ -856,9 +856,11 @@ def _execute_plan(prs: Any, operations: list[Operation], output_path: str | Path
 
 
 def render_pptx(source_path: str | Path, output_dir: str | Path, *,
-                renderer: str | None = None, rasterizer: str | None = None) -> dict[str, Any]:
+                renderer: str | None = None, rasterizer: str | None = None, dpi: int = 96) -> dict[str, Any]:
     """Render the actual PPTX through LibreOffice and Poppler, with an isolated profile."""
     source = _source(source_path)
+    if not 24 <= dpi <= 600:
+        raise ValueError("Preview DPI must be between 24 and 600")
     soffice = renderer or shutil.which("soffice")
     pdftoppm = rasterizer or shutil.which("pdftoppm")
     if not soffice or not pdftoppm:
@@ -869,13 +871,15 @@ def render_pptx(source_path: str | Path, output_dir: str | Path, *,
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".pptx-pptx-render-", dir=output.parent) as temp_name:
         temp = Path(temp_name)
+        from .document.render_env import office_environment
+        environment, fonts = office_environment(Presentation(str(source)), temp)
         subprocess.run([soffice, f"-env:UserInstallation={(temp / 'profile').as_uri()}",
                         "--headless", "--convert-to", "pdf", "--outdir", str(temp), str(source)],
-                       check=True, capture_output=True, text=True, timeout=180)
+                       check=True, capture_output=True, text=True, timeout=180, env=environment)
         pdf = temp / f"{source.stem}.pdf"
         if not pdf.is_file():
             raise PptxEditError("LibreOffice returned without producing a PDF")
-        subprocess.run([pdftoppm, "-png", "-r", "96", str(pdf), str(temp / "slide")],
+        subprocess.run([pdftoppm, "-png", "-r", str(dpi), str(pdf), str(temp / "slide")],
                        check=True, capture_output=True, text=True, timeout=180)
         previews = sorted(temp.glob("slide-*.png"))
         if len(previews) != len(Presentation(str(source)).slides):
@@ -885,5 +889,6 @@ def render_pptx(source_path: str | Path, output_dir: str | Path, *,
         for preview in previews:
             shutil.copy2(preview, output / preview.name)
     return {"schema": "pptx.preview.v1", "source_pptx": str(source),
+            "fonts": fonts,
             "pdf": str(output / pdf.name),
             "slides": [str(output / preview.name) for preview in previews]}
