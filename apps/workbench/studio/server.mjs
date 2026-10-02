@@ -124,6 +124,7 @@ export async function dispatch(store, name, args = {}) {
         ? { project: await store.read(args.project_id) }
         : {}),
       workspace: store.root,
+      view: { project_id: args.project_id || null },
     };
   if (name === "drawai_project") return store.projectAction(args);
   if (name === "drawai_templates")

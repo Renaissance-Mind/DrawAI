@@ -28,6 +28,9 @@ export default function StudioWorkspace() {
   const [runtime, setRuntime] = useState<StudioRuntime>();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [project, setProject] = useState<StudioProject>();
+  const currentProject = useRef<StudioProject | undefined>(undefined);
+  const openSequence = useRef(0);
+  const saveCurrentPage = useRef<() => Promise<void>>(async () => {});
   const [tab, setTab] = useState<Tab>("project");
   const [activeId, setActiveId] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -85,6 +88,12 @@ export default function StudioWorkspace() {
 
   const accept = useCallback((data: ToolResult) => {
     if (data.project) {
+      if (
+        !currentProject.current ||
+        currentProject.current.id !== data.project.id ||
+        data.project.revision >= currentProject.current.revision
+      )
+        currentProject.current = data.project;
       setProject((old) =>
         !old ||
         old.id !== data.project!.id ||
@@ -130,6 +139,7 @@ export default function StudioWorkspace() {
   async function boot() {
     setError("");
     dirty.current = false;
+    const sequence = ++openSequence.current;
     try {
       const rt = await connectStudio();
       setRuntime(rt);
@@ -140,12 +150,15 @@ export default function StudioWorkspace() {
       setProjects(data.projects);
       const id =
         new URLSearchParams(window.location.search).get("project") ||
+        currentProject.current?.id ||
+        rt.initialProjectId() ||
         data.projects[0]?.id;
       if (id) {
         const data = await rt.call<ToolResult>("drawai_project", {
           action: "get",
           project_id: id,
         });
+        if (sequence !== openSequence.current) return;
         accept(data);
         setActiveId(data.project?.slides[0]?.id || "");
       }
@@ -156,6 +169,26 @@ export default function StudioWorkspace() {
   useEffect(() => {
     void boot();
   }, []);
+  useEffect(() => {
+    if (!runtime) return;
+    return runtime.onOpenProject((id) => {
+      if (currentProject.current?.id === id) return;
+      const sequence = ++openSequence.current;
+      void (async () => {
+        await saveCurrentPage.current();
+        const data = await runtime.call<ToolResult>("drawai_project", {
+          action: "get",
+          project_id: id,
+        });
+        if (sequence !== openSequence.current) return;
+        dirty.current = false;
+        accept(data);
+        setActiveId(data.project?.slides[0]?.id || "");
+        setSelected([]);
+        setTab("project");
+      })().catch((err) => setError(err.message));
+    });
+  }, [runtime, accept]);
   useEffect(() => {
     if (!page || dirty.current) return;
     setDraft({ title: page.title, content: page.content, notes: page.notes });
@@ -170,6 +203,7 @@ export default function StudioWorkspace() {
   }, [draft.title, draft.content, draft.notes, page?.id]);
   useEffect(() => {
     if (!runtime || !project) return;
+    let active = true;
     const timer = setInterval(
       () => {
         runtime
@@ -177,12 +211,18 @@ export default function StudioWorkspace() {
             action: "get",
             project_id: project.id,
           })
-          .then(accept)
+          .then((data) => {
+            if (active && currentProject.current?.id === project.id)
+              accept(data);
+          })
           .catch((err) => setError(err.message));
       },
       activeTaskCount ? 2500 : 8000,
     );
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [runtime, project?.id, activeTaskCount, accept]);
   useEffect(() => {
     if (!runtime || !project) return;
@@ -250,6 +290,7 @@ export default function StudioWorkspace() {
     setMobilePanel("");
   }
   async function selectProject(id: string) {
+    ++openSequence.current;
     await savePage();
     const data = await call("drawai_project", {
       action: "get",
@@ -387,13 +428,14 @@ export default function StudioWorkspace() {
     }
   }
   const output = previewMode === "editable" ? editablePreview : currentImage;
+  saveCurrentPage.current = savePage;
   const priorImage = images
     .slice()
     .reverse()
     .find((image) => image.id !== currentImage?.id);
 
   return (
-    <div className="studio-app app-root">
+    <div className="studio-app app-root" data-studio-revision="2">
       <header className="app-topbar studio-topbar">
         <div className="brand-row">
           <span className="studio-logo">
@@ -533,6 +575,7 @@ export default function StudioWorkspace() {
             <div className="studio-project-choice">
               <select
                 aria-label="选择 PPT 项目"
+                disabled={Boolean(pending)}
                 value={project.id}
                 onChange={(e) =>
                   void perform("switch", () => selectProject(e.target.value))
@@ -1594,6 +1637,7 @@ export default function StudioWorkspace() {
                   setDeleteTarget(undefined);
                   if (deleteTarget === "project") {
                     setProject(undefined);
+                    currentProject.current = undefined;
                     setActiveId("");
                     await boot();
                   } else {

@@ -1,3 +1,5 @@
+import { projectIdFromToolInput, projectIdFromToolResult } from "./hostContext";
+
 type Content = { type: string; text?: string };
 interface McpResult {
   isError?: boolean;
@@ -19,6 +21,8 @@ declare global {
 export interface StudioRuntime {
   mode: "codex" | "browser";
   canSend: boolean;
+  initialProjectId(): string | undefined;
+  onOpenProject(listener: (projectId: string) => void): () => void;
   call<T>(name: string, args?: Record<string, unknown>): Promise<T>;
   send(prompt: string): Promise<void>;
   context(value: unknown): Promise<void>;
@@ -61,6 +65,8 @@ function saveLink(filename: string, url: string) {
 
 class McpBridge {
   private sequence = 0;
+  projectId: string | undefined;
+  projectListeners = new Set<(projectId: string) => void>();
   private pending = new Map<
     string,
     {
@@ -74,6 +80,20 @@ class McpBridge {
       if (event.source !== window.parent || event.data?.jsonrpc !== "2.0")
         return;
       const value = event.data;
+      if (
+        value.method === "ui/notifications/tool-input" ||
+        value.method === "ui/notifications/tool-result"
+      ) {
+        const projectId =
+          value.method === "ui/notifications/tool-input"
+            ? projectIdFromToolInput(value.params)
+            : projectIdFromToolResult(value.params);
+        if (projectId) {
+          this.projectId = projectId;
+          for (const listener of this.projectListeners) listener(projectId);
+        }
+        return;
+      }
       const pending = this.pending.get(value.id);
       if (!pending) return;
       clearTimeout(pending.timer);
@@ -132,6 +152,13 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     return {
       mode: "codex",
       canSend: Boolean(capabilities.message),
+      initialProjectId: () => bridge.projectId,
+      onOpenProject: (listener) => {
+        bridge.projectListeners.add(listener);
+        return () => {
+          bridge.projectListeners.delete(listener);
+        };
+      },
       call: async <T>(name: string, args = {}) =>
         unpack<T>(
           await bridge.request<McpResult>("tools/call", {
@@ -178,6 +205,17 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     return {
       mode: "codex",
       canSend: Boolean(host.sendFollowUpMessage),
+      initialProjectId: () => projectIdFromToolResult(host.toolOutput),
+      onOpenProject: (listener) => {
+        const handle = (event: Event) => {
+          const id = projectIdFromToolResult(
+            (event as CustomEvent).detail?.globals?.toolOutput,
+          );
+          if (id) listener(id);
+        };
+        window.addEventListener("openai:set_globals", handle);
+        return () => window.removeEventListener("openai:set_globals", handle);
+      },
       call: async <T>(name: string, args = {}) =>
         unpack<T>(await host.callTool(name, args)),
       send: async (prompt) => {
@@ -194,6 +232,8 @@ async function initializeRuntime(): Promise<StudioRuntime> {
   return {
     mode: "browser",
     canSend: false,
+    initialProjectId: () => undefined,
+    onOpenProject: () => () => {},
     call: async <T>(name: string, args = {}) => {
       const response = await fetch("/api/studio/call", {
         method: "POST",
