@@ -4,7 +4,7 @@
 
 “原生属性 API”表示已有 Python 绑定，并按列出的条件使用；不是全部对象上下文和渲染器均已逐项验证。其余属性可通过原模板保留，或使用显式 `native_bindings` / `native_parts` 编辑原生 XML。XML 绑定检查精确目标和包关系，语义与目标 PowerPoint 外观仍需参考文件验证。宿主设置不能用 XML 替代。
 
-静态 SVG 由同一 PPTX 的 LibreOffice Impress 排版导出，文字与路径尽量保留原生 SVG 元素；特殊效果可由渲染器栅格化。SVG 包含模型 metadata，可恢复该页面的原生制作源，并检查外观哈希是否仍对应。
+静态 SVG 由同一 PPTX 的 LibreOffice Impress 排版导出，文字与路径保留为 SVG 元素；特殊效果可使用报告中的图片回退。每页 SVG 包含完整文档制作源，导入恢复全部页面与引用，并检查外观哈希是否仍对应。
 
 当前分布：266 项属性 API；202 项模板保留或显式 XML 绑定；7 项宿主依赖。
 
@@ -72,11 +72,11 @@
 | `placeholder.orientation` 占位符方向 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
 | `placeholder.size_hint` 占位符尺寸类别 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
 | `placeholder.style_inheritance` 位置、文字和样式继承 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
-| `object.id` 稳定对象标识 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
+| `object.id` 稳定对象标识 | 原生属性 API（有条件） | 顶层 id 为文档内唯一标识；object.id 是可用别名，若同时填写须相同。 |
 | `object.name` 对象名称 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
-| `object.kind` 对象类型 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
+| `object.kind` 对象类型 | 原生属性 API（有条件） | 顶层 kind 决定创建类型；object.kind 是可用别名。修改导入对象的类型时创建替代对象。 |
 | `object.parent_ref` 分组父对象 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
-| `object.z_order` 堆叠顺序 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
+| `object.z_order` 堆叠顺序 | 原生属性 API（有条件） | 数值越大越靠上；页面和分组内的已建模对象按该值重排，原始扩展节点保留其位置。 |
 | `object.frame` 位置与尺寸 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
 | `object.rotation` 二维旋转 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
 | `object.flip_horizontal` 水平翻转 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
@@ -265,7 +265,7 @@
 | `model3d.animation` 3D 模型动画 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
 | `picture.asset_ref` 图片资源 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
 | `picture.link_ref` 链接图片与更新关系 | 模板保留 / 显式 XML 绑定 | Imported native XML/relationships retained; a new typed authoring binding is required. |
-| `picture.crop` 裁剪与扩展 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
+| `picture.crop` 裁剪与扩展 | 原生属性 API（有条件） | {left, top, right, bottom} 四边比例；同时接受 l/t/r/b 缩写，重复键须一致。 |
 | `picture.geometry_mask` 图片形状裁剪 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
 | `picture.aspect_fit` 适配、填满与保持比例 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |
 | `picture.brightness` 亮度 | 原生属性 API（有条件） | Native OOXML binding; renderer behavior must be checked separately. |

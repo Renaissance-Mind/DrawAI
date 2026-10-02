@@ -650,7 +650,7 @@
       "authoring": "native_authoring",
       "native_import_roundtrip": "package_envelope",
       "svg": "static_office_projection",
-      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "conditions": "顶层 id 为文档内唯一标识；object.id 是可用别名，若同时填写须相同。",
       "allowed_values": []
     },
     {
@@ -668,7 +668,7 @@
       "authoring": "native_authoring",
       "native_import_roundtrip": "package_envelope",
       "svg": "static_office_projection",
-      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "conditions": "顶层 kind 决定创建类型；object.kind 是可用别名。修改导入对象的类型时创建替代对象。",
       "allowed_values": [
         "text_box",
         "shape",
@@ -705,7 +705,7 @@
       "authoring": "native_authoring",
       "native_import_roundtrip": "package_envelope",
       "svg": "static_office_projection",
-      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "conditions": "数值越大越靠上；页面和分组内的已建模对象按该值重排，原始扩展节点保留其位置。",
       "allowed_values": []
     },
     {
@@ -3036,7 +3036,7 @@
       "authoring": "native_authoring",
       "native_import_roundtrip": "package_envelope",
       "svg": "static_office_projection",
-      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "conditions": "{left, top, right, bottom} 四边比例；同时接受 l/t/r/b 缩写，重复键须一致。",
       "allowed_values": []
     },
     {

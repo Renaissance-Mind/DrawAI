@@ -47,7 +47,7 @@ def main():
         "",
         "“原生属性 API”表示已有 Python 绑定，并按列出的条件使用；不是全部对象上下文和渲染器均已逐项验证。其余属性可通过原模板保留，或使用显式 `native_bindings` / `native_parts` 编辑原生 XML。XML 绑定检查精确目标和包关系，语义与目标 PowerPoint 外观仍需参考文件验证。宿主设置不能用 XML 替代。",
         "",
-        "静态 SVG 由同一 PPTX 的 LibreOffice Impress 排版导出，文字与路径尽量保留原生 SVG 元素；特殊效果可由渲染器栅格化。SVG 包含模型 metadata，可恢复该页面的原生制作源，并检查外观哈希是否仍对应。",
+        "静态 SVG 由同一 PPTX 的 LibreOffice Impress 排版导出，文字与路径保留为 SVG 元素；特殊效果可使用报告中的图片回退。每页 SVG 包含完整文档制作源，导入恢复全部页面与引用，并检查外观哈希是否仍对应。",
         "",
         f"当前分布：{report['counts']['native_authoring']} 项属性 API；{report['counts']['native_preservation']} 项模板保留或显式 XML 绑定；{report['counts']['host_required']} 项宿主依赖。",
         "",
@@ -67,6 +67,9 @@ def main():
             + " |"
         )
     (ROOT / "implementation-capabilities.md").write_text("\n".join(lines) + "\n")
+    from build_capability_matrix import render
+
+    render(json.loads((ROOT / "property-catalog.json").read_text()), ROOT)
     print(json.dumps(report["counts"]))
 
 

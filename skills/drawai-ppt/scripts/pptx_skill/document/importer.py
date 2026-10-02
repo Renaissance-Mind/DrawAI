@@ -14,7 +14,7 @@ from .model import Document, Page, Object
 from lxml import etree
 from .xml import EMU, tag
 from .rich import RUN_ATTRS, P_ATTRS, BODY_ATTRS
-from .identity import read_identity
+from .identity import read_identity, unique_identity
 
 
 def read_attrs(node, prefix, bindings):
@@ -226,7 +226,10 @@ def read_text(body):
     return result
 
 
-def read_shape(shape, pageid, assets):
+def read_shape(shape, pageid, assets, seen):
+    identity = unique_identity(
+        read_identity(shape._element, f"{pageid}-object-{shape.shape_id}"), seen
+    )
     props = {
         "object.name": shape.name,
         "object.frame": {
@@ -279,8 +282,8 @@ def read_shape(shape, pageid, assets):
         }
         props["picture.asset_ref"] = ref
         props["picture.crop"] = {
-            k: float(getattr(shape, "crop_" + v))
-            for k, v in [("l", "left"), ("r", "right"), ("t", "top"), ("b", "bottom")]
+            side: float(getattr(shape, "crop_" + side))
+            for side in ("left", "right", "top", "bottom")
         }
     if kind == "table":
         table = shape.table
@@ -308,13 +311,15 @@ def read_shape(shape, pageid, assets):
             ]
     # Chart sources, Office Math, media, SmartArt, unknown extensions remain in the package envelope.
     children = (
-        [read_shape(c, pageid, assets) for c in shape.shapes] if kind == "group" else []
+        [read_shape(c, pageid, assets, seen) for c in shape.shapes]
+        if kind == "group"
+        else []
     )
     return Object(
-        id=read_identity(shape._element, f"{pageid}-object-{shape.shape_id}"),
+        id=identity,
         kind=kind,
         properties=props,
-        baseline=deepcopy(props),
+        baseline={**deepcopy(props), "object.kind": kind},
         source_shape_id=shape.shape_id,
         children=children,
         native_xml=etree.tostring(shape._element, encoding="unicode"),
@@ -347,8 +352,9 @@ def import_pptx(source, *, embed=True):
         )
     assets = {}
     pages = []
+    seen = set()
     for i, slide in enumerate(prs.slides, 1):
-        pageid = read_identity(slide._element.cSld, f"slide-{i}")
+        pageid = unique_identity(read_identity(slide._element.cSld, f"slide-{i}"), seen)
         sp = {
             "slide.name": slide._element.cSld.get("name", ""),
             "slide.hidden": slide._element.get("show", "1") == "0",
@@ -360,7 +366,7 @@ def import_pptx(source, *, embed=True):
                 source_slide=i,
                 properties=sp,
                 baseline=deepcopy(sp),
-                objects=[read_shape(s, pageid, assets) for s in slide.shapes],
+                objects=[read_shape(s, pageid, assets, seen) for s in slide.shapes],
             )
         )
     id = (
@@ -419,6 +425,8 @@ def import_svg(source, *, padding=0):
                     "status": "ok",
                     "backend": "embedded_document",
                     "lossless_source_recovery": True,
+                    "source_scope": value.get("document_scope", "page"),
+                    "projection_page_id": value.get("page_id"),
                 }
         expand_svg_uses(root)
         if padding:

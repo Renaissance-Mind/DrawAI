@@ -15,7 +15,7 @@ from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_CONNECTOR
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.chart.data import CategoryChartData, XyChartData, BubbleChartData
 from pptx.util import Pt
-from ..engine import validate_pptx_package, _copy_slide
+from ..io import validate_pptx_package, copy_slide
 from .model import load_document
 from .xml import (
     EMU,
@@ -617,6 +617,11 @@ def table_options(shape, props, ctx):
 def add_object(container, obj, ctx, existing=None):
     props = obj.properties
     if existing is not None:
+        original_kind = (obj.baseline or {}).get("object.kind")
+        if original_kind is not None and original_kind != obj.kind:
+            raise ValueError(
+                f"{obj.id}: create a replacement object to change kind from {original_kind} to {obj.kind}"
+            )
         shape = existing
         if obj.baseline is not None:
             props = {k: v for k, v in props.items() if obj.baseline.get(k) != v}
@@ -699,8 +704,6 @@ def add_object(container, obj, ctx, existing=None):
             if effect is not None:
                 effect.set("idx", "0")
     ctx.objects[obj.id] = shape
-    if obj.clear_overrides:
-        clear_overrides(shape, obj.clear_overrides)
     identity = shape._element.find(".//" + tag("p:cNvPr"))
     if identity is not None:
         write_identity(identity, obj.id)
@@ -717,8 +720,14 @@ def add_object(container, obj, ctx, existing=None):
             for child in list(shape.shapes):
                 if child.shape_id not in keep:
                     child._element.getparent().remove(child._element)
-        for child in obj.children:
+        children = sorted(
+            obj.children, key=lambda child: child.properties.get("object.z_order", 0)
+        )
+        child_shapes = [
             add_object(shape, child, ctx, source.get(child.source_shape_id))
+            for child in children
+        ]
+        reorder_shapes(shape.shapes._spTree, [child._element for child in child_shapes])
         if original_transform is not None:
             replace(shape._element.grpSpPr, "a:xfrm", original_transform)
         # add_group_shape recalculates bounds while children are added.
@@ -758,13 +767,25 @@ def add_object(container, obj, ctx, existing=None):
             shape._element.blipFill.blip.rEmbed = rid
         used.update(picture_options(shape, props, ctx))
         if "picture.crop" in props:
+            values = {}
             for key, value in props["picture.crop"].items():
-                setattr(
-                    shape,
-                    "crop_"
-                    + {"l": "left", "r": "right", "t": "top", "b": "bottom"}[key],
-                    value,
-                )
+                side = {
+                    "l": "left",
+                    "r": "right",
+                    "t": "top",
+                    "b": "bottom",
+                    "left": "left",
+                    "right": "right",
+                    "top": "top",
+                    "bottom": "bottom",
+                }.get(key)
+                if side is None:
+                    raise ValueError(f"Unknown picture crop edge: {key}")
+                if side in values and values[side] != value:
+                    raise ValueError(f"Conflicting picture crop values for {side}")
+                values[side] = value
+            for side, value in values.items():
+                setattr(shape, "crop_" + side, value)
             used.add("picture.crop")
     if obj.kind == "ole":
         used.update(
@@ -773,8 +794,17 @@ def add_object(container, obj, ctx, existing=None):
         )
     if obj.kind == "video":
         used.update({"media.asset_ref", "media.poster_ref"} & props.keys())
+    if obj.clear_overrides:
+        clear_overrides(shape, obj.clear_overrides)
     ctx.audit(obj.id, props, used)
     return shape
+
+
+def reorder_shapes(tree, elements):
+    """Reorder modeled drawing nodes in their slots, keeping unknown XML in place."""
+    known = set(elements)
+    ordered_nodes = iter(elements)
+    tree[:] = [next(ordered_nodes) if child in known else child for child in tree]
 
 
 def slide_properties(slide, props, ctx):
@@ -906,8 +936,8 @@ def patch_template_package(original, saved):
     return stream.getvalue()
 
 
-def export_pptx(document, output, *, asset_root=None, profile="strict_native"):
-    if profile not in ("strict_native", "compatible"):
+def export_pptx(document, output, *, asset_root=None, profile="strict"):
+    if profile not in ("strict", "best_effort"):
         raise ValueError("Unknown export profile")
     doc = load_document(document)
     output = Path(output)
@@ -996,7 +1026,7 @@ def export_pptx(document, output, *, asset_root=None, profile="strict_native"):
         if source is not None and source not in wanted:
             slide = source
         elif source is not None:
-            slide = _copy_slide(prs, source)
+            slide = copy_slide(prs, source)
         else:
             layoutref = page.properties.get("slide.layout_ref")
             layouts = [l for m in prs.slide_masters for l in m.slide_layouts]
@@ -1034,10 +1064,16 @@ def export_pptx(document, output, *, asset_root=None, profile="strict_native"):
             for s in list(slide.shapes):
                 if s.shape_id not in keep:
                     s._element.getparent().remove(s._element)
-        for obj in sorted(
+        ordered_objects = sorted(
             page.objects, key=lambda o: o.properties.get("object.z_order", 0)
-        ):
+        )
+        rendered_shapes = [
             add_object(slide, obj, ctx, shape_map.get(obj.source_shape_id))
+            for obj in ordered_objects
+        ]
+        reorder_shapes(
+            slide.shapes._spTree, [shape._element for shape in rendered_shapes]
+        )
         # Resolve connections after every object has its real numeric shape ID.
         for obj in page.objects:
             if obj.kind != "connector":
@@ -1074,7 +1110,7 @@ def export_pptx(document, output, *, asset_root=None, profile="strict_native"):
         )
     identifier.text = doc.id
     ctx.audit(doc.id, props, used)
-    if ctx.issues and profile == "strict_native":
+    if ctx.issues and profile == "strict":
         raise ValueError(
             "Unsupported properties: " + json.dumps(ctx.issues, ensure_ascii=False)
         )

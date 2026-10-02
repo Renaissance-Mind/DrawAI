@@ -27,7 +27,7 @@ def export_svg(
     asset_root=None,
     renderer=None,
     rasterizer=None,
-    profile="strict_native",
+    profile="strict",
 ):
     doc = load_document(document)
     output = Path(output_dir).resolve()
@@ -58,7 +58,7 @@ def export_svg(
         environment, fonts = office_environment(prs, tmp)
         previews = None
         if any(path_gradient_objects(page) for page in doc.pages):
-            from ..engine import render_pptx
+            from ..io import render_pptx
 
             if rasterizer or shutil.which("pdftoppm"):
                 previews = render_pptx(
@@ -188,7 +188,6 @@ def export_svg(
                 etree.XMLParser(resolve_entities=False, no_network=True),
             )
             portable = doc.model_dump(mode="json", by_alias=True)
-            portable["pages"] = [portable["pages"][i]]
             for ref, asset in portable["assets"].items():
                 asset["data"] = base64.b64encode(asset_data(asset, root)).decode()
                 asset.pop("path", None)
@@ -212,6 +211,7 @@ def export_svg(
                     "objects": [o.id for o in page.objects],
                     "visual_sha256": digest,
                     "document_encoding": "zlib-base64",
+                    "document_scope": "full_document",
                     "document_data": packed,
                 },
                 ensure_ascii=False,

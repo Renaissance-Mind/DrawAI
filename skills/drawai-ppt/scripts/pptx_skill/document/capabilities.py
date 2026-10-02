@@ -37,6 +37,10 @@ WRITABLE.update(
 )
 WRITABLE.update("picture.aspect_fit picture.svg_asset".split())
 CONDITIONS = {
+    "object.id": "顶层 id 为文档内唯一标识；object.id 是可用别名，若同时填写须相同。",
+    "object.kind": "顶层 kind 决定创建类型；object.kind 是可用别名。修改导入对象的类型时创建替代对象。",
+    "object.z_order": "数值越大越靠上；页面和分组内的已建模对象按该值重排，原始扩展节点保留其位置。",
+    "picture.crop": "{left, top, right, bottom} 四边比例；同时接受 l/t/r/b 缩写，重复键须一致。",
     "paint.gradient.kind": "Native linear/circle/rect/shape gradients. SVG rect/shape uses a reported local PDF/PNG fallback for unrotated top-level objects when Poppler is available; other cases retain a declared approximation.",
     "picture.svg_asset": "Native SVG image relationship plus the picture.asset_ref bitmap fallback; older readers may display the fallback.",
     "chart.type": "Native creation: barChart, lineChart, areaChart, pieChart, doughnutChart, scatterChart, bubbleChart, radarChart. Other chart families require imported native parts.",

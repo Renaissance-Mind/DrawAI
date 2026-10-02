@@ -25,6 +25,24 @@ class Object(Model):
     baseline: dict[str, Any] | None = None
     clear_overrides: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def identity_aliases(cls, value):
+        if not isinstance(value, dict):
+            return value
+        value = dict(value)
+        props = value.get("properties", {})
+        for field in ("id", "kind"):
+            alias = "object." + field
+            if alias not in props:
+                continue
+            if field in value and value[field] != props[alias]:
+                raise ValueError(
+                    f"{alias} conflicts with top-level {field}; use one value"
+                )
+            value[field] = props[alias]
+        return value
+
 
 class Page(Model):
     id: str
@@ -159,7 +177,7 @@ class Document(Model):
 
 def load_document(source: Path | dict | Document) -> Document:
     if isinstance(source, Document):
-        return source
+        return Document.model_validate(source.model_dump(by_alias=True))
     if isinstance(source, dict):
         return Document.model_validate(source)
     return Document.model_validate_json(Path(source).read_text(encoding="utf-8"))

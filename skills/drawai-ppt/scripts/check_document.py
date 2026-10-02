@@ -291,7 +291,7 @@ class Checks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported properties"):
             export_pptx(doc, out)
         self.assertFalse(out.exists())
-        report = export_pptx(doc, self.root / "compatible.pptx", profile="compatible")
+        report = export_pptx(doc, self.root / "best-effort.pptx", profile="best_effort")
         self.assertEqual(report["issues"][0]["property"], "smartart.direction")
         with self.assertRaisesRegex(ValueError, "Unknown property"):
             Document.model_validate(document([shape(**{"invented.width": 3})]))
