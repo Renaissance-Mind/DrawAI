@@ -41,3 +41,23 @@ def test_schema_inventory_preserves_source_revision_inheritance_and_enumerations
     assert all(len(source["sha256"]) == 64 for source in inventory["sources"])
     assert any(value["inherited"] for value in inventory["properties"])
     assert all(value["implementation_status"] == "not_assessed" for value in inventory["properties"])
+
+
+def test_matrix_enumerations_are_complete_and_match_their_native_sources():
+    catalog = json.loads((REFERENCES / "property-catalog.json").read_text())
+    inventory = json.loads((REFERENCES / "pptx-inventory" / "schema-inventory.json").read_text())
+    enums = {(item["schema_file"], item["sdk_name"]): item for item in inventory["enums"]}
+    for value in catalog["properties"]:
+        if value["value_type"] != "enum":
+            continue
+        assert value["allowed_values"]
+        assert len(value["allowed_values"]) == len(set(value["allowed_values"]))
+        if value["native_enum"]:
+            reference = value["native_enum"]
+            declaration = enums[reference["schema_file"], reference["sdk_name"]]
+            assert reference["type"] == declaration["type"]
+            assert value["allowed_values"] == [item["wire_value"] for item in declaration["values"]]
+    by_id = {item["id"]: item for item in catalog["properties"]}
+    for end in ("start", "end"):
+        for dimension in ("width", "length"):
+            assert by_id[f"stroke.{end}_arrow.{dimension}"]["allowed_values"] == ["sm", "med", "lg"]
