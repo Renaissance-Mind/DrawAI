@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { StudioRuntime } from "./runtime";
 import type { StudioAsset } from "./types";
 
-export function Icon({ name, size = 18, className }: { name: string; size?: number; className?: string }) {
+export function Icon({
+  name,
+  size = 18,
+  className,
+}: {
+  name: string;
+  size?: number;
+  className?: string;
+}) {
   const shapes: Record<string, ReactNode> = {
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -91,6 +99,14 @@ export function Icon({ name, size = 18, className }: { name: string; size?: numb
       </>
     ),
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1.2" />
+        <circle cx="12" cy="12" r="1.2" />
+        <circle cx="19" cy="12" r="1.2" />
+      </>
+    ),
+    arrowLeft: <path d="M20 12H4m6-6-6 6 6 6" />,
   };
   return (
     <svg
@@ -135,6 +151,68 @@ export function IconButton({
 }
 
 const assetImages = new Map<string, Promise<string>>();
+
+export function ActionMenu({
+  label,
+  icon = "more",
+  children,
+  inline = false,
+}: {
+  label: string;
+  icon?: string;
+  children: ReactNode;
+  inline?: boolean;
+}) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (menu.current && !menu.current.contains(event.target as Node))
+        menu.current.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menu.current?.open) {
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
+    window.addEventListener("pointerdown", outside);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", outside);
+      window.removeEventListener("keydown", escape);
+    };
+  }, []);
+  return (
+    <details
+      ref={menu}
+      className={`studio-action-menu ${inline ? "inline" : ""}`}
+      onToggle={(event) => {
+        if (event.currentTarget.open) {
+          document
+            .querySelectorAll<HTMLDetailsElement>(
+              "details.studio-action-menu[open]",
+            )
+            .forEach((item) => {
+              if (item !== event.currentTarget) item.open = false;
+            });
+        }
+      }}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button")) {
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector("summary")?.focus();
+        }
+      }}
+    >
+      <summary aria-label={label} title={label}>
+        <Icon name={icon} />
+        <span>{label}</span>
+      </summary>
+      <div className="studio-menu-items">{children}</div>
+    </details>
+  );
+}
+
 export function AssetImage({
   runtime,
   projectId,

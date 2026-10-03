@@ -147,7 +147,7 @@ async function initializeRuntime(): Promise<StudioRuntime> {
     }>(
       "ui/initialize",
       {
-        appInfo: { name: "DrawAI Workbench", version: "2.0.3" },
+        appInfo: { name: "DrawAI Workbench", version: "2.0.4" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       },

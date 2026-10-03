@@ -56,6 +56,13 @@ function lookup(items, id, label) {
 function clone(value) {
   return structuredClone(value);
 }
+function invalidateReferencePages(project, ...scopes) {
+  const all = scopes.some((ids) => ids.length === 0);
+  const affected = new Set(scopes.flat());
+  for (const page of project.slides)
+    if (page.current_image_id && (all || affected.has(page.id)))
+      page.content_changed = true;
+}
 function fileInfo(bytes, name) {
   const ext = path.extname(name).toLowerCase();
   if (!MIME[ext]) throw new Error(`Unsupported file type: ${ext}`);
@@ -415,7 +422,8 @@ export class StudioStore {
     return this.mutate(args.project_id, async (p) => {
       p.input_revision = (p.input_revision || 1) + 1;
       if (args.action === "remove") {
-        lookup(p.references, args.reference_id, "Reference");
+        const reference = lookup(p.references, args.reference_id, "Reference");
+        invalidateReferencePages(p, reference.slide_ids);
         p.references = p.references.filter((r) => r.id !== args.reference_id);
         p.slides.forEach((s) => {
           s.reference_ids = s.reference_ids.filter(
@@ -426,6 +434,7 @@ export class StudioStore {
       }
       if (args.action === "update") {
         const ref = lookup(p.references, args.reference_id, "Reference");
+        const previousScope = [...ref.slide_ids];
         if (args.role && !ROLES.has(args.role))
           throw new Error("Invalid reference role");
         if (args.role) ref.role = args.role;
@@ -434,6 +443,7 @@ export class StudioStore {
           ref.slide_ids = args.slide_ids.map(
             (id) => lookup(p.slides, id, "Slide").id,
           );
+        invalidateReferencePages(p, previousScope, ref.slide_ids);
         return {};
       }
       const role = args.role || "content";
@@ -491,6 +501,7 @@ export class StudioStore {
           ref.preview_asset_id = asset.id;
       } else throw new Error(`Unknown reference action: ${args.action}`);
       p.references.push(ref);
+      invalidateReferencePages(p, ref.slide_ids);
       return { reference_id: ref.id };
     });
   }

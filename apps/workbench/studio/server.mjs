@@ -150,7 +150,7 @@ export function createMcpServer(store = new StudioStore()) {
   let workbench;
   const getWorkbench = () => (workbench ??= loadWorkbenchResource());
   const server = new Server(
-    { name: "drawai-studio", version: "2.0.3" },
+    { name: "drawai-studio", version: "2.0.4" },
     { capabilities: { tools: {}, resources: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => {

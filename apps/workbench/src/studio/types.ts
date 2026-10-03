@@ -88,6 +88,9 @@ export interface StudioTask {
   prompt: string;
   request_path: string;
   artifact_ids: string[];
+  project_input_revision?: number;
+  slide_revisions?: Record<string, number>;
+  source_image_ids?: Record<string, string | null>;
   events: Array<{ at: string; status: string; message: string }>;
 }
 export interface StudioProject {
@@ -99,6 +102,7 @@ export interface StudioProject {
   style_notes: string;
   source_directory: string;
   revision: number;
+  input_revision?: number;
   created_at: string;
   updated_at: string;
   slides: StudioSlide[];
