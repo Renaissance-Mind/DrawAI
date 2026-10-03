@@ -448,6 +448,62 @@ class Workflows(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "import limit"):
             import_svg(svg, max_source_bytes=1024)
 
+    def test_copied_notes_share_registered_master_and_remain_independent(self):
+        from pptx_skill.io import copy_slide, validate_pptx_package, PptxError
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from copy import deepcopy
+
+        prs = Presentation()
+        original = prs.slides.add_slide(prs.slide_layouts[6])
+        original.notes_slide.notes_text_frame.text = "Source notes"
+        first = copy_slide(prs, original)
+        second = copy_slide(prs, original)
+        first.notes_slide.notes_text_frame.text = "First copy"
+        second.notes_slide.notes_text_frame.text = "Second copy"
+        self.assertEqual(original.notes_slide.notes_text_frame.text, "Source notes")
+        notes = [s.notes_slide.part for s in prs.slides]
+        self.assertEqual(len(set(notes)), 3)
+        masters = [
+            {r.target_part for r in n.rels.values() if r.reltype == RT.NOTES_MASTER}
+            for n in notes
+        ]
+        self.assertEqual(masters[0], masters[1])
+        self.assertEqual(masters[0], masters[2])
+        path = self.root / "shared-notes-master.pptx"
+        prs.save(path)
+        self.assertEqual(validate_pptx_package(path)["status"], "ok")
+        with zipfile.ZipFile(path) as z:
+            parts = {n: z.read(n) for n in z.namelist()}
+        master_path = str(next(iter(masters[0])).partname).lstrip("/")
+        wrong_path = "ppt/notesMasters/notesMaster99.xml"
+        parts[wrong_path] = parts[master_path]
+        master_rels = str(
+            Path(master_path).parent / "_rels" / (Path(master_path).name + ".rels")
+        )
+        parts["ppt/notesMasters/_rels/notesMaster99.xml.rels"] = parts[master_rels]
+        note_path = str(notes[1].partname).lstrip("/")
+        note_rels = str(
+            Path(note_path).parent / "_rels" / (Path(note_path).name + ".rels")
+        )
+        tree = etree.fromstring(parts[note_rels])
+        for rel in tree:
+            if rel.get("Type") == RT.NOTES_MASTER:
+                rel.set("Target", "../notesMasters/notesMaster99.xml")
+        parts[note_rels] = etree.tostring(tree)
+        types = etree.fromstring(parts["[Content_Types].xml"])
+        entry = deepcopy(
+            next(n for n in types if n.get("PartName") == "/" + master_path)
+        )
+        entry.set("PartName", "/" + wrong_path)
+        types.append(entry)
+        parts["[Content_Types].xml"] = etree.tostring(types)
+        invalid = self.root / "unregistered-notes-master.pptx"
+        with zipfile.ZipFile(invalid, "w", zipfile.ZIP_DEFLATED) as z:
+            for name, data in parts.items():
+                z.writestr(name, data)
+        with self.assertRaises(PptxError):
+            validate_pptx_package(invalid)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

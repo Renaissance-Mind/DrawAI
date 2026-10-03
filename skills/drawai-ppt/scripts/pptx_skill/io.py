@@ -273,6 +273,7 @@ def validate_pptx_package(path: str | Path) -> dict[str, Any]:
             if name.endswith((".xml", ".rels"))
         }
         relationship_ids = {}
+        relationship_targets = {}
         for name, root in xml_files.items():
             if not name.endswith(".rels"):
                 continue
@@ -281,6 +282,7 @@ def validate_pptx_package(path: str | Path) -> dict[str, Any]:
             if len(ids) != len(set(ids)) or None in ids:
                 raise PptxError(f"Invalid relationship IDs in {name}")
             relationship_ids[name] = set(ids)
+            relationship_targets[name] = {}
             for rel in root:
                 if rel.get("TargetMode") == "External":
                     continue
@@ -292,6 +294,10 @@ def validate_pptx_package(path: str | Path) -> dict[str, Any]:
                 )
                 if resolved not in names:
                     raise PptxError(f"Broken PPTX relationship: {name} -> {target}")
+                relationship_targets[name][rel.get("Id")] = {
+                    "path": resolved,
+                    "type": rel.get("Type"),
+                }
         for name, root in xml_files.items():
             if name.endswith(".rels"):
                 continue
@@ -303,6 +309,27 @@ def validate_pptx_package(path: str | Path) -> dict[str, Any]:
                     if attr.startswith("{" + _R_NS + "}") and value not in ids:
                         raise PptxError(
                             f"Unknown resource relationship in {name}: {value}"
+                        )
+        presentation = xml_files["ppt/presentation.xml"]
+        refs = relationship_targets["ppt/_rels/presentation.xml.rels"]
+        masters = {
+            rel["path"] for rel in refs.values() if rel["type"] == RT.NOTES_MASTER
+        }
+        for node in presentation.findall(qn("p:sldIdLst") + "/" + qn("p:sldId")):
+            slide = PurePosixPath(refs[node.get(qn("r:id"))]["path"])
+            slide_rels = str(slide.parent / "_rels" / (slide.name + ".rels"))
+            for note in relationship_targets.get(slide_rels, {}).values():
+                if note["type"] != RT.NOTES_SLIDE:
+                    continue
+                path = PurePosixPath(note["path"])
+                note_rels = str(path.parent / "_rels" / (path.name + ".rels"))
+                for master in relationship_targets.get(note_rels, {}).values():
+                    if (
+                        master["type"] == RT.NOTES_MASTER
+                        and master["path"] not in masters
+                    ):
+                        raise PptxError(
+                            f"Notes master {master['path']} is not registered in the presentation; copied notes pages must share the registered notes master"
                         )
     return {"status": "ok", "package_entries": len(names), "xml_parts": len(xml_files)}
 
@@ -323,7 +350,14 @@ def copy_slide(prs: Any, source: Any):
     target.part.rels._rels.clear()
     mapping = {source.part: target.part}
     reserved = {str(part.partname) for part in prs.part.package.iter_parts()}
-    shared = {RT.SLIDE_LAYOUT, RT.SLIDE_MASTER, RT.THEME, RT.IMAGE, RT.SLIDE}
+    shared = {
+        RT.SLIDE_LAYOUT,
+        RT.SLIDE_MASTER,
+        RT.NOTES_MASTER,
+        RT.THEME,
+        RT.IMAGE,
+        RT.SLIDE,
+    }
 
     def clone(part: Part):
         if part in mapping:
