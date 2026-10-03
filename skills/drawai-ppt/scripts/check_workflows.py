@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import random
+import base64
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lxml import etree
@@ -421,6 +423,30 @@ class Workflows(unittest.TestCase):
         kept, result = office_input(source, self.root / "preserve", "preserve")
         self.assertEqual(kept, source)
         self.assertFalse(result["rendering_copy_used"])
+
+    @unittest.skipUnless(
+        shutil.which("soffice"), "Large SVG projection needs LibreOffice"
+    )
+    def test_large_svg_picture_recovers_original_asset(self):
+        from PIL import Image
+
+        source = self.root / "large.png"
+        image = Image.frombytes(
+            "RGB", (2048, 2048), random.Random(7).randbytes(2048 * 2048 * 3)
+        )
+        image.save(source, compress_level=0)
+        doc = document([box("photo", "picture", **{"picture.asset_ref": "photo"})])
+        doc.assets = {"photo": {"path": str(source), "content_type": "image/png"}}
+        report = export_svg(doc, self.root / "large-svg")
+        svg = Path(report["pages"][0]["svg"])
+        self.assertGreater(svg.stat().st_size, 10 * 1024 * 1024)
+        recovered, recovery = import_svg(svg)
+        self.assertTrue(recovery["lossless_source_recovery"])
+        self.assertEqual(
+            base64.b64decode(recovered.assets["photo"]["data"]), source.read_bytes()
+        )
+        with self.assertRaisesRegex(ValueError, "import limit"):
+            import_svg(svg, max_source_bytes=1024)
 
 
 if __name__ == "__main__":

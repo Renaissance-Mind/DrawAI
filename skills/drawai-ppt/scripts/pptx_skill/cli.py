@@ -38,6 +38,12 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
     imported.add_argument("source", type=Path)
     imported.add_argument("--output", required=True, type=Path)
     imported.add_argument("--report", type=Path)
+    imported.add_argument(
+        "--source-limit-mib",
+        type=int,
+        default=256,
+        help="Maximum unpacked embedded SVG document size in MiB (default: 256).",
+    )
     exported = commands.add_parser(
         "export", help="Export a document JSON to editable PPTX and static SVG."
     )
@@ -108,7 +114,9 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
                     "pages": len(document.pages),
                 }
             elif args.source.suffix.lower() == ".svg":
-                document, conversion = import_svg(args.source)
+                document, conversion = import_svg(
+                    args.source, max_source_bytes=args.source_limit_mib * 1024 * 1024
+                )
             else:
                 raise ValueError("Import accepts .pptx or .svg")
             document.save(args.output)

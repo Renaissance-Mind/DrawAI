@@ -115,7 +115,9 @@ def export_svg(
                 )
             tree = etree.fromstring(
                 svg.read_bytes(),
-                etree.XMLParser(resolve_entities=False, no_network=True),
+                etree.XMLParser(
+                    resolve_entities=False, no_network=True, huge_tree=True
+                ),
             )
             for dummy in tree.xpath(
                 '//*[contains(concat(" ",normalize-space(@class)," ")," DummySlide ")]'
@@ -189,7 +191,9 @@ def export_svg(
             # Normalize namespace declarations after the filter's nodes were removed.
             tree = etree.fromstring(
                 etree.tostring(tree),
-                etree.XMLParser(resolve_entities=False, no_network=True),
+                etree.XMLParser(
+                    resolve_entities=False, no_network=True, huge_tree=True
+                ),
             )
             portable = doc.model_dump(mode="json", by_alias=True)
             for ref, asset in portable["assets"].items():

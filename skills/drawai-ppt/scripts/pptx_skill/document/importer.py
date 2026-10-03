@@ -385,15 +385,21 @@ def import_pptx(source, *, embed=True):
     )
 
 
-def import_svg(source, *, padding=0):
+def import_svg(source, *, padding=0, max_source_bytes=256 * 1024 * 1024):
     from ..svg_export import SvgToPptCompiler
 
     source = Path(source).resolve()
+    if (
+        isinstance(max_source_bytes, bool)
+        or not isinstance(max_source_bytes, int)
+        or max_source_bytes <= 0
+    ):
+        raise ValueError("max_source_bytes must be a positive integer")
     # The converter prepares assets beside its input, so work on a copy.
     with tempfile.TemporaryDirectory() as tmp:
         root = etree.fromstring(
             source.read_bytes(),
-            etree.XMLParser(resolve_entities=False, no_network=True),
+            etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True),
         )
         for metadata in root.findall("{http://www.w3.org/2000/svg}metadata"):
             if not metadata.text or not metadata.text.lstrip().startswith("{"):
@@ -416,10 +422,10 @@ def import_svg(source, *, padding=0):
                     )
                 raw = base64.b64decode(value["document_data"], validate=True)
                 decoder = zlib.decompressobj()
-                raw = decoder.decompress(raw, 64 * 1024 * 1024 + 1)
-                if len(raw) > 64 * 1024 * 1024 or not decoder.eof:
+                raw = decoder.decompress(raw, max_source_bytes + 1)
+                if len(raw) > max_source_bytes or not decoder.eof:
                     raise ValueError(
-                        "Embedded SVG source exceeds the 64 MiB import limit"
+                        f"Embedded SVG source exceeds the {max_source_bytes} byte import limit; set max_source_bytes or --source-limit-mib for this document"
                     )
                 return Document.model_validate_json(raw), {
                     "status": "ok",

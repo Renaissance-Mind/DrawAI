@@ -261,6 +261,8 @@ export_pptx(doc, Path("output/inserted/deck.pptx"))
 
 逐页 SVG 嵌入完整源，导入恢复所有页面和引用；`projection_page_id` 标出该 SVG 对应的显示页。外观哈希用于识别制作源是否过期。矩形/shape 渐变的局部图片回退、字体替代等记录在报告中。
 
+大型模板和图片会增加 SVG 中制作源的体积。使用 `import_svg` 恢复文档；解压后的源默认限额为 256 MiB，Python 的 `max_source_bytes` 或 CLI 的 `--source-limit-mib` 可以调整。直接检查 SVG XML 时，使用 `etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)` 读取大型内嵌数据。
+
 ## 原生 XML 操作
 
 未有直接属性接口的设置可以保留模板中的原始 XML，或使用明确的 `native_bindings`。例如设置默认语言：
