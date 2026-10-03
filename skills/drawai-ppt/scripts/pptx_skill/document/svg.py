@@ -13,7 +13,7 @@ from lxml import etree
 from pptx import Presentation
 from .model import load_document
 from .export import export_pptx
-from .render_env import office_environment
+from .render_env import office_environment, office_input
 from .xml import asset_data
 from .svg_fallback import path_gradient_objects, apply_gradient_fallback
 
@@ -28,6 +28,7 @@ def export_svg(
     renderer=None,
     rasterizer=None,
     profile="strict",
+    embedded_fonts="ignore",
 ):
     doc = load_document(document)
     output = Path(output_dir).resolve()
@@ -54,8 +55,10 @@ def export_svg(
         ppt = tmp / "document.pptx"
         report = export_pptx(doc, ppt, asset_root=root, profile=profile)
         issues.extend(report["issues"])
-        prs = Presentation(str(ppt))
+        render_ppt, input_report = office_input(ppt, tmp, embedded_fonts)
+        prs = Presentation(str(render_ppt))
         environment, fonts = office_environment(prs, tmp)
+        fonts.update(input_report)
         previews = None
         if any(path_gradient_objects(page) for page in doc.pages):
             from ..io import render_pptx
@@ -67,6 +70,7 @@ def export_svg(
                     renderer=soffice,
                     rasterizer=rasterizer,
                     dpi=192,
+                    embedded_fonts=embedded_fonts,
                 )["slides"]
             else:
                 issues.append(
@@ -77,7 +81,7 @@ def export_svg(
                     }
                 )
         for i, page in enumerate(doc.pages):
-            single = Presentation(str(ppt))
+            single = Presentation(str(render_ppt))
             lst = single.slides._sldIdLst
             for j, node in reversed(list(enumerate(lst))):
                 if j != i:

@@ -71,6 +71,12 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
         command.add_argument(
             "--rasterizer", help="pdftoppm executable, otherwise resolved from PATH."
         )
+        command.add_argument(
+            "--embedded-fonts",
+            choices=("ignore", "preserve"),
+            default="ignore",
+            help="Office rendering uses installed fonts by default; source PPTX fonts are preserved.",
+        )
     args = parser.parse_args(argv)
     try:
         from .io import inspect_pptx, render_pptx, validate_pptx_package
@@ -141,6 +147,7 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
                     profile=args.profile,
                     renderer=args.renderer,
                     rasterizer=args.rasterizer,
+                    embedded_fonts=args.embedded_fonts,
                 )
             if args.report:
                 _write_json(args.report, result)
@@ -153,6 +160,7 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
                     args.preview_dir,
                     renderer=args.renderer,
                     rasterizer=args.rasterizer,
+                    embedded_fonts=args.embedded_fonts,
                 )
             if args.output:
                 _write_json(args.output, result)
@@ -162,6 +170,7 @@ def pptx_cli(argv: Sequence[str] | None = None) -> int:
                 args.output_dir,
                 renderer=args.renderer,
                 rasterizer=args.rasterizer,
+                embedded_fonts=args.embedded_fonts,
             )
         else:
             result = validate_pptx_package(args.source)

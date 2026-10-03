@@ -10,6 +10,7 @@
 | document/export.py | 创建/修改原生对象、页面与分组堆叠顺序、包发布 |
 | document/importer.py | PPTX 原始包与对象读取、SVG 转换和制作源恢复 |
 | document/editing.py / insert.py | 格式覆盖清除、页面复制、SVG 插入 |
+| document/authoring.py | 根据起点与终点创建连线，计算包围框与方向翻转 |
 | document/identity.py | 文档对象 ID；复制或导入重复标识时生成唯一值 |
 | document/xml.py / rich.py | 单位、颜色、填充、线、富文本、段落、路径、效果与 3D |
 | document/advanced.py / charts.py | 主题、图片、变换、可访问性及图表细节 |
@@ -44,7 +45,7 @@ python "$SKILL_DIR/scripts/update_implementation_matrix.py"
 
 复制页面生成新的语义 ID，保留页面内数字形状 ID，独立复制可变图表、工作簿和备注。插入 SVG 为原生分组，重新分配数字 ID 和图片关系。精确 XML 绑定按具体部件路径工作，涉及页面复制时同步目标路径与引用。
 
-SVG 从实际 PPTX 导出，写入完整文档源和外观哈希。修改导出器时检查背景、母版对象、静态可见性、字体与特殊效果。回退报告列出实际受影响对象。
+SVG 从实际 PPTX 导出，写入完整文档源和外观哈希。预览与 SVG 的 LibreOffice 输入默认使用忽略嵌入字体的临时副本，字体由本机字体环境解析；`embedded_fonts="preserve"` 使用原始字体引用。交付 PPTX 与 SVG 中嵌入的制作源保留原始包。修改导出器时检查背景、母版对象、静态可见性、字体与特殊效果。回退报告列出实际受影响对象。
 
 ## 验证
 

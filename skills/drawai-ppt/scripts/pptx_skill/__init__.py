@@ -12,6 +12,7 @@ from .document import (
     export_svg,
     duplicate_page,
     insert_svg,
+    make_connector,
 )
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "export_svg",
     "duplicate_page",
     "insert_svg",
+    "make_connector",
     "inspect_pptx",
     "render_pptx",
     "validate_pptx_package",

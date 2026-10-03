@@ -122,6 +122,33 @@ class Document(Model):
             seen.add(obj.id)
             if obj.kind not in PROPERTIES["object.kind"]["allowed_values"]:
                 raise ValueError(f"Unknown object kind: {obj.kind}")
+            if "object.frame" in obj.properties:
+                value = obj.properties["object.frame"]
+                keys = ("left", "top", "width", "height")
+                if not isinstance(value, dict) or any(
+                    isinstance(value.get(k), bool)
+                    or not isinstance(value.get(k), (int, float))
+                    or not math.isfinite(value[k])
+                    for k in keys
+                ):
+                    raise ValueError(
+                        f"Object {obj.id}: object.frame needs finite numeric left, top, width and height"
+                    )
+                w, h = value["width"], value["height"]
+                invalid = (
+                    min(w, h) < 0 or max(w, h) == 0
+                    if obj.kind == "connector"
+                    else min(w, h) <= 0
+                )
+                if invalid:
+                    guidance = (
+                        "; use make_connector with start/end points for directed lines"
+                        if obj.kind == "connector"
+                        else ""
+                    )
+                    raise ValueError(
+                        f"Object {obj.id}: invalid object.frame dimensions ({w}, {h}){guidance}"
+                    )
             properties(obj.properties)
             for key in obj.clear_overrides:
                 if key not in PROPERTIES:

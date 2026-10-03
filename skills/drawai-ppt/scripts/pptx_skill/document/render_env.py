@@ -4,7 +4,59 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import zipfile
 from lxml import etree
+
+
+def office_input(source, workdir, embedded_fonts="ignore"):
+    """Use installed fonts in a disposable Office input; preserve the source package."""
+    if embedded_fonts not in ("ignore", "preserve"):
+        raise ValueError("embedded_fonts must be ignore or preserve")
+    source = Path(source)
+    pns = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+    rns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    with zipfile.ZipFile(source) as package:
+        tree = etree.fromstring(package.read("ppt/presentation.xml"))
+        lists = tree.findall(pns + "embeddedFontLst")
+        families = [
+            node.get("typeface") for lst in lists for node in lst.iter(pns + "font")
+        ]
+        report = {
+            "embedded_font_policy": embedded_fonts,
+            "embedded_font_families": families,
+            "rendering_copy_used": bool(lists) and embedded_fonts == "ignore",
+        }
+        if not report["rendering_copy_used"]:
+            return source, report
+        ids = {
+            node.get(rns + "id")
+            for lst in lists
+            for node in lst.iter()
+            if node.get(rns + "id")
+        }
+        for lst in lists:
+            tree.remove(lst)
+        relationships = "ppt/_rels/presentation.xml.rels"
+        rels = etree.fromstring(package.read(relationships))
+        for rel in list(rels):
+            if rel.get("Id") in ids:
+                rels.remove(rel)
+        replaced = {
+            "ppt/presentation.xml": etree.tostring(
+                tree, xml_declaration=True, encoding="UTF-8", standalone=True
+            ),
+            relationships: etree.tostring(
+                rels, xml_declaration=True, encoding="UTF-8", standalone=True
+            ),
+        }
+        destination = Path(workdir) / "office-input" / source.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as target:
+            for entry in package.infolist():
+                target.writestr(
+                    entry, replaced.get(entry.filename, package.read(entry.filename))
+                )
+    return destination, report
 
 
 def office_environment(prs, workdir):

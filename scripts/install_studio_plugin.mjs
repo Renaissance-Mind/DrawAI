@@ -1,4 +1,4 @@
-import { mkdir, writeFile, cp, access, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, cp, access, readFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -14,7 +14,15 @@ const plugin = path.join(marketplace, 'drawai');
 await mkdir(path.join(plugin, '.codex-plugin'), { recursive: true });
 await mkdir(path.join(plugin, 'assets'), { recursive: true });
 await cp(path.join(workbench, 'public/drawai_image.png'), path.join(plugin, 'assets/drawai_image.png'));
-for (const skill of ['drawai-studio', 'drawai-simple', 'drawai-ppt']) await cp(path.join(root, 'skills', skill), path.join(plugin, 'skills', skill), { recursive: true });
+const skillNames = ['drawai-studio', 'drawai-simple', 'drawai-ppt'];
+async function syncSkill(source, destination) {
+  await rm(destination, { recursive: true, force: true });
+  await cp(source, destination, {
+    recursive: true,
+    filter: (file) => !file.split(path.sep).includes('__pycache__') && !file.endsWith('.pyc'),
+  });
+}
+for (const skill of skillNames) await syncSkill(path.join(root, 'skills', skill), path.join(plugin, 'skills', skill));
 const manifest = {
   name: 'drawai', version: '2.0.4', description: 'Create slide images and editable PPT in the current Codex conversation with a visual workbench.',
   author: { name: 'Renaissance Mind' }, license: 'Apache-2.0', skills: './skills/', mcpServers: './.mcp.json',
@@ -26,6 +34,11 @@ await writeFile(path.join(plugin, '.mcp.json'), `${JSON.stringify({ mcpServers: 
 await mkdir(path.join(marketplace, '.agents/plugins'), { recursive: true });
 await writeFile(path.join(marketplace, '.agents/plugins/marketplace.json'), `${JSON.stringify({ name: 'drawai-local', interface: { displayName: 'DrawAI Development' }, plugins: [{ name: 'drawai', source: { source: 'local', path: './drawai' }, policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' }, category: 'Productivity' }] }, null, 2)}\n`);
 for (const args of [['plugin', 'marketplace', 'add', marketplace, '--json'], ['plugin', 'add', 'drawai@drawai-local', '--json']]) {
-  console.log(execFileSync('codex', args, { cwd: root, encoding: 'utf8' }).trim());
+  const output = execFileSync('codex', args, { cwd: root, encoding: 'utf8' }).trim();
+  console.log(output);
+  const result = JSON.parse(output);
+  if (result.installedPath) {
+    for (const skill of skillNames) await syncSkill(path.join(root, 'skills', skill), path.join(result.installedPath, 'skills', skill));
+  }
 }
 console.log(`DrawAI development plugin uses ${root} (UI ${build}). After UI changes, rebuild build:plugin, rerun this installer, and open a new Codex chat to load the refreshed MCP connection and versioned UI resource.`);

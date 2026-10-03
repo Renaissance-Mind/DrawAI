@@ -38,6 +38,8 @@ python "$SKILL_DIR/scripts/ppt.py" inspect template.pptx --output work/inventory
 python "$SKILL_DIR/scripts/ppt.py" import template.pptx --output work/template.document.json --report work/import-report.json
 ```
 
+先打开 `work/before` 的每页预览，对照清单中的标题、正文、日期与页脚文字，并检查配色和版式。确认文字完整显示后再把截图用于图像生成。预览和 SVG 默认在临时副本中忽略嵌入字体，使用本机匹配的字体；报告的 `fonts` 记录处理方式和替代结果，模板原件与最终 PPTX 保留原始字体资源。需要对照嵌入字体的渲染时，可在新目录使用 `--embedded-fonts preserve`。
+
 从导入 JSON 中查找页面和对象 `id`，确认目标文字所在的 paragraph / run。只修改需要改变的文字或属性；导入产生的 `template`、`baseline`、`source_slide`、`source_shape_id` 和 `native_*` 数据用于保存原始结构。
 
 ### 使用模板制作新页面
@@ -117,6 +119,8 @@ python "$SKILL_DIR/scripts/ppt.py" render output/deck.pptx --output-dir output/p
 | 输出文件已存在、预览目录非空 | 使用新的版本目录；组合导出中途失败时，先查看已生成的文件，再只重做缺少的输出 |
 | 属性未实现或参数错误 | 查询该属性的条件与结构，修正输入；需要允许跳过时使用 `--profile best_effort` 并检查报告 |
 | 字体替代 | 选择目标环境已安装的字体，重新渲染 |
+| 清单有文字，预览缺少文字 | 核对字体处理报告及可见文字；本机字体仍无法正确显示时，使用目标 PowerPoint 渲染并检查完整预览后再制作视觉稿 |
+| 连线方向向左或向上 | 用 `make_connector` 的起点、终点生成连线；它会计算非负宽高与方向翻转，见 [API](document-api.md#箭头) |
 | 目标对象没有匹配或匹配多个 | 查看导入 JSON 与清单，明确对象 ID 和 run |
 
 包校验检查 XML 和内部引用；对象清单检查可编辑结构；PNG/PDF 与浏览器 SVG 检查外观。交付时分别说明实际完成的检查。

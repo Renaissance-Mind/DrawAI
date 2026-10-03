@@ -4,6 +4,7 @@ from .importer import import_pptx, import_svg
 from .svg import export_svg
 from .editing import duplicate_page
 from .insert import insert_svg
+from .authoring import make_connector
 
 __all__ = [
     "Document",
@@ -16,4 +17,5 @@ __all__ = [
     "import_svg",
     "duplicate_page",
     "insert_svg",
+    "make_connector",
 ]

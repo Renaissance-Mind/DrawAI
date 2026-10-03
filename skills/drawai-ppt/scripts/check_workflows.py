@@ -4,6 +4,7 @@
 from pathlib import Path
 import json
 import shutil
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,8 @@ from pptx_skill import (
     import_pptx,
     import_svg,
     duplicate_page,
+    inspect_pptx,
+    make_connector,
 )
 from pptx_skill.document.identity import IDENTITY_NS
 
@@ -294,6 +297,130 @@ class Workflows(unittest.TestCase):
         self.assertEqual(runs[0].text, "Updated ")
         self.assertTrue(runs[0].font.bold)
         self.assertTrue(runs[1].font.italic)
+
+    def test_layout_placeholder_without_geometry_inspects(self):
+        prs = Presentation()
+        prs.slides.add_slide(prs.slide_layouts[6])
+        for owner in (prs.slide_masters[0], prs.slide_layouts[0]):
+            for placeholder in owner.placeholders:
+                if placeholder._element.xpath("./p:nvSpPr/p:nvPr/p:ph[@type='dt']"):
+                    for xfrm in placeholder._element.xpath("./p:spPr/a:xfrm"):
+                        xfrm.getparent().remove(xfrm)
+        path = self.root / "inherited.pptx"
+        prs.save(path)
+        result = inspect_pptx(path)
+        dates = [
+            p
+            for p in result["layouts"][0]["placeholders"]
+            if p["type"].startswith("DATE")
+        ]
+        self.assertEqual(len(dates), 1)
+        self.assertTrue(all(v is None for v in dates[0]["frame"].values()))
+
+    def test_connectors_preserve_all_endpoint_directions(self):
+        start = (140, 140)
+        ends = [
+            (30, 30),
+            (250, 30),
+            (30, 250),
+            (250, 250),
+            (30, 140),
+            (250, 140),
+            (140, 30),
+            (140, 250),
+        ]
+        raw = document([]).model_dump(by_alias=True)
+        raw["pages"][0]["objects"] = [
+            make_connector(
+                f"line-{i}",
+                start,
+                end,
+                properties={"stroke.end_arrow.kind": "triangle"},
+            ).model_dump()
+            for i, end in enumerate(ends)
+        ]
+        path = self.root / "directions.pptx"
+        export_pptx(raw, path)
+        for shape, end in zip(Presentation(path).slides[0].shapes, ends, strict=True):
+            self.assertEqual(
+                (shape.begin_x, shape.begin_y), tuple(round(v * 12700) for v in start)
+            )
+            self.assertEqual(
+                (shape.end_x, shape.end_y), tuple(round(v * 12700) for v in end)
+            )
+            self.assertEqual(
+                shape._element.xpath("./p:spPr/a:ln/a:tailEnd")[0].get("type"),
+                "triangle",
+            )
+        bad = box("reverse", "connector")
+        bad["properties"]["object.frame"]["width"] = -100
+        with self.assertRaisesRegex(ValueError, "Object reverse"):
+            document([bad])
+
+    @unittest.skipUnless(
+        shutil.which("fc-match"),
+        "An installed font is needed for the embedded-font package",
+    )
+    def test_render_font_copy_preserves_original_and_slide_parts(self):
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.opc.package import Part
+        from pptx_skill.document.render_env import office_input
+
+        prs = Presentation()
+        prs.slides.add_slide(prs.slide_layouts[6])
+        font = Path(
+            subprocess.check_output(
+                ["fc-match", "-f", "%{file}", "sans-serif"], text=True
+            )
+        )
+        part = Part(
+            prs.part.package.next_partname("/ppt/fonts/font%d.fntdata"),
+            "application/x-fontdata",
+            prs.part.package,
+            font.read_bytes(),
+        )
+        rid = prs.part.relate_to(part, RT.FONT)
+        fonts = etree.SubElement(
+            prs._element,
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}embeddedFontLst",
+        )
+        entry = etree.SubElement(
+            fonts,
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}embeddedFont",
+        )
+        etree.SubElement(
+            entry,
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}font",
+            typeface="sans-serif",
+        )
+        etree.SubElement(
+            entry,
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}regular",
+            {
+                "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": rid
+            },
+        )
+        source = self.root / "embedded.pptx"
+        prs.save(source)
+        before = hashlib.sha256(source.read_bytes()).hexdigest()
+        render_source, report = office_input(source, self.root / "temporary")
+        self.assertTrue(report["rendering_copy_used"])
+        self.assertEqual(report["embedded_font_families"], ["sans-serif"])
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before)
+        with zipfile.ZipFile(source) as a, zipfile.ZipFile(render_source) as b:
+            for name in a.namelist():
+                if name not in (
+                    "ppt/presentation.xml",
+                    "ppt/_rels/presentation.xml.rels",
+                ):
+                    self.assertEqual(a.read(name), b.read(name), name)
+            self.assertNotIn(b"embeddedFontLst", b.read("ppt/presentation.xml"))
+        from pptx_skill import validate_pptx_package
+
+        self.assertEqual(validate_pptx_package(render_source)["status"], "ok")
+        kept, result = office_input(source, self.root / "preserve", "preserve")
+        self.assertEqual(kept, source)
+        self.assertFalse(result["rendering_copy_used"])
 
 
 if __name__ == "__main__":

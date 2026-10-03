@@ -13,7 +13,7 @@ skill_dir = Path(os.environ["SKILL_DIR"])
 sys.path.insert(0, str(skill_dir / "scripts"))
 from pptx_skill import (
     Document, load_document, import_pptx, import_svg,
-    export_pptx, export_svg, duplicate_page, insert_svg,
+    export_pptx, export_svg, duplicate_page, insert_svg, make_connector,
 )
 ```
 
@@ -95,7 +95,7 @@ export_pptx(copied, Path("output/v3/two-pages.pptx"))
 
 ### 用模板版式创建新页
 
-`inspect_pptx` 返回 `layouts` 清单，每项的 `layout_id` 是版式部件路径，`name` 是版式名称，`placeholders` 列出占位符的位置与类型。导入页面的 `slide.layout_ref` 保存其实际使用的版式路径。选定参考页后，可以用相同版式绑定新页：
+`inspect_pptx` 返回 `layouts` 清单，每项的 `layout_id` 是版式部件路径，`name` 是版式名称，`placeholders` 列出占位符的位置与类型。占位符没有可解析的几何时，相应 frame 字段为 `null`；选取有明确位置的对象作为布局依据。导入页面的 `slide.layout_ref` 保存其实际使用的版式路径。选定参考页后，可以用相同版式绑定新页：
 
 ```python
 from pptx_skill import Page, inspect_pptx
@@ -151,6 +151,19 @@ export_pptx(doc, Path("output/template-v1/deck.pptx"))
 ```
 
 属性 ID 使用完整键名，例如 `stroke.end_arrow.kind`。起点相应使用 `stroke.start_arrow.kind/width/length`。
+
+Python 中优先按起点和终点创建连线，向左、向上或斜向连线都使用相同接口：
+
+```python
+arrow = make_connector("return-arrow", (340, 200), (40, 90), properties={
+    "stroke.width": 2, "stroke.paint": "#336699",
+    "stroke.end_arrow.kind": "triangle", "stroke.end_arrow.width": "med",
+    "stroke.end_arrow.length": "med"
+})
+doc.pages[0].objects.append(arrow)
+```
+
+两个点的坐标使用 pt。函数计算包围框和方向翻转，终点箭头指向第二个点；`connector.geometry` 可设置 straight、elbow 或 curved。直接填写 JSON 时，`object.frame` 是非负宽高的包围框，方向使用 `object.flip_horizontal/vertical` 设置。文档加载会在导出前报告无效尺寸及对应对象 ID。
 
 ### 富文本内容
 

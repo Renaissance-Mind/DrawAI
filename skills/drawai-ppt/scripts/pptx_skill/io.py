@@ -44,9 +44,11 @@ def _walk_shapes(shapes: Any):
             yield from _walk_shapes(shape.shapes)
 
 
-def _frame(shape: Any) -> dict[str, float]:
+def _frame(shape: Any) -> dict[str, float | None]:
     return {
-        key: round(float(getattr(shape, key)) / EMU_PER_PT, 4)
+        key: None
+        if getattr(shape, key) is None
+        else round(float(getattr(shape, key)) / EMU_PER_PT, 4)
         for key in ("left", "top", "width", "height")
     }
 
@@ -369,6 +371,7 @@ def render_pptx(
     renderer: str | None = None,
     rasterizer: str | None = None,
     dpi: int = 96,
+    embedded_fonts: str = "ignore",
 ) -> dict[str, Any]:
     """Render the actual PPTX through LibreOffice and Poppler, with an isolated profile."""
     source = _source(source_path)
@@ -388,9 +391,11 @@ def render_pptx(
         prefix=".pptx-pptx-render-", dir=output.parent
     ) as temp_name:
         temp = Path(temp_name)
-        from .document.render_env import office_environment
+        from .document.render_env import office_environment, office_input
 
-        environment, fonts = office_environment(Presentation(str(source)), temp)
+        render_source, input_report = office_input(source, temp, embedded_fonts)
+        environment, fonts = office_environment(Presentation(str(render_source)), temp)
+        fonts.update(input_report)
         subprocess.run(
             [
                 soffice,
@@ -400,7 +405,7 @@ def render_pptx(
                 "pdf",
                 "--outdir",
                 str(temp),
-                str(source),
+                str(render_source),
             ],
             check=True,
             capture_output=True,
