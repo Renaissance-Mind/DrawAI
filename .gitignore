@@ -11,6 +11,9 @@ data/
 !apps/workbench/studio/data/
 apps/workbench/studio/data/*
 !apps/workbench/studio/data/visual-reference-templates.json
+!skills/drawai-ppt/assets/rebuildable-deck/data/
+skills/drawai-ppt/assets/rebuildable-deck/data/*
+!skills/drawai-ppt/assets/rebuildable-deck/data/metrics.csv
 results/
 logs/
 docs/agent-memory.md

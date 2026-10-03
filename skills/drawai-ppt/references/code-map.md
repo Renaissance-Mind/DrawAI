@@ -22,6 +22,8 @@
 | update_implementation_matrix.py | 一次更新两份矩阵的 JSON、CSV、Markdown |
 | research_pptx.py / build_capability_matrix.py | 原生字段、枚举与固定来源的研究目录 |
 
+`assets/rebuildable-deck/` 是可以复制到任务目录的制作项目：`build.py` 调用 `assets/src/line_chart.py`，读取 CSV 并生成独立图表，再组合原生文字与图片对象。它的 Matplotlib 依赖只用于示例绘图；修改布局、换数据源或增加素材时编辑复制后的项目文件。流程与交付方式见 [视觉与素材](visual-assets.md)。
+
 ## 扩展属性
 
 查询属性 ID 的 [实现条件](implementation-capabilities.md)，需要原生字段时再查 [Schema 清单](pptx-inventory/schema-properties.csv) 和 [来源](research-sources.md)。新增绑定放到相应对象模块，返回实际处理的属性 ID。

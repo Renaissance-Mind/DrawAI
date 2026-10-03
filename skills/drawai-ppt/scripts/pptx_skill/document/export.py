@@ -1052,7 +1052,7 @@ def export_pptx(document, output, *, asset_root=None, profile="strict"):
             pp = {k: v for k, v in pp.items() if page.baseline.get(k) != v}
         if source is not None and "slide.layout_ref" in pp:
             raise ValueError(
-                "Changing an imported page layout needs explicit placeholder remapping; use the plan add_slide/duplicate_slide workflow or create a new bound page"
+                "Changing an imported page layout needs explicit placeholder remapping; create a new page with slide.layout_ref or duplicate a page that uses the desired layout and edit its objects"
             )
         sused = slide_properties(slide, pp, ctx)
         if "slide.layout_ref" in pp:

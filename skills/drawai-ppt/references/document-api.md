@@ -93,6 +93,33 @@ export_pptx(copied, Path("output/v3/two-pages.pptx"))
 
 `duplicate_page` 返回新文档，生成副本的页与对象 ID，并重映射对象引用。模板的图表、工作簿和备注部件在导出时独立复制。`pages` 列表控制页面顺序。精确 XML 绑定作用于具体部件，复制相关页面时需要一起调整其部件路径；该情况直接按模型和绑定编辑。
 
+### 用模板版式创建新页
+
+`inspect_pptx` 返回 `layouts` 清单，每项的 `layout_id` 是版式部件路径，`name` 是版式名称，`placeholders` 列出占位符的位置与类型。导入页面的 `slide.layout_ref` 保存其实际使用的版式路径。选定参考页后，可以用相同版式绑定新页：
+
+```python
+from pptx_skill import Page, inspect_pptx
+
+inventory = inspect_pptx(Path("template.pptx"))
+doc = import_pptx(Path("template.pptx"))
+layout_ref = doc.pages[0].properties["slide.layout_ref"]
+layout_info = next(item for item in inventory["layouts"] if item["layout_id"] == layout_ref)
+print(layout_info["name"], layout_info["placeholders"])
+new_page = Page.model_validate({
+    "id": "new-overview",
+    "properties": {"slide.layout_ref": layout_ref},
+    "objects": [{"id": "new-heading", "kind": "text_box", "properties": {
+        "object.frame": {"left": 40, "top": 30, "width": 880, "height": 80},
+        "text.run.font.size": 32,
+        "text.body.paragraphs": [{"content": [{"text": "New page"}]}]
+    }}]
+})
+doc.pages.append(new_page)
+export_pptx(doc, Path("output/template-v1/deck.pptx"))
+```
+
+版式绑定应用原模板的版式与母版，并可能带入其默认占位符；在新页中显式创建的文本框按自己的对象属性排版。仅存在于参考页上的 Logo、页脚或装饰属于页面对象；需要沿用这类对象时，复制该页再修改内容。已有页面变更版式涉及占位符重映射，应选择适合的模板页复制，或创建新的绑定页面。
+
 ## 常用参数
 
 | 属性 | 结构与说明 |
@@ -171,6 +198,41 @@ export_pptx(copied, Path("output/v3/two-pages.pptx"))
 直接创建支持 barChart、lineChart、areaChart、pieChart、doughnutChart、scatterChart、bubbleChart、radarChart。散点系列用 `points:[[x,y],...]`，气泡用 `points:[[x,y,size],...]`。柱/条由 plots 的 direction col/bar 区分。现代图表与已有组合图按原生模板和 XML 保留。
 
 series、plot 和 point 索引从 0 开始。轴索引按原生分类轴、数值轴、日期轴的顺序；普通柱/线图的 0 是分类轴、1 是数值轴。饼/环图没有这类轴。轴设置也可放在 `chart.axes:[{index,scale:{minimum,maximum},number_format,major_unit,...}]`。plots 数量须与原生图表一致；组合图编辑需已有对应的多个 plot。
+
+## 插入图片与独立图表
+
+生成的图标、插画以及 Python/HTML 导出的图表都可以作为 `picture`。先保存素材文件，再注册资源并设置页面边界。下面代码接在本文的公共 imports 和已有 `doc` 后，两个路径相对于 `asset_root`：
+
+```python
+from pptx_skill import Object
+
+doc.assets["illustration"] = {
+    "path": "assets/images/illustration.png", "content_type": "image/png"
+}
+doc.pages[0].objects.append(Object.model_validate({
+    "id": "illustration", "kind": "picture", "properties": {
+        "object.frame": {"left": 40, "top": 140, "width": 200, "height": 200},
+        "picture.asset_ref": "illustration", "picture.aspect_fit": "contain"
+    }
+}))
+
+doc.assets["trend-preview"] = {
+    "path": "assets/rendered/trend.png", "content_type": "image/png"
+}
+doc.assets["trend-vector"] = {
+    "path": "assets/rendered/trend.svg", "content_type": "image/svg+xml"
+}
+doc.pages[0].objects.append(Object.model_validate({
+    "id": "trend", "kind": "picture", "properties": {
+        "object.frame": {"left": 280, "top": 140, "width": 620, "height": 320},
+        "picture.asset_ref": "trend-preview", "picture.svg_asset": "trend-vector",
+        "picture.aspect_fit": "contain"
+    }
+}))
+export_pptx(doc, Path("output/assets-v1/deck.pptx"), asset_root=Path("."))
+```
+
+`picture.asset_ref` 提供 PNG/JPEG 等位图；`picture.svg_asset` 是可选矢量附件，需要同时保留位图预览。这种图表在 PPT 中作为图片编辑，系列数据在附带的绘图代码中修改后重新生成。若需要拆分 SVG 中的文字与路径，改用下面的 `insert_svg`。完整的数据、绘图与导出示例见 [成果包](visual-assets.md#可重新执行的成果包)。
 
 ## SVG 与局部插入
 
