@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { StudioRuntime } from "./runtime";
 import type { StudioAsset } from "./types";
 
-export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+export function Icon({ name, size = 18, className }: { name: string; size?: number; className?: string }) {
   const shapes: Record<string, ReactNode> = {
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -94,6 +94,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   };
   return (
     <svg
+      className={className}
       width={size}
       height={size}
       viewBox="0 0 24 24"

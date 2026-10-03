@@ -77,7 +77,7 @@ npm run studio:serve
 npm run dev -- --host 127.0.0.1 --port 5190
 ```
 
-项目服务默认监听 `127.0.0.1:8896`。使用 `DRAWAI_STUDIO_API_URL` 修改前端代理目标。界面沿用 Workbench 的字体、浅色背景、蓝灰边框与绿色强调色，宽屏使用页面栏/画布/属性栏，窄面板将页面与属性收为可展开面板。
+项目服务默认监听 `127.0.0.1:8896`。使用 `DRAWAI_STUDIO_API_URL` 修改前端代理目标。界面直接复用原 Workbench 的品牌组件、字体、顶栏、蓝色导航选中态与按钮样式；彩色画笔 logo 和插件入口图标均来自同一份 `public/drawai_image.png`。插件界面内嵌这份原图，支持宿主沙箱加载。宽屏使用页面栏/画布/属性栏，窄面板将页面与属性收为可展开面板。
 
 ```bash
 npm run build:plugin

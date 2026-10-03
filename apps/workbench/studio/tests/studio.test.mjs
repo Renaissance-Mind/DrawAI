@@ -563,5 +563,10 @@ test("stdio MCP exposes the real workbench resource and round-trips project stat
   assert.equal(uiUri, `ui://drawai/workbench-${hash}.html`);
   assert.ok(resource.contents[0].text.includes("ui/message"));
   assert.ok(resource.contents[0].text.includes("视觉参考模板库"));
+  const brandImage = await readFile(new URL("../../public/drawai_image.png", import.meta.url));
+  assert.ok(
+    resource.contents[0].text.includes(`data:image/png;base64,${brandImage.toString("base64")}`),
+    "The sandboxed workbench must embed the original DrawAI logo without an external root-path request",
+  );
   assert.doesNotMatch(resource.contents[0].text, /<script\b[^>]*src=/);
 });

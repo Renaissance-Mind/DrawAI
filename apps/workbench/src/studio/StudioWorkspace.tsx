@@ -19,6 +19,7 @@ import type {
 import { roleLabels, statusLabels, taskLabels, timeLabel } from "./labels";
 import { Icon, IconButton, Dialog, AssetImage } from "./components";
 import TemplateLibrary from "./TemplateLibrary";
+import DrawAiBrand from "../components/DrawAiBrand";
 import "./studio.css";
 
 type Tab = "project" | "templates" | "tasks";
@@ -429,60 +430,62 @@ export default function StudioWorkspace() {
     .find((image) => image.id !== currentImage?.id);
 
   return (
-    <div className="studio-app app-root" data-studio-revision="4">
-      <header className="app-topbar studio-topbar">
-        <div className="brand-row">
-          <span className="studio-logo">
-            <Icon name="slides" size={22} />
-          </span>
-          <div className="brand-copy">
-            <strong>DrawAI</strong>
-            <span>视觉制作工作台</span>
-          </div>
+    <div className="studio-app app-root" data-studio-revision="5">
+      <header className="app-topbar board-topbar studio-topbar">
+        <DrawAiBrand />
+        <div className="topbar-view-controls board-view-controls">
+          <nav className="board-mode-switch" aria-label="工作台导航">
+            {(
+              [
+                { id: "project", icon: "slides", label: "PPT 项目" },
+                { id: "templates", icon: "grid", label: "模板库" },
+                { id: "tasks", icon: "clock", label: "任务" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                className={tab === item.id ? "active" : ""}
+                aria-current={tab === item.id ? "page" : undefined}
+                onClick={() => {
+                  void perform("save", async () => {
+                    await savePage();
+                    setTab(item.id);
+                  });
+                }}
+              >
+                <span className="board-mode-icon" aria-hidden="true">
+                  <Icon name={item.icon} className="board-mode-svg" />
+                </span>
+                <span>{item.label}</span>
+                {item.id === "tasks" && activeTaskCount > 0 && (
+                  <b className="studio-nav-count">{activeTaskCount}</b>
+                )}
+              </button>
+            ))}
+          </nav>
         </div>
-        <nav className="board-mode-switch" aria-label="工作台导航">
-          {(
-            [
-              { id: "project", icon: "slides", label: "PPT 项目" },
-              { id: "templates", icon: "grid", label: "模板库" },
-              { id: "tasks", icon: "clock", label: "任务" },
-            ] as const
-          ).map((item) => (
-            <button
-              key={item.id}
-              className={tab === item.id ? "active" : ""}
-              aria-current={tab === item.id ? "page" : undefined}
-              onClick={() => {
-                void perform("save", async () => {
-                  await savePage();
-                  setTab(item.id);
-                });
-              }}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-              {item.id === "tasks" && activeTaskCount > 0 && (
-                <b className="studio-nav-count">{activeTaskCount}</b>
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="studio-connection">
-          <span
-            className={`studio-status-dot ${runtime?.canSend ? "online" : ""}`}
-          />
-          <span>
-            {runtime?.canSend
-              ? "当前 Codex 会话"
-              : runtime
-                ? "浏览器工作台"
-                : "正在连接"}
-          </span>
-          <IconButton
-            icon="refresh"
+        <div className="topbar-links">
+          <div className="studio-connection">
+            <span
+              className={`studio-status-dot ${runtime?.canSend ? "online" : ""}`}
+            />
+            <span>
+              {runtime?.canSend
+                ? "当前 Codex 会话"
+                : runtime
+                  ? "浏览器工作台"
+                  : "正在连接"}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="topbar-icon-button"
+            aria-label="刷新项目"
             title="刷新项目"
             onClick={() => void perform("refresh", boot)}
-          />
+          >
+            <Icon name="refresh" />
+          </button>
         </div>
       </header>
       {error && (

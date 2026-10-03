@@ -10,7 +10,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
 }
 .studio-app textarea {
   width: 100%;
@@ -38,52 +38,8 @@
 .studio-app a {
   color: var(--teal);
 }
-.studio-app button.primary {
-  background: #0f172a;
-  border-color: #0f172a;
-  box-shadow: 0 3px 8px #0f172a12;
-}
 .studio-topbar {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto minmax(170px, 1fr);
-  min-height: 64px;
-  padding: 0 22px;
   flex-shrink: 0;
-}
-.studio-topbar .brand-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.studio-topbar .brand-copy strong {
-  font-size: 18px;
-  letter-spacing: -0.5px;
-}
-.studio-topbar .brand-copy span {
-  font-size: 10px;
-  letter-spacing: 1.1px;
-  color: var(--muted);
-}
-.studio-logo {
-  display: grid;
-  place-items: center;
-  width: 35px;
-  height: 35px;
-  border-radius: 10px;
-  background: #0f172a;
-  color: white;
-}
-.studio-topbar .board-mode-switch {
-  gap: 7px;
-}
-.studio-topbar .board-mode-switch button {
-  font-size: 13px;
-  font-weight: 600;
-}
-.studio-topbar .board-mode-switch button.active {
-  color: var(--teal);
-  background: #e7f3ee;
-  box-shadow: none;
 }
 .studio-connection {
   display: flex;
@@ -1363,9 +1319,6 @@
   .studio-layout {
     grid-template-columns: 144px minmax(0, 1fr) 264px;
   }
-  .studio-topbar {
-    padding: 0 15px;
-  }
   .studio-canvas-area {
     padding: 15px;
   }
@@ -1424,26 +1377,6 @@
     min-height: 27px;
     font-size: 10px;
   }
-  .studio-topbar {
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-    min-height: 58px;
-  }
-  .studio-connection {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-    padding: 0 0 7px;
-  }
-  .studio-connection .studio-icon-button {
-    margin-left: auto;
-  }
-  .studio-topbar .board-mode-switch {
-    gap: 0;
-  }
-  .studio-topbar .board-mode-switch button {
-    padding: 0 10px;
-    font-size: 12px;
-  }
   .studio-count {
     display: none;
   }
@@ -1455,31 +1388,6 @@
   }
 }
 @media (max-width: 560px) {
-  .studio-topbar {
-    padding: 9px 12px 0;
-  }
-  .studio-logo {
-    width: 29px;
-    height: 29px;
-    border-radius: 7px;
-  }
-  .studio-topbar .brand-copy strong {
-    font-size: 15px;
-  }
-  .studio-topbar .brand-copy span {
-    display: none;
-  }
-  .studio-topbar .board-mode-switch button {
-    padding: 0 8px;
-    font-size: 11px;
-    height: 31px;
-  }
-  .studio-topbar .board-mode-switch svg {
-    width: 14px;
-  }
-  .studio-topbar .board-mode-switch {
-    height: 31px;
-  }
   .studio-connection {
     font-size: 9px;
     gap: 5px;
