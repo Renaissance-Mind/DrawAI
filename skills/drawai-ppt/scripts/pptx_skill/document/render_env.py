@@ -61,7 +61,18 @@ def office_input(source, workdir, embedded_fonts="ignore"):
 
 def office_environment(prs, workdir):
     env = os.environ.copy()
-    matcher = shutil.which("fc-match")
+    matcher = shutil.which("fc-match") or next(
+        (
+            str(p)
+            for p in (
+                Path("/opt/homebrew/bin/fc-match"),
+                Path("/usr/local/bin/fc-match"),
+                Path("/usr/bin/fc-match"),
+            )
+            if p.is_file() and os.access(p, os.X_OK)
+        ),
+        None,
+    )
     if not matcher:
         return env, {"font_resolution": "renderer_default"}
     families = set()
@@ -103,6 +114,7 @@ def office_environment(prs, workdir):
     for path in (
         "/System/Library/Fonts",
         "/Library/Fonts",
+        str(Path.home() / "Library/Fonts"),
         "/usr/share/fonts",
         "/usr/local/share/fonts",
         str(Path.home() / ".local/share/fonts"),
