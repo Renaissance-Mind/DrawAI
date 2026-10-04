@@ -16,8 +16,24 @@ from .export import export_pptx
 from .render_env import office_environment, office_input
 from .xml import asset_data
 from .svg_fallback import path_gradient_objects, apply_gradient_fallback
+from .xml import tag
 
 SVG = "{http://www.w3.org/2000/svg}"
+
+
+def static_page_number(tree, slide, number):
+    visible = True
+    for owner in (slide, slide.slide_layout, slide.slide_layout.slide_master):
+        hf = owner._element.find(tag("p:hf"))
+        if hf is not None and hf.get("sldNum") is not None:
+            visible = hf.get("sldNum") not in ("0", "false")
+            break
+    for node in tree.iter(SVG + "tspan"):
+        classes = set(node.get("class", "").split())
+        if {"PlaceholderText", "PageNumber"} <= classes:
+            node.text = str(number) if visible else ""
+            node.attrib.pop("textLength", None)
+            node.attrib.pop("lengthAdjust", None)
 
 
 def export_svg(
@@ -119,6 +135,7 @@ def export_svg(
                     resolve_entities=False, no_network=True, huge_tree=True
                 ),
             )
+            static_page_number(tree, prs.slides[i], i + 1)
             for dummy in tree.xpath(
                 '//*[contains(concat(" ",normalize-space(@class)," ")," DummySlide ")]'
             ):

@@ -504,6 +504,55 @@ class Workflows(unittest.TestCase):
         with self.assertRaises(PptxError):
             validate_pptx_package(invalid)
 
+    @unittest.skipUnless(
+        shutil.which("soffice"), "Page-number projection needs LibreOffice"
+    )
+    def test_svg_master_page_numbers_are_static_and_honor_visibility(self):
+        from pptx.oxml.ns import qn
+
+        prs = Presentation()
+        prs.slides.add_slide(prs.slide_layouts[6])
+        prs.slides.add_slide(prs.slide_layouts[6])
+        master = prs.slide_masters[0]._element
+        hf = etree.Element(qn("p:hf"), sldNum="1")
+        styles = master.find(qn("p:txStyles"))
+        master.insert(list(master).index(styles), hf)
+        source = self.root / "page-number.pptx"
+        prs.save(source)
+        doc = import_pptx(source)
+        report = export_svg(doc, self.root / "visible-number")
+        for i, page in enumerate(report["pages"], 1):
+            tree = etree.fromstring(Path(page["svg"]).read_bytes())
+            numbers = [
+                n
+                for n in tree.iter("{http://www.w3.org/2000/svg}tspan")
+                if "PageNumber" in n.get("class", "").split()
+            ]
+            self.assertTrue(numbers)
+            self.assertTrue(all(n.text == str(i) for n in numbers))
+            self.assertTrue(all(n.get("textLength") is None for n in numbers))
+        raw = doc.model_dump(by_alias=True)
+        raw["native_bindings"] = [
+            {
+                "owner_id": doc.id,
+                "property_id": "master.header_footer",
+                "part": "ppt/slideMasters/slideMaster1.xml",
+                "xpath": "/p:sldMaster/p:hf",
+                "action": "set_attribute",
+                "name": "sldNum",
+                "value": "0",
+            }
+        ]
+        report = export_svg(raw, self.root / "hidden-number")
+        for page in report["pages"]:
+            tree = etree.fromstring(Path(page["svg"]).read_bytes())
+            numbers = [
+                n
+                for n in tree.iter("{http://www.w3.org/2000/svg}tspan")
+                if "PageNumber" in n.get("class", "").split()
+            ]
+            self.assertTrue(all(not n.text for n in numbers))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
