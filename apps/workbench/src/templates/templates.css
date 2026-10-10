@@ -13,11 +13,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .template-brand strong { color: #1f3147; font-size: 19px; letter-spacing: -.6px; }
 .template-brand span { color: #6e7c8d; font-size: 13px; border-left: 1px solid #d8dfe9; padding-left: 12px; }
 .template-library-count { color: #728096; font-size: 12px; }
-.template-intro { padding: 34px 0 25px; }
-.template-kicker { font-size: 11px; font-weight: 600; color: #617287; letter-spacing: 1.6px; }
-.template-intro h1 { font-family: "Iowan Old Style", "Noto Serif CJK SC", "Songti SC", serif; font-size: 34px; font-weight: 600; letter-spacing: -.8px; margin: 8px 0 10px; color: #22374f; }
-.template-intro p { color: #718096; font-size: 13px; margin: 0; line-height: 1.7; }
-.template-filters { display: flex; align-items: center; gap: 10px; }
+.template-filters { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
 .template-search { flex: 1; display: flex; align-items: center; gap: 9px; background: white; border: 1px solid #dce3ed; padding: 0 13px; border-radius: 7px; color: #8794a5; }
 .template-search input { width: 100%; border: 0; outline: 0; padding: 12px 0; background: transparent; color: #283d56; font-size: 13px; }
 .template-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px #3168f512; }
@@ -78,21 +74,15 @@ button.template-primary { background: var(--accent, #3168f5); border-color: var(
 .template-copy-fallback button { margin-top: 8px; border: 1px solid #dce3ed; background: white; padding: 7px 12px; border-radius: 5px; color: #60758d; }
 .is-inline { padding: 0 16px 18px; }
 .is-inline .template-header { min-height: 54px; }
-.is-inline .template-intro { padding: 19px 0 17px; }
-.is-inline .template-intro h1 { font-size: 24px; }
-.is-inline .template-kicker { font-size: 10px; letter-spacing: .8px; }
 .is-inline .template-grid { gap: 12px; }
 .is-inline .template-card-copy { padding: 10px; }
 .is-inline .template-pagination { padding: 18px 0; }
 @media (max-width: 740px) {
   .drawai-templates { padding: 0 16px 18px; }
   .template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .template-intro { padding: 24px 0 20px; }
-  .template-intro h1 { font-size: 28px; }
   .template-filters { flex-wrap: wrap; }
   .template-search { flex-basis: 100%; }
   .template-filters select { flex: 1; }
-  .template-results-line > span:last-child { display: none; }
   .template-card-copy { padding: 10px; }
   .template-card h2 { font-size: 12px; }
   .template-card-copy p { font-size: 10px; }

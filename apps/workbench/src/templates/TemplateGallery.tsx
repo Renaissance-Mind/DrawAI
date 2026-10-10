@@ -105,13 +105,12 @@ export default function TemplateGallery() {
   return <main className={`drawai-templates ${runtime?.mode === "codex" ? "is-inline" : "is-website"}`}>
     <header className="template-header"><div className="template-brand"><img src={logo} alt="" /><strong>DrawAI</strong><span>模板参考</span></div>
       <span className="template-library-count">{result ? `${result.library_count} 个参考` : "模板库"}</span></header>
-    <section className="template-intro"><span className="template-kicker">给内容一个合适的呈现方式</span><h1>选好参考，再做 PPT。</h1><p>浏览版式与视觉风格，选择适合当前内容的参考。</p></section>
     <div className="template-filters"><label className="template-search"><Mark name="search" /><input aria-label="搜索模板" placeholder="搜索用途、结构或风格" value={filters.query || ""} onChange={(event) => filter({ query: event.target.value, template_ids: undefined })} /></label>
       <select aria-label="模板分类" value={filters.category || ""} onChange={(event) => filter({ category: event.target.value, template_ids: undefined })}><option value="">全部分类</option>{result?.categories.map((key) => <option key={key} value={key}>{categoryName(key)}</option>)}</select>
       <label className="template-checkbox"><input type="checkbox" checked={Boolean(filters.with_images)} onChange={(event) => filter({ with_images: event.target.checked })} />有参考图片</label></div>
     <div className="template-results-line"><span>{loading ? "正在读取模板…" : `找到 ${result?.total ?? 0} 个参考`}</span>
       {filters.template_ids && <button className="template-text-button" onClick={() => filter({ template_ids: undefined, query: "", category: "" })}>浏览全部模板</button>}
-      <span>示例内容仅作呈现参考</span></div>
+    </div>
     {error && <p className="template-error" role="alert">{error}</p>}
     <section className="template-grid" aria-label="模板列表" aria-busy={loading}>
       {result?.templates.map((template) => {
@@ -126,7 +125,7 @@ export default function TemplateGallery() {
     </section>
     {!loading && !error && !result?.total && <div className="template-empty"><Mark name="search" /><h2>没有匹配的参考</h2><p>试试其他关键词，或调整分类。</p></div>}
     <nav className="template-pagination" aria-label="模板分页"><button disabled={!offset || loading} onClick={() => setFilters((current) => ({ ...current, offset: Math.max(0, offset - limit) }))}>上一页</button><span>{Math.floor(offset / limit) + 1} / {Math.max(1, Math.ceil((result?.total || 0) / limit))}</span><button disabled={offset + limit >= (result?.total || 0) || loading} onClick={() => setFilters((current) => ({ ...current, offset: offset + limit }))}>下一页</button></nav>
-    <footer className="template-selection-bar"><div><strong>{selected.length ? `已选 ${selected.length} 个参考` : "选择一个或多个参考"}</strong><p>{selected.length ? selected.map((item) => item.template.name).join(" · ") : "模板可以分别用于信息结构或视觉风格。"}</p></div>
+    <footer className="template-selection-bar"><div><strong>已选 {selected.length} 个参考</strong>{selected.length > 0 && <p>{selected.map((item) => item.template.name).join(" · ")}</p>}</div>
       <div className="template-selection-actions"><button disabled={!selected.length} onClick={() => void copy()}><Mark name="copy" />复制选择说明</button>
         {runtime?.canSend && <button className="template-primary" disabled={!selected.length || sending} onClick={() => void send()}>{sending ? "正在发送…" : "用于当前任务"}<Mark name="arrow" /></button>}</div>
       {notice && <p className="template-notice" role="status">{notice}</p>}
