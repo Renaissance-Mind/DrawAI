@@ -79,6 +79,8 @@ export default function TemplateGallery() {
     setNotice("");
   }
   function toggle(template: VisualTemplate) {
+    setNotice("");
+    setCopyText("");
     if (selected.some((item) => item.template.id === template.id)) setSelected((current) => current.filter((item) => item.template.id !== template.id));
     else choose(template);
   }
@@ -114,12 +116,11 @@ export default function TemplateGallery() {
     <section className="template-grid" aria-label="模板列表" aria-busy={loading}>
       {result?.templates.map((template) => {
         const chosen = selected.find((item) => item.template.id === template.id);
-        return <article className={`template-card ${chosen ? "is-selected" : ""}`} key={template.id}>
-          <button className="template-preview" onClick={() => setDetail(template)} aria-label={`查看模板 ${template.name}`}>
+        return <article className={`template-card ${chosen ? "is-selected" : ""}`} key={template.id} onClick={() => toggle(template)}>
+          <button className="template-preview" aria-label={`选择模板 ${template.name}`} aria-pressed={Boolean(chosen)}>
             {template.assets[0] ? <img src={template.assets[0].image_urls?.card || template.assets[0].original_url} alt={template.name} loading="lazy" /> : <div className="template-recipe"><span>{categoryName(template.category)}</span><strong>{template.layout_archetypes[0] || template.name}</strong><small>设计配方</small></div>}
           </button>
-          <div className="template-card-copy"><span>{categoryName(template.category)}</span><h2><button onClick={() => setDetail(template)}>{template.name}</button></h2><p>{template.layout_archetypes.slice(0, 2).join(" · ")}</p>
-            <button className="template-select" aria-label={`${chosen ? "取消选择" : "选择模板"} ${template.name}`} aria-pressed={Boolean(chosen)} onClick={() => toggle(template)}>{chosen ? <><Mark name="check" />{chosen.role === "style" ? "已选 · 视觉风格" : "已选 · 信息结构"}</> : "选为参考"}</button></div>
+          <div className="template-card-copy"><span>{categoryName(template.category)}</span><h2><button onClick={(event) => { event.stopPropagation(); setDetail(template); }}>{template.name}</button></h2><p>{template.layout_archetypes.slice(0, 2).join(" · ")}</p></div>
         </article>;
       })}
     </section>

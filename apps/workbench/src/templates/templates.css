@@ -27,7 +27,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .template-results-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: #8090a4; padding: 15px 0 12px; }
 .template-text-button { color: var(--accent); border: 0; background: none; padding: 0; font-size: 12px; }
 .template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.template-card { border: 1px solid #dce3ed; background: white; border-radius: 9px; overflow: hidden; transition: border-color .18s, transform .18s; }
+.template-card { border: 1px solid #dce3ed; background: white; border-radius: 9px; overflow: hidden; cursor: pointer; transition: border-color .18s, transform .18s; }
 .template-card:hover { border-color: #a5b6cf; transform: translateY(-2px); }
 .template-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .template-preview { display: block; width: 100%; padding: 0; border: 0; background: #edf1f6; overflow: hidden; aspect-ratio: 16 / 9; }
@@ -36,10 +36,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .template-card-copy > span { font-size: 10px; color: #7387a0; }
 .template-card h2 { margin: 5px 0 7px; font-size: 14px; line-height: 1.4; }
 .template-card h2 button { text-align: left; border: 0; background: none; padding: 0; color: #263c55; font-weight: 600; }
-.template-card-copy p { font-size: 11px; color: #8591a2; margin: 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.template-select { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; font-size: 11px; padding: 8px; border: 1px solid #e3e8ef; border-radius: 5px; background: white; color: #62758d; }
-.template-select[aria-pressed="true"] { border-color: #d5e2ff; background: #eff4ff; color: #3168f5; }
-.template-select svg { width: 13px; height: 13px; }
+.template-card-copy p { font-size: 11px; color: #8591a2; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .template-recipe { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%; text-align: left; gap: 12px; padding: 22px; background: #eef3f8; color: #4c6480; }
 .template-recipe span { font-size: 11px; letter-spacing: 1px; }
 .template-recipe strong { font-family: "Iowan Old Style", "Songti SC", serif; font-size: 23px; line-height: 1.25; }
