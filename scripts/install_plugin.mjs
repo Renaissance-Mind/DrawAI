@@ -9,6 +9,11 @@ const workbench = path.join(root, 'apps/workbench');
 await access(path.join(workbench, 'node_modules/@modelcontextprotocol/sdk/package.json'));
 const html = await readFile(path.join(workbench, 'dist-plugin/templates-inline.html'));
 const build = createHash('sha256').update(html).digest('hex').slice(0, 16);
+const serviceHash = createHash('sha256');
+for (const file of ['server.mjs', 'workflow.mjs', 'catalog.mjs', 'query.mjs', 'references.mjs']) {
+  serviceHash.update(file).update(await readFile(path.join(workbench, 'templates', file)));
+}
+const serviceBuild = serviceHash.digest('hex').slice(0, 16);
 const marketplace = path.join(root, '.local/plugin-marketplace');
 const plugin = path.join(marketplace, 'drawai');
 const skillNames = ['drawai-readme', 'drawai-design', 'drawai-image2ppt'];
@@ -41,7 +46,7 @@ const manifest = {
 };
 const mcp = { mcpServers: { drawai: {
   command: process.execPath, args: [path.join(workbench, 'templates/server.mjs')], cwd: root,
-  env: { DRAWAI_TEMPLATES_BUILD: build },
+  env: { DRAWAI_TEMPLATES_BUILD: build, DRAWAI_SERVICE_BUILD: serviceBuild },
 } } };
 await writeFile(path.join(plugin, '.codex-plugin/plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 await writeFile(path.join(plugin, '.mcp.json'), `${JSON.stringify(mcp, null, 2)}\n`);
