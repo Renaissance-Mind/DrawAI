@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild chart assets and compose a slide with editable text and an SVG picture.
 
-Set SKILL_DIR to the complete drawai-ppt folder. Install its core requirements
+Set SKILL_DIR to the complete drawai-image2ppt folder. Install its core requirements
 and this project's requirements.txt. Output and data paths are project-relative.
 The included CSV is illustrative data in arbitrary units; replace it for a task.
 """

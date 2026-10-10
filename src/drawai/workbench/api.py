@@ -441,6 +441,11 @@ def create_app(
             raise HTTPException(status_code=400, detail="input_mode must be upload, zip, or local_dir")
         if resolved_settings.cloud_mode and input_mode == "local_dir":
             raise HTTPException(status_code=400, detail="local_dir input is disabled in cloud mode")
+        auto_start = payload.get("auto_start", True)
+        if isinstance(auto_start, str) and auto_start.strip().lower() in {"true", "false"}:
+            auto_start = auto_start.strip().lower() == "true"
+        if not isinstance(auto_start, bool):
+            raise HTTPException(status_code=400, detail="auto_start must be boolean")
         max_cases = int(payload.get("max_concurrent_cases") or resolved_settings.max_concurrent_cases)
         if max_cases <= 0:
             raise HTTPException(status_code=400, detail="max_concurrent_cases must be positive")
@@ -503,7 +508,8 @@ def create_app(
                 execution_mode=execution_mode,
             )
             resolved_store.update_case_config_path(case.case_id, config_path)
-        resolved_runner.submit_batch(batch.batch_id)
+        if auto_start:
+            resolved_runner.submit_batch(batch.batch_id)
         return {
             "batch": resolved_store.get_batch(batch.batch_id).to_api(case_counts=resolved_store.case_counts(batch.batch_id)),
             "cases": [_case_to_api_with_preview(resolved_store, case) for case in resolved_store.list_cases(batch.batch_id)],
@@ -1534,6 +1540,8 @@ def _batch_detail_payload(store: WorkbenchStore, batch_id: str) -> dict[str, Any
 
 def _completed_batch_pptx_paths(store: WorkbenchStore, batch_id: str) -> list[Path]:
     cases = store.list_cases(batch_id)
+    if cases and all(re.match(r"^\d{4,}-", case.name) for case in cases):
+        cases.sort(key=lambda case: int(case.name.split("-", 1)[0]))
     if not cases:
         raise HTTPException(status_code=400, detail="task has no cases to download")
     incomplete = [case.name for case in cases if case.status != "completed"]

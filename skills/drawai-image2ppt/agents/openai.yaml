@@ -1,0 +1,4 @@
+interface:
+  display_name: "DrawAI Image2PPT"
+  short_description: "Convert page images to editable PPT in-session or with Workbench"
+  default_prompt: "使用 $drawai-image2ppt，把已经确定的页面图像转成可编辑 PPT，并检查实际文件。"

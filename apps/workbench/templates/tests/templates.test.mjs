@@ -74,12 +74,12 @@ test("recipe preparation saves actual metadata and never overwrites a different 
   assert.equal(await readFile(prepared.manifest, "utf8"), "existing user file");
 });
 
-test("the actual MCP server exposes only templates and an inline resource", async (t) => {
+test("the actual MCP server exposes template, plan and Flow tools with one inline resource", async (t) => {
   const client = new Client({ name: "drawai-template-integration", version: "1.0.0" });
   t.after(() => client.close());
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL("../server.mjs", import.meta.url))] }));
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name), ["drawai_templates", "drawai_show_templates", "drawai_prepare_template"]);
+  assert.deepEqual(tools.map((tool) => tool.name), ["drawai_templates", "drawai_show_templates", "drawai_prepare_template", "drawai_plan", "drawai_flow"]);
   const data = tools.find((tool) => tool.name === "drawai_templates");
   assert.equal(data._meta?.ui?.resourceUri, undefined);
   const render = tools.find((tool) => tool.name === "drawai_show_templates");
@@ -103,4 +103,11 @@ test("the actual MCP server exposes only templates and an inline resource", asyn
   assert.doesNotMatch(content.text, /<script\b[^>]*src=/);
   const logo = await readFile(new URL("../../public/drawai_image.png", import.meta.url));
   assert.ok(content.text.includes(`data:image/png;base64,${logo.toString("base64")}`));
+  const plan = await client.callTool({ name: "drawai_plan", arguments: { request: {
+    environment: { model: "gpt-6.1-sol", model_source: "session_metadata", image_generation_available: true, image_viewing_available: true, local_execution_available: true },
+    preferences: { skip_questions: true },
+  } } });
+  assert.equal(plan.isError, undefined);
+  assert.equal(plan.structuredContent.decisions.mode, "skill");
+  assert.deepEqual(plan.structuredContent.questions, []);
 });

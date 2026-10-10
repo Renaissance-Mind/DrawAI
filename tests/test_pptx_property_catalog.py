@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 
-REFERENCES = Path(__file__).resolve().parents[1] / "skills" / "drawai-ppt" / "references"
+REFERENCES = Path(__file__).resolve().parents[1] / "skills" / "drawai-image2ppt" / "references"
 
 
 def test_catalog_keeps_targets_separate_from_implementation_and_native_defaults():

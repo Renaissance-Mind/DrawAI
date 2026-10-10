@@ -2,7 +2,7 @@
 
 DrawAI uses Python to inspect and edit existing PPTX files and save a new deck. SVG insertions reuse DrawAI's native DrawingML converter, including editable shapes, text, local pictures and Office Math. This path does not require OpenAI Artifact Tool or image reconstruction models.
 
-Use `drawai ppt create --plan create-plan.json --output deck.pptx` to create a new deck with `drawai.pptx_create_plan.v1`. Creation and editing share native operations; `add_text` and `add_shape` add text boxes and preset shapes. The [drawai-ppt skill](../../skills/drawai-ppt/SKILL.md) provides the standalone agent workflow and implementation extension guide.
+Use `drawai ppt create --plan create-plan.json --output deck.pptx` to create a new deck with `drawai.pptx_create_plan.v1`. Creation and editing share native operations; `add_text` and `add_shape` add text boxes and preset shapes. The [drawai-image2ppt skill](../../skills/drawai-image2ppt/SKILL.md) provides the standalone agent workflow and implementation extension guide.
 
 ```bash
 uv run drawai ppt inspect template.pptx --output template.json

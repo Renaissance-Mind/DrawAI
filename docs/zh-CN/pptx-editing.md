@@ -2,7 +2,7 @@
 
 DrawAI 使用 Python 读取现有 PPTX、执行对象编辑计划，并保存为新文件。新图形通过现有 SVG → DrawingML 转换器插入模板页面，保留原生形状、文字、图片和 Office Math。模板编辑不需要 OpenAI 的 Artifact Tool，也不需要运行图像重建模型。
 
-从空白文稿创建 PPTX 可使用 `drawai ppt create --plan create-plan.json --output deck.pptx`，计划格式为 `drawai.pptx_create_plan.v1`。创建和编辑共用原生对象操作，新增文本框与预设形状分别使用 `add_text` 和 `add_shape`。完整的独立 Agent 使用流程和代码扩展方式见 [drawai-ppt skill](../../skills/drawai-ppt/SKILL.md)。
+从空白文稿创建 PPTX 可使用 `drawai ppt create --plan create-plan.json --output deck.pptx`，计划格式为 `drawai.pptx_create_plan.v1`。创建和编辑共用原生对象操作，新增文本框与预设形状分别使用 `add_text` 和 `add_shape`。完整的独立 Agent 使用流程和代码扩展方式见 [drawai-image2ppt skill](../../skills/drawai-image2ppt/SKILL.md)。
 
 ## 读取模板
 

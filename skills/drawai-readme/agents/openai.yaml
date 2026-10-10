@@ -1,0 +1,4 @@
+interface:
+  display_name: "DrawAI Guide"
+  short_description: "Plan the DrawAI design and image-to-PPT workflow from your request"
+  default_prompt: "使用 $drawai-readme，按我的需求检查环境并组织视觉设计和图像转 PPT 流程。"

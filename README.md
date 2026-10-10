@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 
 ### 方式一：Codex 插件
 
-DrawAI 插件包含三个 Skill：`drawai` 是总体入口与使用指南，`drawai-templates` 推荐和展示模板参考，`drawai-ppt` 制作和编辑可编辑 PowerPoint。模板界面可以内嵌在 Codex 对话中，选好版式与风格后在当前对话继续制作。
+DrawAI 插件包含三个 Skill：`drawai-readme` 组织整体流程，`drawai-design` 确定页面视觉图像，`drawai-image2ppt` 通过当前会话或 DrawAI-Flow 转成可编辑 PowerPoint。模板界面可以内嵌在 Codex 对话中，选好版式与风格后在当前对话继续制作。
 
 ```bash
 cd apps/workbench
@@ -41,7 +41,7 @@ cd ../..
 node scripts/install_plugin.mjs
 ```
 
-安装后新建 Codex 聊天，使用 `$drawai` 先阅读指南。可以说“推荐适合科研汇报的模板”或“根据这份内容制作可编辑 PPT”。需要选模板时显示内嵌界面，制作直接使用 `drawai-ppt`。
+安装后新建 Codex 聊天，使用 `$drawai-readme` 先阅读指南。可以说“推荐适合科研汇报的模板”或“根据这份内容制作可编辑 PPT”。需要选模板时显示内嵌界面，页面图像确定后进入 `drawai-image2ppt`。
 
 [插件安装、技能分工与独立模板网站](docs/zh-CN/plugin.md)。
 
@@ -187,7 +187,7 @@ DrawAI 的目标不是把原图简单塞进 PPT，而是尽量生成可编辑、
 
 ## 📚 更多文档
 
-- [drawai-ppt 独立 skill：使用 Python 创建、编辑 PPT，并扩展对应代码](skills/drawai-ppt/SKILL.md)
+- [drawai-image2ppt：图像转 PPT、原生编辑与工具包](skills/drawai-image2ppt/SKILL.md)
 - [编辑现有 PPTX 模板：对象检查、原生编辑与 SVG 插入](docs/zh-CN/pptx-editing.md)
 - [运行方式、参数、端口和模型路径](docs/zh-CN/runtime-options.md)
 - [评测指南：数据集、单图与批量 SVG 评测](docs/zh-CN/evaluation.md)

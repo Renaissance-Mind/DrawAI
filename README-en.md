@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 
 ### Option 1: Codex plugin
 
-The DrawAI plugin contains three skills: `drawai` is the entry guide, `drawai-templates` recommends and displays real visual references, and `drawai-ppt` creates and edits editable PowerPoint. Browse templates inline in Codex, choose layout and style references, then continue creating the deck in the current conversation.
+The DrawAI plugin contains three skills: `drawai-readme` organizes the workflow, `drawai-design` determines page visuals, and `drawai-image2ppt` converts them into editable PowerPoint in the current session or through DrawAI-Flow. Browse templates inline in Codex, choose layout and style references, then continue creating the deck in the current conversation.
 
 ```bash
 cd apps/workbench
@@ -41,7 +41,7 @@ cd ../..
 node scripts/install_plugin.mjs
 ```
 
-Open a new Codex chat and start with `$drawai`. Ask for templates for a research talk or provide your content and request an editable presentation. Template selection uses an inline chooser; presentation creation uses `drawai-ppt` directly.
+Open a new Codex chat and start with `$drawai-readme`. Ask for templates for a research talk or provide your content and request an editable presentation. Template selection uses an inline chooser; image-to-PPT conversion uses `drawai-image2ppt`.
 
 See the [plugin guide](docs/zh-CN/plugin.md) for installation, skill responsibilities, and the standalone template website.
 
@@ -187,7 +187,7 @@ The PPTX export path always uses the bundled native-shape converter, mapping SVG
 
 ## 📚 Documentation
 
-- [drawai-ppt standalone skill: create/edit PPTX with Python and extend the implementation](skills/drawai-ppt/SKILL.md)
+- [drawai-image2ppt: conversion, native editing, and the Python toolkit](skills/drawai-image2ppt/SKILL.md)
 - [Edit existing PPTX templates: inspect objects, edit native content and insert SVG](docs/en/pptx-editing.md)
 - [Runtime options, ports, and model paths](docs/zh-CN/runtime-options.md)
 - [Evaluation guide: dataset, single-image and batch SVG evaluation](docs/en/evaluation.md)

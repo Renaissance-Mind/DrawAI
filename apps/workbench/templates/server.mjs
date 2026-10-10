@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { searchTemplates, findTemplate } from "./catalog.mjs";
 import { prepareReference } from "./references.mjs";
+import { planWorkflow, flowAction } from "./workflow.mjs";
 
 const filters = {
   query: { type: "string" }, category: { type: "string" }, with_images: { type: "boolean" },
@@ -16,20 +17,33 @@ const filters = {
 export const TOOLS = [
   {
     name: "drawai_templates",
-    description: "Read the DrawAI entry skill, then use drawai-templates to search/get real visual references or retrieve keyword-ranked recommendation candidates. Use drawai_show_templates to present a shortlist to the user.",
+    description: "Read drawai-readme first. In drawai-design, search/get real visual references or retrieve keyword-ranked candidates. Use drawai_show_templates to present a shortlist to the user.",
     inputSchema: { type: "object", properties: { action: { enum: ["search", "get", "recommend"] }, template_id: { type: "string" }, ...filters }, required: ["action"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "drawai_show_templates",
-    description: "Show the DrawAI template chooser inline in the current conversation. Pass recommended template_ids or query/category filters. The user can inspect references, select structure/style, and send the selection to this conversation to continue with drawai-ppt.",
+    description: "Show the DrawAI template chooser inline. Pass template_ids or query/category filters. Selected structure/style references go to drawai-design; finished visual pages are then converted with drawai-image2ppt.",
     inputSchema: { type: "object", properties: filters, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "drawai_prepare_template",
-    description: "Save an explicitly selected template's verified original reference images and template-reference.json into the current task output directory for drawai-ppt. Existing different files are never overwritten. Recipe-only references contain no image files.",
+    description: "Prepare selected template references for drawai-design: verified original images and template-reference.json. Existing different files are not overwritten. Recipe-only references contain no image files.",
     inputSchema: { type: "object", properties: { template_id: { type: "string" }, output_directory: { type: "string" } }, required: ["template_id", "output_directory"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: { ui: { visibility: ["model"] } },
+  },
+  {
+    name: "drawai_plan",
+    description: "Resolve the DrawAI design method, model-based image2ppt default and missing intake questions. Supply actual current-session model/tool facts and preferences extracted from the user. The server does not detect hidden caller models. Explicit modes and no-question requests take priority.",
+    inputSchema: { type: "object", properties: { request: { type: "object", description: "environment, preferences and inputs; see drawai-readme intake contract" } }, required: ["request"], additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "drawai_flow",
+    description: "Use the existing Workbench for DrawAI-Flow. status without batch_id checks connection. submit uploads verified visual-deck pages as a queued batch; start executes that batch; status reports actual progress; export downloads the completed PPTX to a new output_path for validation. Only act on this task's batch IDs. Flow uses Workbench's own configured workers/models.",
+    inputSchema: { type: "object", properties: { action: { enum: ["submit", "start", "status", "export"] }, visual_manifest: { type: "string" }, name: { type: "string" }, batch_id: { type: "string" }, output_path: { type: "string" } }, required: ["action"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ui: { visibility: ["model"] } },
   },
@@ -46,6 +60,8 @@ export async function dispatch(name, args = {}) {
     return { view, result: await searchTemplates(view) };
   }
   if (name === "drawai_prepare_template") return prepareReference(args);
+  if (name === "drawai_plan") return planWorkflow(args.request);
+  if (name === "drawai_flow") return flowAction(args);
   throw new Error(`Unknown DrawAI tool: ${name}`);
 }
 
@@ -59,7 +75,7 @@ export function createMcpServer() {
     }
     return resource;
   };
-  const server = new Server({ name: "drawai-templates", version: "3.0.0" }, { capabilities: { tools: {}, resources: {} } });
+  const server = new Server({ name: "drawai", version: "4.0.0" }, { capabilities: { tools: {}, resources: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const { uri } = await getResource();
     return { tools: TOOLS.map((tool) => tool.name === "drawai_show_templates" ? { ...tool, _meta: { ui: { resourceUri: uri } } } : tool) };

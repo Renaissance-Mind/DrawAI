@@ -11,7 +11,7 @@ const html = await readFile(path.join(workbench, 'dist-plugin/templates-inline.h
 const build = createHash('sha256').update(html).digest('hex').slice(0, 16);
 const marketplace = path.join(root, '.local/plugin-marketplace');
 const plugin = path.join(marketplace, 'drawai');
-const skillNames = ['drawai', 'drawai-templates', 'drawai-ppt'];
+const skillNames = ['drawai-readme', 'drawai-design', 'drawai-image2ppt'];
 
 async function syncSkills(destination) {
   await rm(path.join(destination, 'skills'), { recursive: true, force: true });
@@ -28,14 +28,14 @@ await mkdir(path.join(plugin, 'assets'), { recursive: true });
 await cp(path.join(workbench, 'public/drawai_image.png'), path.join(plugin, 'assets/drawai_image.png'));
 await syncSkills(plugin);
 const manifest = {
-  name: 'drawai', version: '3.0.0',
-  description: 'Start with the DrawAI guide, choose real visual templates inline, and create or edit editable PowerPoint with drawai-ppt.',
+  name: 'drawai', version: '4.0.0',
+  description: 'Read the DrawAI guide, determine page visuals, then convert images to editable PowerPoint in the current session or with DrawAI-Flow in Workbench.',
   author: { name: 'Renaissance Mind' }, license: 'Apache-2.0', skills: './skills/', mcpServers: './.mcp.json',
   interface: {
     displayName: 'DrawAI', shortDescription: '模板参考与可编辑 PowerPoint',
     composerIcon: './assets/drawai_image.png', logo: './assets/drawai_image.png', logoDark: './assets/drawai_image.png',
     brandColor: '#3168f5',
-    defaultPrompt: ['使用 $drawai，先阅读使用指南，再处理我的模板选择或 PPT 制作任务。'],
+    defaultPrompt: ['使用 $drawai-readme，先检查当前图像工具与模型，再按我的需求完成视觉设计和图像转 PPT。已说明的需求直接沿用。'],
     category: 'Productivity', capabilities: ['Interactive', 'Read', 'Write'],
   },
 };
@@ -67,4 +67,4 @@ for (const args of [['plugin', 'marketplace', 'add', marketplace, '--json'], ['p
     if (installed.mcpServers.drawai.args[0] !== mcp.mcpServers.drawai.args[0]) throw new Error('Installed DrawAI template service path is stale');
   }
 }
-console.log(`DrawAI 3.0.0 installed with ${skillNames.join(', ')} (UI ${build}). Open a new Codex chat and use $drawai to load the guide and refreshed template tools.`);
+console.log(`DrawAI 4.0.0 installed with ${skillNames.join(', ')} (UI ${build}). Use $drawai-readme to begin the staged workflow.`);

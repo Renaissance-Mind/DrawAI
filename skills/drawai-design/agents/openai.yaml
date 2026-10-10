@@ -1,0 +1,4 @@
+interface:
+  display_name: "DrawAI Design"
+  short_description: "Create page visuals from content, references, or PPT templates"
+  default_prompt: "使用 $drawai-design，根据我的内容与参考确定每页 PPT 的视觉图像。"

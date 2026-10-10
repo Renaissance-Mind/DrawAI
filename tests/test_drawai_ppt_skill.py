@@ -17,7 +17,7 @@ from drawai.pptx_editing import CREATE_PLAN_SCHEMA, PptxEditError, create_pptx, 
 
 
 REPO = Path(__file__).resolve().parents[1]
-LAUNCHER = REPO / "skills" / "drawai-ppt" / "scripts" / "ppt.py"
+LAUNCHER = REPO / "skills" / "drawai-image2ppt" / "scripts" / "ppt.py"
 
 
 def create_plan():
@@ -91,7 +91,7 @@ def test_skill_launcher_runs_outside_repo_and_after_relocation(tmp_path):
                             check=True, capture_output=True, text=True)
     assert json.loads(result.stdout)["pptx"]["native_objects"] == 1
     relocated_root = tmp_path / "relocated"
-    shutil.copytree(REPO / "skills" / "drawai-ppt", relocated_root,
+    shutil.copytree(REPO / "skills" / "drawai-image2ppt", relocated_root,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     relocated = relocated_root / "scripts" / "ppt.py"
     result = subprocess.run([sys.executable, "-I", str(relocated), "inspect", str(output)], cwd=tmp_path, env=env,

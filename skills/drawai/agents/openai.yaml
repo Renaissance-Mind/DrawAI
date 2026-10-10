@@ -1,4 +1,0 @@
-interface:
-  display_name: "DrawAI"
-  short_description: "Read the DrawAI guide, choose templates, and create editable PPT"
-  default_prompt: "使用 $drawai，先阅读使用指南，再处理我的模板选择或 PPT 制作任务。"

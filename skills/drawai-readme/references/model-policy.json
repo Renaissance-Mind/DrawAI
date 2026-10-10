@@ -1,0 +1,9 @@
+{
+  "schema": "drawai.model-routing-policy.v1",
+  "default_mode": "flow",
+  "session_families": [
+    {"family": "gpt", "minimum_version": [5, 6]},
+    {"family": "claude", "minimum_version": [5, 0]},
+    {"family": "deepseek-flash", "minimum_version": [4, 1]}
+  ]
+}

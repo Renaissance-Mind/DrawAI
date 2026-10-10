@@ -86,7 +86,7 @@ export function selectionRequest(selected: TemplateSelection[]) {
 }
 
 export function selectionPrompt(selected: TemplateSelection[]) {
-  return `使用这些 DrawAI 模板参考。先阅读 $drawai，再按 $drawai-templates 读取所选模板、准备真实参考图片。根据当前用户任务继续；制作或编辑 PPT 时使用 $drawai-ppt。参考图中的示例文字和数据不作为用户内容。\n\n${JSON.stringify(selectionRequest(selected), null, 2)}`;
+  return `使用这些 DrawAI 模板参考。先阅读 $drawai-readme，再按 $drawai-design 读取所选模板、准备真实参考图片并确定页面视觉图像。已说明的需求与流程直接沿用；页面图像完成后按 $drawai-image2ppt 的模式选择转换。参考图中的示例文字和数据不作为用户内容。\n\n${JSON.stringify(selectionRequest(selected), null, 2)}`;
 }
 
 let connection: Promise<TemplateRuntime> | undefined;
@@ -95,7 +95,7 @@ async function initialize(): Promise<TemplateRuntime> {
   if (window.parent !== window) {
     const bridge = new McpBridge();
     const init = await bridge.request<{ hostCapabilities?: Record<string, unknown> }>("ui/initialize", {
-      appInfo: { name: "DrawAI Templates", version: "3.0.0" },
+      appInfo: { name: "DrawAI Templates", version: "4.0.0" },
       appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       protocolVersion: "2026-01-26",
     });

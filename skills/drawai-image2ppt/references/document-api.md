@@ -17,7 +17,7 @@ from pptx_skill import (
 )
 ```
 
-在 shell 中通过 `export SKILL_DIR=/absolute/path/to/drawai-ppt` 设置环境变量，或在制作脚本中直接为 `skill_dir` 指定绝对路径。
+在 shell 中通过 `export SKILL_DIR=/absolute/path/to/drawai-image2ppt` 设置环境变量，或在制作脚本中直接为 `skill_dir` 指定绝对路径。
 
 ## 创建文档
 
