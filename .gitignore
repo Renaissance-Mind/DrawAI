@@ -8,6 +8,12 @@ node_modules/
 .streamlit/credentials.toml
 AGENTS.md
 data/
+!apps/workbench/studio/data/
+apps/workbench/studio/data/*
+!apps/workbench/studio/data/visual-reference-templates.json
+!skills/drawai-ppt/assets/rebuildable-deck/data/
+skills/drawai-ppt/assets/rebuildable-deck/data/*
+!skills/drawai-ppt/assets/rebuildable-deck/data/metrics.csv
 results/
 logs/
 docs/agent-memory.md
@@ -42,6 +48,7 @@ test_codex_*.py
 # Packaging artifacts
 *.egg-info/
 dist/
+dist-plugin/
 build/
 
 # 编辑器配置

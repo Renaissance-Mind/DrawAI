@@ -1,5 +1,33 @@
-"""Standalone native PPTX creation and editing tools."""
+"""Standalone presentation document authoring and PowerPoint I/O."""
 
-from .engine import create_pptx, edit_pptx, inspect_pptx, render_pptx, validate_pptx_package
+from .io import inspect_pptx, render_pptx, validate_pptx_package
+from .document import (
+    Document,
+    Page,
+    Object,
+    load_document,
+    import_pptx,
+    import_svg,
+    export_pptx,
+    export_svg,
+    duplicate_page,
+    insert_svg,
+    make_connector,
+)
 
-__all__ = ["create_pptx", "edit_pptx", "inspect_pptx", "render_pptx", "validate_pptx_package"]
+__all__ = [
+    "Document",
+    "Page",
+    "Object",
+    "load_document",
+    "import_pptx",
+    "import_svg",
+    "export_pptx",
+    "export_svg",
+    "duplicate_page",
+    "insert_svg",
+    "make_connector",
+    "inspect_pptx",
+    "render_pptx",
+    "validate_pptx_package",
+]

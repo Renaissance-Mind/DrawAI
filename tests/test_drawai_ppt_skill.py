@@ -75,23 +75,30 @@ def test_create_native_objects_then_edit_generated_template(tmp_path):
 
 
 def test_skill_launcher_runs_outside_repo_and_after_relocation(tmp_path):
-    plan = tmp_path / "create-plan.json"
-    standalone_plan = create_plan()
-    standalone_plan["schema"] = "pptx.create_plan.v1"
-    plan.write_text(json.dumps(standalone_plan))
+    source = tmp_path / "document.json"
+    source.write_text(json.dumps({
+        "schema": "presentation.document.v1", "id": "test-deck",
+        "properties": {"document.page_size": {"width": 960, "height": 540}},
+        "pages": [{"id": "overview", "objects": [{"id": "title", "kind": "text_box", "properties": {
+            "object.frame": {"left": 60, "top": 30, "width": 700, "height": 80},
+            "text.body.paragraphs": [{"content": [{"text": "Original title"}]}]
+        }}]}]
+    }))
     output = tmp_path / "deck.pptx"
     env = {"PATH": os.environ.get("PATH", os.defpath)}
-    result = subprocess.run([sys.executable, "-I", str(LAUNCHER), "create", "--plan", str(plan),
-                             "--output", str(output)], cwd=tmp_path, env=env,
+    result = subprocess.run([sys.executable, "-I", str(LAUNCHER), "export", str(source),
+                             "--pptx", str(output)], cwd=tmp_path, env=env,
                             check=True, capture_output=True, text=True)
-    assert json.loads(result.stdout)["slide_count"] == 2
+    assert json.loads(result.stdout)["pptx"]["native_objects"] == 1
     relocated_root = tmp_path / "relocated"
     shutil.copytree(REPO / "skills" / "drawai-ppt", relocated_root,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     relocated = relocated_root / "scripts" / "ppt.py"
     result = subprocess.run([sys.executable, "-I", str(relocated), "inspect", str(output)], cwd=tmp_path, env=env,
                             check=True, capture_output=True, text=True)
-    assert json.loads(result.stdout)["slides"][0]["shapes"][0]["text"] == "Original title"
+    inventory = json.loads(result.stdout)
+    assert inventory["units"] == "pt"
+    assert inventory["slides"][0]["shapes"][0]["text"] == "Original title"
     subprocess.run([sys.executable, "-I", str(relocated_root / "scripts" / "check.py")],
                    cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
 

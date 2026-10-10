@@ -1,53 +1,58 @@
-# Python 代码扩展指南
+# 代码指南
 
-以下路径相对于 skill 目录，代码、依赖和测试均在目录内维护。
+所有代码与依赖都在 skill 目录内。公共 API 从 `pptx_skill` 导入，统一使用 `presentation.document.v1` 和 pt。
 
-| 位置 | 职责 |
+| scripts/ 下的位置 | 职责 |
 | --- | --- |
-| `scripts/ppt.py` | 加载 skill 内的 Python 包并执行 CLI |
-| `scripts/requirements.txt` | Python 依赖清单 |
-| `scripts/pptx_skill/cli.py` | 创建、检查、编辑、Schema、验证和渲染命令 |
-| `scripts/pptx_skill/engine.py` | 当前计划契约、对象操作、模板复制和文件发布 |
-| `scripts/pptx_skill/svg_export.py` | SVG 规范化、箭头、文字位置与 Office Math |
-| `scripts/pptx_skill/native_builder.py` | 原生绘图 XML、图片与引用关系的 PPTX 打包 |
-| `scripts/pptx_skill/svg_native/` | 几何、曲线、文字、分组、图片和填充的 DrawingML 转换 |
-| `scripts/check.py` | 真实文件回归检查 |
-| `scripts/research_pptx.py` | 固定版本的微软 Schema 属性与枚举提取 |
+| ppt.py / pptx_skill/cli.py | schema、import、export、inspect、validate、render 与属性查询 |
+| example.py | 完整的创建与局部文字修改示例 |
+| pptx_skill/document/model.py | 文档、页面、对象、资源、属性验证与 XML 绑定契约 |
+| document/export.py | 创建/修改原生对象、页面与分组堆叠顺序、包发布 |
+| document/importer.py | PPTX 原始包与对象读取、SVG 转换和制作源恢复 |
+| document/editing.py / insert.py | 格式覆盖清除、页面复制、SVG 插入 |
+| document/authoring.py | 根据起点与终点创建连线，计算包围框与方向翻转 |
+| document/identity.py | 文档对象 ID；复制或导入重复标识时生成唯一值 |
+| document/xml.py / rich.py | 单位、颜色、填充、线、富文本、段落、路径、效果与 3D |
+| document/advanced.py / charts.py | 主题、图片、变换、可访问性及图表细节 |
+| document/svg.py / svg_fallback.py / render_env.py | SVG 静态投影、完整制作源、渐变回退和字体环境 |
+| document/package.py | 精确的原生 XML 部件修改 |
+| pptx_skill/io.py | PPTX 清单、关系校验、PDF/PNG 渲染和可变部件复制 |
+| svg_export.py / svg_native/ / native_builder.py | SVG 原生绘图、文字、图片和 Office Math 转换与打包 |
+| check.py / check_document.py / check_workflows.py | 真实文件、属性与完整操作流程回归 |
+| build_v2_demo.py / assets/demo/ | 固定参考图的人工重建示例 |
+| update_implementation_matrix.py | 一次更新两份矩阵的 JSON、CSV、Markdown |
+| research_pptx.py / build_capability_matrix.py | 原生字段、枚举与固定来源的研究目录 |
 
-## 选择实现位置
+`assets/rebuildable-deck/` 是可以复制到任务目录的制作项目：`build.py` 调用 `assets/src/line_chart.py`，读取 CSV 并生成独立图表，再组合原生文字与图片对象。它的 Matplotlib 依赖只用于示例绘图；修改布局、换数据源或增加素材时编辑复制后的项目文件。流程与交付方式见 [视觉与素材](visual-assets.md)。
 
-普通任务先使用计划或 `python-pptx` 的对象 API。一次性的内容、位置和配色保存在任务制作脚本中。可复用的新对象或样式加入 `engine.py`；SVG 几何和样式问题修改 `svg_native/`；参数与命令修改 `cli.py`。
+## 扩展属性
 
-精细制作脚本可在加入实际 skill 的 scripts 目录后加载 API：
+查询属性 ID 的 [实现条件](implementation-capabilities.md)，需要原生字段时再查 [Schema 清单](pptx-inventory/schema-properties.csv) 和 [来源](research-sources.md)。新增绑定放到相应对象模块，返回实际处理的属性 ID。
 
-```python
-import sys
-from pathlib import Path
+在属性契约中说明值结构、单位、缺省/继承行为、互斥条件，以及创建和修改的适用对象。颜色、长度、比例和角度由统一构造函数转换；路径坐标保留局部单位。原生 XML 树接口应明确其 QName、资源关系和例子。
 
-sys.path.insert(0, str(Path(skill_dir) / "scripts"))
-from pptx_skill import create_pptx, edit_pptx, inspect_pptx, validate_pptx_package
+修改 `document/capabilities.py` 后统一生成矩阵：
+
+```bash
+python "$SKILL_DIR/scripts/update_implementation_matrix.py"
 ```
 
-## 扩展操作与文档模型
+`property-catalog.json` 是字段与枚举的目录，capabilities.py 是实际接口与条件的事实源；矩阵文件是生成结果。研究默认值与继承条款根据原生依据更新，实施绑定与实际验证分别记录。
 
-新增计划操作时定义 `StrictModel` 子类及唯一的 `op: Literal[...]`，加入 `Operation` 并在 `_apply_operation` 实现。创建和编辑共用 `_execute_plan`，其 Schema 随类型声明更新。同步 CLI 帮助和真实文件测试。
+## 保留与编辑
 
-完整文档模型遵循 [PPTX 优先规范](pptx-standard.md)。先按 [属性清单](property-catalog.json) 定义值类型、单位、继承、原生映射与输出 profile，再实现导入和导出。现有编辑计划不能代替完整文档。能力矩阵的设计目标与代码状态分别维护。
+导入保存完整 PPTX 包和 baseline。原始 native_ppr/native_rpr 保留未建模格式，文字变化只改对应 run。清除覆盖作用于最终 XML；对象排序重排绘图树中的已建模节点，原始扩展节点保留其位置。
 
-## 模板与 XML 的关键约束
+复制页面生成新的语义 ID，保留页面内数字形状 ID，独立复制可变图表、工作簿和备注页面，备注母版保持共享引用。包校验核对活动备注页面的母版已在演示文稿中注册。插入 SVG 为原生分组，重新分配数字 ID 和图片关系。精确 XML 绑定按具体部件路径工作，涉及页面复制时同步目标路径与引用。
 
-对象 ID 属于页面；插入对象重新分配 ID。图片关系重新绑定到目标页面。SVG 分组设置外框和子坐标系。
-
-保留 `mc:AlternateContent` 等普通 shape 列表遗漏的对象和命名空间。复制页时独立复制可变的图表、工作簿与备注；保持主题、母版和版式引用。局部文字替换保留 run 属性。
-
-完成全部操作和包校验后发布到新文件。保存与实际渲染分别验证；不将未建模的属性静默丢弃或宣称已支持。
+SVG 从实际 PPTX 导出，写入完整文档源和外观哈希。预览与 SVG 的 LibreOffice 输入默认使用忽略嵌入字体的临时副本，字体由本机字体环境解析；`embedded_fonts="preserve"` 使用原始字体引用。交付 PPTX 与 SVG 中嵌入的制作源保留原始包。修改导出器时检查背景、母版对象、静态可见性、字体与特殊效果。回退报告列出实际受影响对象。
 
 ## 验证
 
 ```bash
-python <skill-dir>/scripts/check.py
-python <skill-dir>/scripts/ppt.py validate output/deck.pptx
-python <skill-dir>/scripts/ppt.py render output/deck.pptx --output-dir work/preview
+python "$SKILL_DIR/scripts/check.py"
+python "$SKILL_DIR/scripts/check_document.py"
+python "$SKILL_DIR/scripts/check_workflows.py"
 ```
 
-测试使用临时目录、真实 PPTX/SVG/图片和实际对象。Pandoc 可用时测试真实公式转换。修改视觉效果时检查最终逐页预览，并按目标 PowerPoint 环境记录验证结果。
+验证创建、修改、复制、重新导入、字段值、引用闭包与真实渲染。新增参数示例也执行验证；视觉变化检查实际 PPTX 和浏览器 SVG。任务产物与工具包回归分别检查。

@@ -1,89 +1,195 @@
-"""Machine-readable template editing commands for humans and agents."""
+"""One document contract for independent presentation authoring."""
 
 from __future__ import annotations
-
 import argparse
 import json
 from pathlib import Path
+import shutil
 import sys
 from typing import Sequence
 
 
-def pptx_cli(argv: Sequence[str] | None = None) -> int:
-    from .engine import PptxCreatePlan, PptxEditPlan, create_pptx, edit_pptx, inspect_pptx, render_pptx, validate_pptx_package
+def new_json(path):
+    if path is not None and (path.suffix.lower() != ".json" or path.exists()):
+        raise ValueError("Choose a new .json filename")
 
-    parser = argparse.ArgumentParser(prog="drawai-ppt", description="Create and edit native PPTX using Python.")
+
+def pptx_cli(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="drawai-ppt",
+        description="Author a presentation document and export PPTX/SVG.",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    schema = commands.add_parser("schema", help="Print the JSON Schema for create/edit plans.")
-    schema.add_argument("--mode", choices=("create", "edit"), default="edit")
-    create = commands.add_parser("create", help="Create an editable deck from a JSON plan.")
-    create.add_argument("--plan", required=True, type=Path)
-    create.add_argument("--output", required=True, type=Path)
-    create.add_argument("--report", type=Path)
-    create.add_argument("--preview-dir", type=Path)
-    inspect = commands.add_parser("inspect", help="List slide objects, shape IDs, layouts, text and geometry.")
-    inspect.add_argument("source", type=Path)
-    inspect.add_argument("--output", type=Path, help="Write the inventory JSON instead of printing it.")
-    inspect.add_argument("--preview-dir", type=Path, help="Also render the original slides.")
-    edit = commands.add_parser("edit", help="Apply a JSON plan and save a new PPTX; never overwrite the template.")
-    edit.add_argument("source", type=Path)
-    edit.add_argument("--plan", required=True, type=Path)
-    edit.add_argument("--output", required=True, type=Path)
-    edit.add_argument("--report", type=Path)
-    edit.add_argument("--preview-dir", type=Path, help="Also render the final PPTX for visual verification.")
-    render = commands.add_parser("render", help="Render the actual PPTX into PDF and slide PNGs.")
+    commands.add_parser(
+        "schema", help="Print the presentation.document.v1 JSON Schema."
+    )
+    capabilities = commands.add_parser(
+        "capabilities", help="Show implemented property interfaces and conditions."
+    )
+    capabilities.add_argument(
+        "--property",
+        dest="properties",
+        action="append",
+        help="Query one exact property ID; repeat to query several.",
+    )
+    imported = commands.add_parser(
+        "import", help="Import PPTX or SVG into a presentation document."
+    )
+    imported.add_argument("source", type=Path)
+    imported.add_argument("--output", required=True, type=Path)
+    imported.add_argument("--report", type=Path)
+    imported.add_argument(
+        "--source-limit-mib",
+        type=int,
+        default=256,
+        help="Maximum unpacked embedded SVG document size in MiB (default: 256).",
+    )
+    exported = commands.add_parser(
+        "export", help="Export a document JSON to editable PPTX and static SVG."
+    )
+    exported.add_argument("source", type=Path)
+    exported.add_argument("--pptx", type=Path)
+    exported.add_argument("--svg-dir", type=Path)
+    exported.add_argument(
+        "--profile", choices=("strict", "best_effort"), default="strict"
+    )
+    exported.add_argument("--report", type=Path)
+    inspected = commands.add_parser(
+        "inspect",
+        help="List PowerPoint objects, local IDs, layouts and geometry in points.",
+    )
+    inspected.add_argument("source", type=Path)
+    inspected.add_argument("--output", type=Path)
+    inspected.add_argument("--preview-dir", type=Path)
+    render = commands.add_parser(
+        "render", help="Render an actual PPTX into PDF and page PNGs."
+    )
     render.add_argument("source", type=Path)
     render.add_argument("--output-dir", required=True, type=Path)
-    validate = commands.add_parser("validate", help="Check package XML and internal resource relationships.")
+    validate = commands.add_parser(
+        "validate", help="Validate package XML and internal relationships."
+    )
     validate.add_argument("source", type=Path)
-    for command in (inspect, edit, create, render):
-        command.add_argument("--renderer", help="LibreOffice soffice executable; defaults to PATH.")
-        command.add_argument("--rasterizer", help="Poppler pdftoppm executable; defaults to PATH.")
+    for command in (exported, inspected, render):
+        command.add_argument(
+            "--renderer", help="soffice executable, otherwise resolved from PATH."
+        )
+        command.add_argument(
+            "--rasterizer", help="pdftoppm executable, otherwise resolved from PATH."
+        )
+        command.add_argument(
+            "--embedded-fonts",
+            choices=("ignore", "preserve"),
+            default="ignore",
+            help="Office rendering uses installed fonts by default; source PPTX fonts are preserved.",
+        )
     args = parser.parse_args(argv)
     try:
-        json_output = args.output if args.command == "inspect" else args.report if args.command in {"edit", "create"} else None
-        if json_output:
-            if json_output.suffix.lower() != ".json" or json_output.exists():
-                raise ValueError("Choose a new .json filename for the inventory or report")
-            inputs = [args.source] if hasattr(args, "source") else []
-            if args.command in {"edit", "create"}:
-                inputs.extend([args.plan, args.output])
-            if any(json_output.resolve() == path.resolve() for path in inputs):
-                raise ValueError("Inventory/report paths must differ from the source, plan and output PPTX")
+        from .io import inspect_pptx, render_pptx, validate_pptx_package
+        from .document import Document, import_pptx, import_svg, export_pptx, export_svg
+
         if args.command == "schema":
-            result = (PptxCreatePlan if args.mode == "create" else PptxEditPlan).model_json_schema()
-        elif args.command == "inspect":
-            result = inspect_pptx(args.source)
-            if args.preview_dir:
-                result["preview"] = render_pptx(args.source, args.preview_dir,
-                                                renderer=args.renderer, rasterizer=args.rasterizer)
-            if args.output:
-                _write_json(args.output, result)
-                return 0
-        elif args.command in {"edit", "create"}:
-            plan = json.loads(args.plan.read_text(encoding="utf-8"))
-            if args.command == "edit":
-                result = edit_pptx(args.source, plan, args.output, asset_root=args.plan.resolve().parent)
+            result = Document.model_json_schema()
+        elif args.command == "capabilities":
+            from .document.capabilities import capability_report
+
+            result = capability_report()
+            if args.properties:
+                selected = set(args.properties)
+                rows = [row for row in result["properties"] if row["id"] in selected]
+                unknown = selected - {row["id"] for row in rows}
+                if unknown:
+                    raise ValueError(f"Unknown property IDs: {sorted(unknown)}")
+                result = {"schema": result["schema"], "properties": rows}
+        elif args.command == "import":
+            new_json(args.output)
+            new_json(args.report)
+            if args.report and args.report.resolve() == args.output.resolve():
+                raise ValueError("Document and report paths must differ")
+            if args.source.suffix.lower() == ".pptx":
+                document = import_pptx(args.source)
+                conversion = {
+                    "status": "ok",
+                    "backend": "pptx_package",
+                    "pages": len(document.pages),
+                }
+            elif args.source.suffix.lower() == ".svg":
+                document, conversion = import_svg(
+                    args.source, max_source_bytes=args.source_limit_mib * 1024 * 1024
+                )
             else:
-                result = create_pptx(plan, args.output, asset_root=args.plan.resolve().parent)
-            if args.preview_dir:
-                result["preview"] = render_pptx(args.output, args.preview_dir,
-                                                renderer=args.renderer, rasterizer=args.rasterizer)
+                raise ValueError("Import accepts .pptx or .svg")
+            document.save(args.output)
+            result = {
+                "document": str(args.output.resolve()),
+                "pages": len(document.pages),
+                "conversion": conversion,
+            }
             if args.report:
                 _write_json(args.report, result)
+        elif args.command == "export":
+            new_json(args.report)
+            if not args.pptx and not args.svg_dir:
+                raise ValueError("Choose --pptx, --svg-dir or both")
+            if args.report and args.report.resolve() == args.source.resolve():
+                raise ValueError("Report and source paths must differ")
+            if args.pptx and (
+                args.pptx.suffix.lower() != ".pptx" or args.pptx.exists()
+            ):
+                raise ValueError("Choose a new .pptx output filename")
+            if args.svg_dir and args.svg_dir.exists() and any(args.svg_dir.iterdir()):
+                raise ValueError("SVG output directory must be empty")
+            if args.svg_dir and not (args.renderer or shutil.which("soffice")):
+                raise ValueError(
+                    "SVG export requires soffice; install LibreOffice or pass --renderer"
+                )
+            result = {}
+            if args.pptx:
+                result["pptx"] = export_pptx(
+                    args.source, args.pptx, profile=args.profile
+                )
+            if args.svg_dir:
+                result["svg"] = export_svg(
+                    args.source,
+                    args.svg_dir,
+                    profile=args.profile,
+                    renderer=args.renderer,
+                    rasterizer=args.rasterizer,
+                    embedded_fonts=args.embedded_fonts,
+                )
+            if args.report:
+                _write_json(args.report, result)
+        elif args.command == "inspect":
+            new_json(args.output)
+            result = inspect_pptx(args.source)
+            if args.preview_dir:
+                result["preview"] = render_pptx(
+                    args.source,
+                    args.preview_dir,
+                    renderer=args.renderer,
+                    rasterizer=args.rasterizer,
+                    embedded_fonts=args.embedded_fonts,
+                )
+            if args.output:
+                _write_json(args.output, result)
         elif args.command == "render":
-            result = render_pptx(args.source, args.output_dir,
-                                 renderer=args.renderer, rasterizer=args.rasterizer)
+            result = render_pptx(
+                args.source,
+                args.output_dir,
+                renderer=args.renderer,
+                rasterizer=args.rasterizer,
+                embedded_fonts=args.embedded_fonts,
+            )
         else:
             result = validate_pptx_package(args.source)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except Exception as exc:  # CLI boundary: surface the actual error and return a failure code.
+    except Exception as exc:  # CLI boundary: expose the real failure to the caller.
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 
 
-def _write_json(path: Path, value: dict) -> None:
+def _write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as stream:
         stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")

@@ -1,98 +1,126 @@
-# 创建与编辑流程
+# 制作流程
 
-`<skill-dir>` 指实际的 skill 目录。命令可在任意工作目录执行。所有计划中的素材路径相对于计划文件，SVG 内的图片路径相对于 SVG 文件。
+本文使用已经安装依赖的 Python，以及指向完整 skill 文件夹的 `SKILL_DIR`。在任务目录工作，源文件保留原件，每次输出使用独立版本目录，例如 `output/v1`、`output/v2`。
 
-## 创建文稿
+CLI 的输入输出路径相对于当前工作目录；文档 JSON 中的素材路径相对于该 JSON 文件；SVG 内的图片路径相对于 SVG 文件。Python API 传入内存模型时，用 `asset_root` 指定素材目录。
 
-创建契约为 `pptx.create_plan.v1`。默认画布是 1280 × 720 px，默认初始化一页空白页面。`slide_count` 控制初始空白页数，后续追加或复制页面会增加实际页数；交付时核对最终页数与用户要求。
+## 从内容创建
 
-下面的计划创建一个原生文本框和一个带文字的原生圆角矩形。内容用于说明 API，不是用户任务的默认布局。
+1. 阅读内容和数据，确定每页要表达的结论、画布与阅读顺序。
+2. 设计页面。有图像生成工具时，每页单独提交生成请求，将本页内容、整体风格、布局与可用参考图交给工具，生成一张完整的页面视觉稿。按页保存、查看并调整；没有工具时直接确定布局。
+3. 拆分视觉稿中的文字、图形、连线和素材。复杂图像与数据图表按 [视觉与素材](visual-assets.md) 单独制作，保留可复用的文件。
+4. 构建 `Document`。小型内容可直接保存文档 JSON；多页或数据驱动的制作使用 Python 脚本，把内容、布局和素材引用组织起来。
+5. 导出、渲染并对照视觉稿。调整后在新版本目录导出，整理制作源。
 
-```json
-{
-  "schema": "pptx.create_plan.v1",
-  "title": "Editable PPT",
-  "slide_size": {"width": 1280, "height": 720},
-  "slide_count": 1,
-  "operations": [
-    {
-      "op": "add_text", "slide": 1, "name": "title",
-      "frame": {"left": 80, "top": 60, "width": 1120, "height": 80},
-      "text": "可编辑的 PPT 对象",
-      "style": {"font_family": "Arial", "font_size": 42, "bold": true, "color": "#17324D"}
-    },
-    {
-      "op": "add_shape", "slide": 1, "name": "diagram-node", "geometry": "round_rect",
-      "frame": {"left": 80, "top": 220, "width": 460, "height": 180},
-      "fill": "#E6EEF8", "line_color": "#537BAA", "line_width": 2,
-      "text": "Python 创建原生对象",
-      "text_style": {"font_size": 28, "alignment": "center", "vertical_alignment": "middle"}
-    }
-  ]
-}
-```
+完整示例会生成 `document.json`、`deck.pptx` 和报告：
 
 ```bash
-python <skill-dir>/scripts/ppt.py create \
-  --plan create-plan.json --output output/deck.pptx --report output/report.json
-python <skill-dir>/scripts/ppt.py inspect output/deck.pptx
+python "$SKILL_DIR/scripts/example.py" output/create-v1 --svg
+python "$SKILL_DIR/scripts/ppt.py" inspect output/create-v1/deck.pptx --output output/create-v1/inventory.json
+python "$SKILL_DIR/scripts/ppt.py" render output/create-v1/deck.pptx --output-dir output/create-v1/preview
 ```
 
-几何、字号、线宽、行距使用 96 DPI px；32 px 字号相当于 24 pt。文字样式支持字体、字号、颜色、粗体、斜体、下划线、水平和垂直对齐、行距、自动换行。`add_shape.geometry` 接受 `rect`、`round_rect`、`roundRect`、`ellipse`，也接受 `python-pptx` 的 `MSO_AUTO_SHAPE_TYPE` 成员名，例如 `RIGHT_ARROW`、`CHEVRON`、`HEXAGON`。复杂路径和渐变可以使用 SVG。
-
-## 编辑和复用模板
-
-先运行 `inspect`，读取页面、对象、版式、原生数据与文字样式。位置属于页面或分组坐标空间，检查结果中的 `parent_shape_id`、`coordinate_space`、`child_frame` 描述这一点。先看预览再决定修改对象。
-
-已有文稿的编辑计划使用 `pptx.edit_plan.v1`。例如：
-
-```json
-{
-  "schema": "pptx.edit_plan.v1",
-  "operations": [
-    {"op": "replace_text", "slide": 1, "shape_id": 2,
-     "find": "原来的标题", "text": "新标题"}
-  ]
-}
-```
-
-示例中的 ID 和原文需要替换成实际检查结果。可加入检查结果中的 `source_sha256`，模板变化后旧计划会被拒绝。用 `duplicate_slide` 追加示例页副本，再通过新页面编号修改其中的对象；用 `add_slide` 和真实 `layout_id` 追加采用已有版式的页面。保留 Logo、页脚、主题、字号、固定装饰和图片裁剪等用户要求的设计。
-
-实际参数类型以脚本 `schema` 的输出为准。完整语义设计与导出目标见 [属性矩阵](export-capabilities.md)；这些设计目标需要逐项实现和验证。
-
-## SVG、公式与原生数据
-
-`add_svg` 接收 SVG 路径和目标框，使用 `contain` 等比适配或 `stretch` 填满。转换结果以原生分组插入，局部图片作为独立图片资源导入。支持的 SVG 元素由目录内的原生转换实现处理。
-
-带 LaTeX 元数据的 SVG 公式通过真实 Pandoc 转为 Office Math；报告记录转换和回退数量。原公式中的 Office Math 兼容性节点会被保留，但普通文字替换 API 不用于修改公式。原生数据图表用 `add_chart` / `set_chart_data`，表格用 `add_table` / `set_table_cells`；它们保留数据或单元格结构。
-
-## 精细 Python 制作脚本
-
-计划覆盖常见操作；更精细的富文本、段落、主题、图表样式可直接使用同一 Python 环境中的 `python-pptx`。在任务目录维护制作脚本，重复导出新版本并验证。将实际 skill 的 scripts 目录加入 Python 模块路径后可加载 `pptx_skill`。
-
-```python
-from pptx import Presentation
-from pptx_skill import validate_pptx_package
-
-prs = Presentation("template.pptx")
-# 从实际对象清单定位目标，再按需要设置 text_frame、paragraph、run 或图表属性。
-prs.save("edited.pptx")
-validate_pptx_package("edited.pptx")
-```
-
-保存到新文件。直接脚本同样需要源文件检查、真实对象定位、生成后渲染和模板对照。不能仅凭属性赋值或导出成功判断视觉效果。
-
-## 验证环境
+也可以将 [API 示例](document-api.md) 保存为 `deck.document.json`，只导出 PPTX，或同时导出两种格式：
 
 ```bash
-python <skill-dir>/scripts/ppt.py validate output/deck.pptx
-python <skill-dir>/scripts/ppt.py render output/deck.pptx --output-dir work/preview
+python "$SKILL_DIR/scripts/ppt.py" export deck.document.json --pptx output/v1/deck.pptx
+python "$SKILL_DIR/scripts/ppt.py" export deck.document.json --pptx output/v2/deck.pptx --svg-dir output/v2/svg --report output/v2/report.json
 ```
 
-渲染依赖 LibreOffice `soffice` 和 Poppler `pdftoppm`。它们可通过 PATH 或命令参数传入。预览目录必须为空；输出 PDF 和每页 PNG。使用模板时渲染原文件和最终文件并对照，保持可编辑性的对象检查与外观检查都要完成。复杂 PowerPoint 特性需要在实际目标软件中核对；声明实际完成的检查。
+检查每页文字、图形、数据及视觉层级。最终交付文档源、脚本、素材和成品；含独立绘图素材的完整示例见 [成果包](visual-assets.md#可重新执行的成果包)。
 
-## 对象操作契约
+## 修改 PPTX 与复用模板
 
-创建和编辑共享 `add_text`、`add_shape`、`add_image`、`add_svg`、`add_table`、`add_chart`、`add_slide`、`duplicate_slide`、`set_text`、`replace_text`、`replace_image`、`set_table_cells`、`set_chart_data`、`set_geometry` 和 `set_style`。目标操作使用页面编号与页面内的 shape_id。原生表格和图表的数据编辑要求对应的原生对象，不用于图片中的表格或图表。
+模板是用户提供的普通 `.pptx` 文件，包括其中的主题、版式、页脚、装饰和内容对象。
 
-使用新文件名保存 PPTX、清单和报告；找不到对象、素材或不合法参数时直接报错。结构验证完成后才发布文件，素材与原件保持不变。
+```bash
+python "$SKILL_DIR/scripts/ppt.py" inspect template.pptx --output work/inventory.json --preview-dir work/before
+python "$SKILL_DIR/scripts/ppt.py" import template.pptx --output work/template.document.json --report work/import-report.json
+```
+
+先打开 `work/before` 的每页预览，对照清单中的标题、正文、日期与页脚文字，并检查配色和版式。确认文字完整显示后再把截图用于图像生成。预览和 SVG 默认在临时副本中忽略嵌入字体，使用本机匹配的字体；报告的 `fonts` 记录处理方式和替代结果，模板原件与最终 PPTX 保留原始字体资源。需要对照嵌入字体的渲染时，可在新目录使用 `--embedded-fonts preserve`。
+
+从导入 JSON 中查找页面和对象 `id`，确认目标文字所在的 paragraph / run。只修改需要改变的文字或属性；导入产生的 `template`、`baseline`、`source_slide`、`source_shape_id` 和 `native_*` 数据用于保存原始结构。
+
+### 使用模板制作新页面
+
+先按 [模板解析与页面匹配](template-analysis.md) 查看全部页面、版式和母版，区分实际出现的页面用途与样式变体。将模板页的分类依据、布局特征，以及每个新页的用途和来源页记录到任务的 `template-analysis.json`。这份记录用于选择参考图和复用页面。
+
+有图像生成或编辑工具时，按匹配记录为每个新页选择相同用途的模板截图，单独提交本页内容、用途和该类页面的版式要求，每页生成一张完整视觉稿。截图从真实模板渲染获得；若工具只接收图片，将对应预览 PNG 传给它。查看视觉稿，确认标题区、正文区和装饰符合所选页面类型，再制作对象与局部素材。
+
+构建新页时，导入模板后复制匹配的来源页，保留其中适用的对象并替换内容；或在导入文档中添加绑定对应版式的新页。内容页从内容页或对应版式创建，结尾页从结尾页创建。标题、文字与图形按对象制作，复杂图片加入资源表。母版、主题与可编辑对象通过导入文档保留，页面专属装饰按匹配的类型复用。`duplicate_page` 与 `slide.layout_ref` 的使用见 [文档 API](document-api.md#修改文字和复制页面)。
+
+### 修改已有页面
+
+这个完整命令修改示例中 `heading` 对象的一个 run，并保存新 JSON 和 PPTX：
+
+```bash
+python "$SKILL_DIR/scripts/example.py" output/edit-v1 --source output/create-v1/deck.pptx --object-id heading --find "Original " --text "Updated " --svg
+python "$SKILL_DIR/scripts/ppt.py" render output/edit-v1/deck.pptx --output-dir output/edit-v1/preview
+```
+
+将对象 ID 和原文字替换为实际检查到的值。示例在未找到或找到多个目标时报告错误；先检查目标，而不是把整个文本框重新写成单一样式。完整 Python 修改示例见 [API](document-api.md#修改文字和复制页面)。
+
+页面排序使用 `pages` 列表；普通页面复制使用 `duplicate_page`，它会为副本的页面、分组及子对象生成新 ID。新页面可以用 `slide.layout_ref` 绑定检查到的版式。包含精确 XML 绑定的页面复制需要同步新的部件目标，按 [XML 操作](document-api.md#原生-xml-操作)处理。
+
+最后对照原件，检查修改内容以及主题、字号、图片裁剪、Logo 和页脚等用户要求保留的设计。
+
+## 根据图片重建
+
+1. 查看图片，记录宽高与整体比例。选定 pt 画布；如果采用 96 DPI 换算，所有像素坐标与字号一起乘 0.75。
+2. 列出文字、卡片、图标、连线、图表和局部图片。记录每个对象的边界、颜色、大小和层叠顺序。
+3. 确认文字与数据。曲线图片通常无法恢复原始精确数据；有原数据时使用数据，无原数据时注明重建近似。
+4. 用文本框、预设形状、自定义路径和分组构造文档。图标可以用原生形状、SVG 或独立图片表示；复杂局部素材可裁取原图中对应区域，或使用图像编辑工具参考原图重建。对需要重新设计的元素先生成素材，再排入页面。
+5. 图表有原数据时，使用原生图表或单独绘图后插入；需要复杂坐标轴、误差带、多子图等外观时，优先单独制作并保留代码与数据。具体选择见 [素材流程](visual-assets.md#根据数据单独制作图表)。
+6. 导出、渲染，将原图与实际输出按同一比例对照，修正文字越框、连线方向、图标大小和遮挡。
+
+例如参考图中的框为 `(x=100, y=80, width=400, height=160)` px，采用上述换算后，`object.frame` 为 `{left:75, top:60, width:300, height:120}` pt。忠实重建直接以原图为视觉稿。全页位图插入适用于用户需要整页图片的任务；需要编辑文字与图形时，按对象重建，并将局部图片作为独立素材。
+
+`scripts/build_v2_demo.py` 展示如何人工编写模型重建参考图；`assets/demo/` 是它的固定参考素材。制作自己的图时创建任务脚本和文档源，并交付实际使用的近似说明。
+
+## 导入 SVG
+
+```bash
+python "$SKILL_DIR/scripts/ppt.py" import diagram.svg --output work/diagram.document.json --report work/svg-import.json
+python "$SKILL_DIR/scripts/ppt.py" export work/diagram.document.json --pptx output/svg-v1/deck.pptx --svg-dir output/svg-v1/svg --report output/svg-v1/export.json
+```
+
+| SVG 类型 | 导入结果与检查 |
+| --- | --- |
+| 本工具导出的 SVG | 恢复完整文档源；报告 `projection_page_id` 指出该 SVG 展示哪页 |
+| 外部 SVG | 转换路径、基本形状、文字、分组与图片；检查 `conversion` 中的原生结构、公式转换与回退记录 |
+| 要放入已有 PPTX 的 SVG | 使用 `insert_svg` 加入目标页，返回带原生分组的新文档和转换报告；完整例子见 [API](document-api.md#svg-与局部插入) |
+
+常用外部元素包括 rect、circle、ellipse、line、polygon、polyline、path、text/tspan、g、image 和可解析的 use 引用。复杂 CSS、滤镜、裁剪、任意变换与第三方扩展按实际转换结果判断，成功读取不等于所有效果均已重建。
+
+导入报告的 `formula_export` 记录原生 Office Math 和图形回退。已有 SVG 公式只有字形路径时，导入结果仍是路径；LaTeX 转换需要下面的元数据和 Pandoc：
+
+```xml
+<g id="equation" data-pb-role="formula" data-pb-formula-latex="x^2+y^2" data-pb-formula-bbox="40 60 220 60">
+  <text x="40" y="100" font-size="30">x²+y²</text>
+</g>
+```
+
+若本工具 SVG 的外观经过手动修改而制作源未更新，哈希检查会提示源过期。修改原始文档源后重新导出；若要把当前外观当外部 SVG 重建，移除该制作源 metadata 后导入，并检查转换损失。
+
+## 环境与常见调整
+
+检查需要用到的工具：
+
+```bash
+python -c "import shutil; print({name: shutil.which(name) for name in ['soffice', 'pdftoppm', 'pandoc']})"
+python "$SKILL_DIR/scripts/ppt.py" render output/deck.pptx --output-dir output/preview --renderer /path/to/soffice --rasterizer /path/to/pdftoppm
+```
+
+| 情况 | 调整 |
+| --- | --- |
+| 输入文件或素材不存在 | 核对当前工作目录与素材根目录 |
+| 找不到 soffice / pdftoppm | 安装对应工具或传入显式路径；只制作 PPTX 时可先单独导出 |
+| 输出文件已存在、预览目录非空 | 使用新的版本目录；组合导出中途失败时，先查看已生成的文件，再只重做缺少的输出 |
+| 属性未实现或参数错误 | 查询该属性的条件与结构，修正输入；需要允许跳过时使用 `--profile best_effort` 并检查报告 |
+| 字体替代 | 选择目标环境已安装的字体，重新渲染 |
+| 清单有文字，预览缺少文字 | 核对字体处理报告及可见文字；本机字体仍无法正确显示时，使用目标 PowerPoint 渲染并检查完整预览后再制作视觉稿 |
+| 连线方向向左或向上 | 用 `make_connector` 的起点、终点生成连线；它会计算非负宽高与方向翻转，见 [API](document-api.md#箭头) |
+| 目标对象没有匹配或匹配多个 | 查看导入 JSON 与清单，明确对象 ID 和 run |
+
+包校验检查 XML 和内部引用；对象清单检查可编辑结构；PNG/PDF 与浏览器 SVG 检查外观。交付时分别说明实际完成的检查。

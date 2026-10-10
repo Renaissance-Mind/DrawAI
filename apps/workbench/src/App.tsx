@@ -1,6 +1,7 @@
 import { DragEvent, MouseEvent, PointerEvent, WheelEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import DrawAiBrand from "./components/DrawAiBrand";
 import {
   approveAssets,
   cancelCase,
@@ -1264,12 +1265,7 @@ export default function App() {
   return (
     <div className={activeView === "board" ? "app-root" : "app-root editor-mode"}>
       <header className={activeView === "board" ? "app-topbar board-topbar" : "app-topbar"}>
-        <div className="brand-row">
-          <img className="brand-logo" src="/drawai_image.png" alt="" />
-          <div className="brand-copy">
-            <h1>DrawAI</h1>
-          </div>
-        </div>
+        <DrawAiBrand />
         <div id="drawai-view-controls" className={activeView === "board" ? "topbar-view-controls board-view-controls" : "topbar-view-controls"}>
           {activeView === "board" && (
             <nav className={`board-mode-switch is-${boardMode}`} role="tablist" aria-label="工作模式">

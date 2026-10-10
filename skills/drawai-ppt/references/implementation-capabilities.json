@@ -1,0 +1,5275 @@
+{
+  "schema": "presentation.capabilities.v1",
+  "property_count": 475,
+  "counts": {
+    "native_preservation": 202,
+    "native_authoring": 266,
+    "host_required": 7
+  },
+  "properties": [
+    {
+      "id": "document.id",
+      "label": "文档标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.title",
+      "label": "标题",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.subject",
+      "label": "主题",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.author",
+      "label": "作者",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.keywords",
+      "label": "关键词",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.description",
+      "label": "说明",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.created",
+      "label": "创建时间",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.modified",
+      "label": "修改时间",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.revision",
+      "label": "修订号",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.metadata.custom_properties",
+      "label": "自定义属性",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.page_size",
+      "label": "页面尺寸",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.orientation",
+      "label": "页面方向",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "portrait",
+        "landscape"
+      ]
+    },
+    {
+      "id": "document.default_language",
+      "label": "默认语言",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.layout_direction",
+      "label": "布局方向",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "ltr",
+        "rtl"
+      ]
+    },
+    {
+      "id": "document.fonts.embedded",
+      "label": "嵌入字体资源与字形子集",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.fonts.fallback",
+      "label": "字体替代与解析策略",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.assets",
+      "label": "媒体资源与关系",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.custom_xml",
+      "label": "自定义 XML 部件",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.color_map",
+      "label": "全局颜色映射",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.guides",
+      "label": "参考线",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.grid_spacing",
+      "label": "网格间距",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.sections",
+      "label": "节与页面顺序",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "document.compatibility_profile",
+      "label": "目标 Office 版本与能力",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.id",
+      "label": "稳定页面标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.name",
+      "label": "页面名称",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.order",
+      "label": "页面顺序",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.hidden",
+      "label": "隐藏页面",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slide.layout_ref",
+      "label": "绑定版式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Creating a page binds an existing layout; changing an imported page layout requires explicit placeholder remapping.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.master_ref",
+      "label": "绑定母版",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.theme_override",
+      "label": "页面主题覆盖",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.background",
+      "label": "背景填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.background_follow_master",
+      "label": "继承母版背景",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slide.show_master_shapes",
+      "label": "显示母版对象",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slide.header_footer",
+      "label": "日期、页码、页脚内容和显示",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.comments_ref",
+      "label": "批注关系",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.tags",
+      "label": "标签与自定义数据",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.creation_id",
+      "label": "Office 创建标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.color_map_override",
+      "label": "颜色映射覆盖",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slide.objects",
+      "label": "绘图对象和层级",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.colors",
+      "label": "主题色槽与系统色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.fonts.major",
+      "label": "标题字体与各文字系统字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.fonts.minor",
+      "label": "正文字体与各文字系统字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.format_scheme",
+      "label": "填充、描边和效果样式集合",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Exact a:fmtScheme XML tree.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.extra_color_schemes",
+      "label": "额外配色方案",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Exact a:extraClrSchemeLst XML tree.",
+      "allowed_values": []
+    },
+    {
+      "id": "theme.defaults",
+      "label": "对象、线条和文字默认样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Exact a:objectDefaults XML tree.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.id",
+      "label": "母版标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.background",
+      "label": "母版背景",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.objects",
+      "label": "母版固定对象",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.text_styles",
+      "label": "标题、正文、其他文本分级样式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.layout_refs",
+      "label": "母版版式列表",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.header_footer",
+      "label": "母版页眉页脚",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.id",
+      "label": "版式标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.type",
+      "label": "版式类型",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "title",
+        "tx",
+        "twoColTx",
+        "tbl",
+        "txAndChart",
+        "chartAndTx",
+        "dgm",
+        "chart",
+        "txAndClipArt",
+        "clipArtAndTx",
+        "titleOnly",
+        "blank",
+        "txAndObj",
+        "objAndTx",
+        "objOnly",
+        "obj",
+        "txAndMedia",
+        "mediaAndTx",
+        "objOverTx",
+        "txOverObj",
+        "txAndTwoObj",
+        "twoObjAndTx",
+        "twoObjOverTx",
+        "fourObj",
+        "vertTx",
+        "clipArtAndVertTx",
+        "vertTitleAndTx",
+        "vertTitleAndTxOverChart",
+        "twoObj",
+        "objAndTwoObj",
+        "twoObjAndObj",
+        "cust",
+        "secHead",
+        "twoTxTwoObj",
+        "objTx",
+        "picTx"
+      ]
+    },
+    {
+      "id": "layout.master_ref",
+      "label": "父母版",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.objects",
+      "label": "版式对象",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.preserve",
+      "label": "保留未使用版式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "layout.matching_name",
+      "label": "版式匹配名称",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "placeholder.type",
+      "label": "占位符类型",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "title",
+        "body",
+        "ctrTitle",
+        "subTitle",
+        "dt",
+        "sldNum",
+        "ftr",
+        "hdr",
+        "obj",
+        "chart",
+        "tbl",
+        "clipArt",
+        "dgm",
+        "media",
+        "sldImg",
+        "pic"
+      ]
+    },
+    {
+      "id": "placeholder.index",
+      "label": "继承匹配索引",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "placeholder.orientation",
+      "label": "占位符方向",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "horz",
+        "vert"
+      ]
+    },
+    {
+      "id": "placeholder.size_hint",
+      "label": "占位符尺寸类别",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "full",
+        "half",
+        "quarter"
+      ]
+    },
+    {
+      "id": "placeholder.style_inheritance",
+      "label": "位置、文字和样式继承",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.id",
+      "label": "稳定对象标识",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "顶层 id 为文档内唯一标识；object.id 是可用别名，若同时填写须相同。",
+      "allowed_values": []
+    },
+    {
+      "id": "object.name",
+      "label": "对象名称",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.kind",
+      "label": "对象类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "顶层 kind 决定创建类型；object.kind 是可用别名。修改导入对象的类型时创建替代对象。",
+      "allowed_values": [
+        "text_box",
+        "shape",
+        "connector",
+        "group",
+        "picture",
+        "table",
+        "chart",
+        "smartart",
+        "equation",
+        "audio",
+        "video",
+        "model3d",
+        "ink",
+        "ole",
+        "control",
+        "web_extension",
+        "zoom",
+        "live_feed"
+      ]
+    },
+    {
+      "id": "object.parent_ref",
+      "label": "分组父对象",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.z_order",
+      "label": "堆叠顺序",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "数值越大越靠上；页面和分组内的已建模对象按该值重排，原始扩展节点保留其位置。",
+      "allowed_values": []
+    },
+    {
+      "id": "object.frame",
+      "label": "位置与尺寸",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.rotation",
+      "label": "二维旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.flip_horizontal",
+      "label": "水平翻转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "object.flip_vertical",
+      "label": "垂直翻转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "object.transform",
+      "label": "仿射变换",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Non-singular frame transforms without shear; shear is rejected. Translations are points.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.group_child_frame",
+      "label": "分组子坐标系",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.lock_aspect_ratio",
+      "label": "锁定比例",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "object.locks",
+      "label": "选择、移动、缩放、旋转、组合等锁定",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.hidden",
+      "label": "对象隐藏",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "object.black_white_mode",
+      "label": "黑白打印模式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "clr",
+        "auto",
+        "gray",
+        "ltGray",
+        "invGray",
+        "grayWhite",
+        "blackGray",
+        "blackWhite",
+        "black",
+        "white",
+        "hidden"
+      ]
+    },
+    {
+      "id": "object.style_ref",
+      "label": "主题样式引用",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.placeholder_ref",
+      "label": "占位符绑定",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "object.creation_id",
+      "label": "Office 对象创建标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.preset",
+      "label": "预设形状类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "line",
+        "lineInv",
+        "triangle",
+        "rtTriangle",
+        "rect",
+        "diamond",
+        "parallelogram",
+        "trapezoid",
+        "nonIsoscelesTrapezoid",
+        "pentagon",
+        "hexagon",
+        "heptagon",
+        "octagon",
+        "decagon",
+        "dodecagon",
+        "star4",
+        "star5",
+        "star6",
+        "star7",
+        "star8",
+        "star10",
+        "star12",
+        "star16",
+        "star24",
+        "star32",
+        "roundRect",
+        "round1Rect",
+        "round2SameRect",
+        "round2DiagRect",
+        "snipRoundRect",
+        "snip1Rect",
+        "snip2SameRect",
+        "snip2DiagRect",
+        "plaque",
+        "ellipse",
+        "teardrop",
+        "homePlate",
+        "chevron",
+        "pieWedge",
+        "pie",
+        "blockArc",
+        "donut",
+        "noSmoking",
+        "rightArrow",
+        "leftArrow",
+        "upArrow",
+        "downArrow",
+        "stripedRightArrow",
+        "notchedRightArrow",
+        "bentUpArrow",
+        "leftRightArrow",
+        "upDownArrow",
+        "leftUpArrow",
+        "leftRightUpArrow",
+        "quadArrow",
+        "leftArrowCallout",
+        "rightArrowCallout",
+        "upArrowCallout",
+        "downArrowCallout",
+        "leftRightArrowCallout",
+        "upDownArrowCallout",
+        "quadArrowCallout",
+        "bentArrow",
+        "uturnArrow",
+        "circularArrow",
+        "leftCircularArrow",
+        "leftRightCircularArrow",
+        "curvedRightArrow",
+        "curvedLeftArrow",
+        "curvedUpArrow",
+        "curvedDownArrow",
+        "swooshArrow",
+        "cube",
+        "can",
+        "lightningBolt",
+        "heart",
+        "sun",
+        "moon",
+        "smileyFace",
+        "irregularSeal1",
+        "irregularSeal2",
+        "foldedCorner",
+        "bevel",
+        "frame",
+        "halfFrame",
+        "corner",
+        "diagStripe",
+        "chord",
+        "arc",
+        "leftBracket",
+        "rightBracket",
+        "leftBrace",
+        "rightBrace",
+        "bracketPair",
+        "bracePair",
+        "straightConnector1",
+        "bentConnector2",
+        "bentConnector3",
+        "bentConnector4",
+        "bentConnector5",
+        "curvedConnector2",
+        "curvedConnector3",
+        "curvedConnector4",
+        "curvedConnector5",
+        "callout1",
+        "callout2",
+        "callout3",
+        "accentCallout1",
+        "accentCallout2",
+        "accentCallout3",
+        "borderCallout1",
+        "borderCallout2",
+        "borderCallout3",
+        "accentBorderCallout1",
+        "accentBorderCallout2",
+        "accentBorderCallout3",
+        "wedgeRectCallout",
+        "wedgeRoundRectCallout",
+        "wedgeEllipseCallout",
+        "cloudCallout",
+        "cloud",
+        "ribbon",
+        "ribbon2",
+        "ellipseRibbon",
+        "ellipseRibbon2",
+        "leftRightRibbon",
+        "verticalScroll",
+        "horizontalScroll",
+        "wave",
+        "doubleWave",
+        "plus",
+        "flowChartProcess",
+        "flowChartDecision",
+        "flowChartInputOutput",
+        "flowChartPredefinedProcess",
+        "flowChartInternalStorage",
+        "flowChartDocument",
+        "flowChartMultidocument",
+        "flowChartTerminator",
+        "flowChartPreparation",
+        "flowChartManualInput",
+        "flowChartManualOperation",
+        "flowChartConnector",
+        "flowChartPunchedCard",
+        "flowChartPunchedTape",
+        "flowChartSummingJunction",
+        "flowChartOr",
+        "flowChartCollate",
+        "flowChartSort",
+        "flowChartExtract",
+        "flowChartMerge",
+        "flowChartOfflineStorage",
+        "flowChartOnlineStorage",
+        "flowChartMagneticTape",
+        "flowChartMagneticDisk",
+        "flowChartMagneticDrum",
+        "flowChartDisplay",
+        "flowChartDelay",
+        "flowChartAlternateProcess",
+        "flowChartOffpageConnector",
+        "actionButtonBlank",
+        "actionButtonHome",
+        "actionButtonHelp",
+        "actionButtonInformation",
+        "actionButtonForwardNext",
+        "actionButtonBackPrevious",
+        "actionButtonEnd",
+        "actionButtonBeginning",
+        "actionButtonReturn",
+        "actionButtonDocument",
+        "actionButtonSound",
+        "actionButtonMovie",
+        "gear6",
+        "gear9",
+        "funnel",
+        "mathPlus",
+        "mathMinus",
+        "mathMultiply",
+        "mathDivide",
+        "mathEqual",
+        "mathNotEqual",
+        "cornerTabs",
+        "squareTabs",
+        "plaqueTabs",
+        "chartX",
+        "chartStar",
+        "chartPlus"
+      ]
+    },
+    {
+      "id": "shape.geometry.adjustments",
+      "label": "黄色调节柄参数",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.guides",
+      "label": "几何公式与辅助变量",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.paths",
+      "label": "多路径及轮廓",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.commands",
+      "label": "移动、直线、二次和三次曲线、圆弧、闭合",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.path_fill_rule",
+      "label": "路径填充规则",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native custom paths support nonzero; evenodd requires contour conversion and is rejected in strict authoring.",
+      "allowed_values": [
+        "nonzero",
+        "evenodd"
+      ]
+    },
+    {
+      "id": "shape.geometry.text_rect",
+      "label": "形状内文字矩形",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.handles",
+      "label": "XY/极坐标调节柄",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.connection_sites",
+      "label": "连接点位置与方向",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.path_stroke",
+      "label": "路径描边标记",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "shape.geometry.path_fill",
+      "label": "路径填充模式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "norm",
+        "lighten",
+        "lightenLess",
+        "darken",
+        "darkenLess"
+      ]
+    },
+    {
+      "id": "connector.geometry",
+      "label": "直线、折线或曲线连接类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "straight",
+        "elbow",
+        "curved"
+      ]
+    },
+    {
+      "id": "connector.start_target",
+      "label": "起点对象与连接点",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "connector.end_target",
+      "label": "终点对象与连接点",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "connector.routing",
+      "label": "连接路径及自动路由",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.text",
+      "label": "文本内容",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.latin",
+      "label": "西文字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.east_asian",
+      "label": "东亚字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.complex_script",
+      "label": "复杂文字系统字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.symbol",
+      "label": "符号字体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.size",
+      "label": "字号",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.bold",
+      "label": "粗体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.font.italic",
+      "label": "斜体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.font.face",
+      "label": "字体样式字面选择",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.charset",
+      "label": "字体字符集",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.font.pitch_family",
+      "label": "字距族与字体分类",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.fill",
+      "label": "文字填充含渐变、图案和主题色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.outline",
+      "label": "文字轮廓描边",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.highlight",
+      "label": "高亮填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.underline.type",
+      "label": "下划线类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "words",
+        "sng",
+        "dbl",
+        "heavy",
+        "dotted",
+        "dottedHeavy",
+        "dash",
+        "dashHeavy",
+        "dashLong",
+        "dashLongHeavy",
+        "dotDash",
+        "dotDashHeavy",
+        "dotDotDash",
+        "dotDotDashHeavy",
+        "wavy",
+        "wavyHeavy",
+        "wavyDbl"
+      ]
+    },
+    {
+      "id": "text.run.underline.fill",
+      "label": "下划线颜色或填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.underline.stroke",
+      "label": "下划线线型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.strike",
+      "label": "单线、双线删除线",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "noStrike",
+        "sngStrike",
+        "dblStrike"
+      ]
+    },
+    {
+      "id": "text.run.capitalization",
+      "label": "全大写、小型大写或常规",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "small",
+        "all"
+      ]
+    },
+    {
+      "id": "text.run.letter_spacing",
+      "label": "字间距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.kerning_threshold",
+      "label": "字偶距启用字号阈值",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.baseline_shift",
+      "label": "上标下标基线位移",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.normalize_height",
+      "label": "统一字符高度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.kumimoji",
+      "label": "纵排组合字符",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.language",
+      "label": "语言",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.alternative_language",
+      "label": "备用语言",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.proofing",
+      "label": "校对、错误及脏标记",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.rtl",
+      "label": "片段从右至左",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.bookmark",
+      "label": "书签",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.click_link",
+      "label": "点击超链接",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.hover_link",
+      "label": "悬停超链接",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.run.effects",
+      "label": "文字效果集合",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.field.definition",
+      "label": "字段 ID、类型、缓存文字和格式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.content",
+      "label": "有序文字、软换行、字段与行内公式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.alignment",
+      "label": "左、右、居中、两端或分散对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "l",
+        "ctr",
+        "r",
+        "just",
+        "justLow",
+        "dist",
+        "thaiDist"
+      ]
+    },
+    {
+      "id": "text.paragraph.level",
+      "label": "段落层级",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.left_margin",
+      "label": "左缩进",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.right_margin",
+      "label": "右缩进",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.first_line_indent",
+      "label": "首行或悬挂缩进",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.line_spacing",
+      "label": "固定或比例行距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.space_before",
+      "label": "段前间距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.space_after",
+      "label": "段后间距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.default_tab_size",
+      "label": "默认制表间距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.tab_stops",
+      "label": "制表位位置和对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.rtl",
+      "label": "段落从右至左",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.paragraph.font_alignment",
+      "label": "字符基线对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "auto",
+        "t",
+        "ctr",
+        "base",
+        "b"
+      ]
+    },
+    {
+      "id": "text.paragraph.east_asian_line_break",
+      "label": "东亚换行规则",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.paragraph.latin_line_break",
+      "label": "西文换行规则",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.paragraph.hanging_punctuation",
+      "label": "标点悬挂",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.paragraph.default_run_style",
+      "label": "默认文字片段样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.end_run_style",
+      "label": "段落结尾样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.kind",
+      "label": "无、字符、编号或图片项目符号",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "character",
+        "auto_number",
+        "picture"
+      ]
+    },
+    {
+      "id": "text.paragraph.bullet.character",
+      "label": "字符项目符号",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.numbering",
+      "label": "编号样式和起始值",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.font",
+      "label": "项目符号字体或跟随文字",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.color",
+      "label": "符号颜色或跟随文字",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.size",
+      "label": "符号大小或跟随文字",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.paragraph.bullet.image_ref",
+      "label": "图片项目符号",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.paragraphs",
+      "label": "段落集合",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.insets",
+      "label": "四边内边距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.vertical_anchor",
+      "label": "垂直对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "t",
+        "ctr",
+        "b"
+      ]
+    },
+    {
+      "id": "text.body.anchor_center",
+      "label": "居中锚定",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.wrap",
+      "label": "换行策略",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "square"
+      ]
+    },
+    {
+      "id": "text.body.autofit",
+      "label": "无、缩小文字或放大形状",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.autofit_scale",
+      "label": "文字缩放与行距缩减",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.rotation",
+      "label": "文字旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.vertical_mode",
+      "label": "竖排及东亚竖排模式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "horz",
+        "vert",
+        "vert270",
+        "wordArtVert",
+        "eaVert",
+        "mongolianVert",
+        "wordArtVertRtl"
+      ]
+    },
+    {
+      "id": "text.body.columns",
+      "label": "分栏数量",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.column_spacing",
+      "label": "栏间距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.columns_rtl",
+      "label": "分栏从右至左",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.wordart_warp",
+      "label": "艺术字预设变形与调节参数",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.upright",
+      "label": "保持文字直立",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.vertical_overflow",
+      "label": "纵向溢出行为",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "overflow",
+        "ellipsis",
+        "clip"
+      ]
+    },
+    {
+      "id": "text.body.horizontal_overflow",
+      "label": "横向溢出行为",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "overflow",
+        "clip"
+      ]
+    },
+    {
+      "id": "text.body.first_last_paragraph_spacing",
+      "label": "首尾段间距规则",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.compatible_line_spacing",
+      "label": "兼容行距规则",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.force_antialias",
+      "label": "强制抗锯齿",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.body.text_3d",
+      "label": "文字 3D 与平面文字",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "text.body.text_layout_cache",
+      "label": "导入布局和断行缓存",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.kind",
+      "label": "无、纯色、渐变、图案、图片或组继承",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "solid",
+        "gradient",
+        "pattern",
+        "image",
+        "group_inherit"
+      ]
+    },
+    {
+      "id": "color.kind",
+      "label": "RGB、主题、系统、预设、scRGB 或 HSL",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "rgb",
+        "scrgb",
+        "hsl",
+        "scheme",
+        "system",
+        "preset"
+      ]
+    },
+    {
+      "id": "color.channels",
+      "label": "颜色通道",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "color.alpha",
+      "label": "透明度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "color.transforms",
+      "label": "色调、明暗、亮度、饱和、补色、反相、灰度、Gamma 等有序变换",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.solid.color",
+      "label": "纯色填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.gradient.kind",
+      "label": "线性、圆形、矩形、沿形状路径",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native linear/circle/rect/shape gradients. SVG rect/shape uses a reported local PDF/PNG fallback for unrotated top-level objects when Poppler is available; other cases retain a declared approximation.",
+      "allowed_values": [
+        "linear",
+        "circle",
+        "rect",
+        "shape"
+      ]
+    },
+    {
+      "id": "paint.gradient.stops",
+      "label": "多色标位置、颜色与透明度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.gradient.angle",
+      "label": "线性渐变角度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.gradient.scaled",
+      "label": "线性渐变随形状比例缩放",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "paint.gradient.path_kind",
+      "label": "圆形、矩形或形状路径",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "shape",
+        "circle",
+        "rect"
+      ]
+    },
+    {
+      "id": "paint.gradient.fill_to_rect",
+      "label": "渐变中心/填充矩形",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.gradient.tile_rect",
+      "label": "渐变平铺矩形",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.gradient.flip",
+      "label": "渐变翻转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "x",
+        "y",
+        "xy"
+      ]
+    },
+    {
+      "id": "paint.gradient.rotate_with_shape",
+      "label": "渐变随形状旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "paint.pattern.preset",
+      "label": "图案填充类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "pct5",
+        "pct10",
+        "pct20",
+        "pct25",
+        "pct30",
+        "pct40",
+        "pct50",
+        "pct60",
+        "pct70",
+        "pct75",
+        "pct80",
+        "pct90",
+        "horz",
+        "vert",
+        "ltHorz",
+        "ltVert",
+        "dkHorz",
+        "dkVert",
+        "narHorz",
+        "narVert",
+        "dashHorz",
+        "dashVert",
+        "cross",
+        "dnDiag",
+        "upDiag",
+        "ltDnDiag",
+        "ltUpDiag",
+        "dkDnDiag",
+        "dkUpDiag",
+        "wdDnDiag",
+        "wdUpDiag",
+        "dashDnDiag",
+        "dashUpDiag",
+        "diagCross",
+        "smCheck",
+        "lgCheck",
+        "smGrid",
+        "lgGrid",
+        "dotGrid",
+        "smConfetti",
+        "lgConfetti",
+        "horzBrick",
+        "diagBrick",
+        "solidDmnd",
+        "openDmnd",
+        "dotDmnd",
+        "plaid",
+        "sphere",
+        "weave",
+        "divot",
+        "shingle",
+        "wave",
+        "trellis",
+        "zigZag"
+      ]
+    },
+    {
+      "id": "paint.pattern.foreground",
+      "label": "图案前景色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.pattern.background",
+      "label": "图案背景色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.asset_ref",
+      "label": "图片填充资源",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.crop",
+      "label": "图片填充裁剪",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.mode",
+      "label": "拉伸或平铺",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "stretch",
+        "tile"
+      ]
+    },
+    {
+      "id": "paint.image.stretch_rect",
+      "label": "图片拉伸区域",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.tile_offset",
+      "label": "平铺偏移",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.tile_scale",
+      "label": "平铺缩放",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "paint.image.tile_alignment",
+      "label": "平铺对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "tl",
+        "t",
+        "tr",
+        "l",
+        "ctr",
+        "r",
+        "bl",
+        "b",
+        "br"
+      ]
+    },
+    {
+      "id": "paint.image.tile_flip",
+      "label": "平铺翻转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "x",
+        "y",
+        "xy"
+      ]
+    },
+    {
+      "id": "paint.image.rotate_with_shape",
+      "label": "图片填充随形状旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "paint.group_inheritance",
+      "label": "继承组填充",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "stroke.width",
+      "label": "线宽",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "stroke.paint",
+      "label": "线条填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "stroke.cap",
+      "label": "平端、圆端、方端",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "rnd",
+        "sq",
+        "flat"
+      ]
+    },
+    {
+      "id": "stroke.join",
+      "label": "斜接、圆角或斜角接合",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "miter",
+        "round",
+        "bevel"
+      ]
+    },
+    {
+      "id": "stroke.miter_limit",
+      "label": "斜接限制",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "stroke.compound",
+      "label": "单线、双线、粗细组合",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "sng",
+        "dbl",
+        "thickThin",
+        "thinThick",
+        "tri"
+      ]
+    },
+    {
+      "id": "stroke.alignment",
+      "label": "居中或内侧线条对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "ctr",
+        "in"
+      ]
+    },
+    {
+      "id": "stroke.dash_preset",
+      "label": "预设虚线",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "solid",
+        "dot",
+        "dash",
+        "lgDash",
+        "dashDot",
+        "lgDashDot",
+        "lgDashDotDot",
+        "sysDash",
+        "sysDot",
+        "sysDashDot",
+        "sysDashDotDot"
+      ]
+    },
+    {
+      "id": "stroke.dash_custom",
+      "label": "自定义虚线长度间隔",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "stroke.start_arrow.kind",
+      "label": "起点箭头类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "triangle",
+        "stealth",
+        "diamond",
+        "oval",
+        "arrow"
+      ]
+    },
+    {
+      "id": "stroke.start_arrow.width",
+      "label": "起点箭头宽度类别",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "sm",
+        "med",
+        "lg"
+      ]
+    },
+    {
+      "id": "stroke.start_arrow.length",
+      "label": "起点箭头长度类别",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "sm",
+        "med",
+        "lg"
+      ]
+    },
+    {
+      "id": "stroke.end_arrow.kind",
+      "label": "终点箭头类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "none",
+        "triangle",
+        "stealth",
+        "diamond",
+        "oval",
+        "arrow"
+      ]
+    },
+    {
+      "id": "stroke.end_arrow.width",
+      "label": "终点箭头宽度类别",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "sm",
+        "med",
+        "lg"
+      ]
+    },
+    {
+      "id": "stroke.end_arrow.length",
+      "label": "终点箭头长度类别",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "sm",
+        "med",
+        "lg"
+      ]
+    },
+    {
+      "id": "effects.outer_shadow",
+      "label": "外阴影颜色、模糊、偏移、缩放、斜切、对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.inner_shadow",
+      "label": "内阴影",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.preset_shadow",
+      "label": "预设阴影",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.glow",
+      "label": "发光颜色与半径",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.soft_edge",
+      "label": "柔化边缘半径",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.reflection",
+      "label": "倒影透明度、距离、模糊和变换",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.blur",
+      "label": "模糊与边缘增长",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.fill_overlay",
+      "label": "填充叠加与混合",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.alpha",
+      "label": "Alpha 反转、阈值、替换、调制和组合",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.color_change",
+      "label": "颜色替换",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.duotone",
+      "label": "双色调",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.tint",
+      "label": "着色与明暗",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.grayscale",
+      "label": "灰度",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "effects.relative_offset",
+      "label": "相对偏移",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.transform",
+      "label": "效果变换",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "effects.dag",
+      "label": "有序效果树、引用及混合模式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Exact a:effectDag XML tree.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.camera.preset",
+      "label": "预设相机",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "legacyObliqueTopLeft",
+        "legacyObliqueTop",
+        "legacyObliqueTopRight",
+        "legacyObliqueLeft",
+        "legacyObliqueFront",
+        "legacyObliqueRight",
+        "legacyObliqueBottomLeft",
+        "legacyObliqueBottom",
+        "legacyObliqueBottomRight",
+        "legacyPerspectiveTopLeft",
+        "legacyPerspectiveTop",
+        "legacyPerspectiveTopRight",
+        "legacyPerspectiveLeft",
+        "legacyPerspectiveFront",
+        "legacyPerspectiveRight",
+        "legacyPerspectiveBottomLeft",
+        "legacyPerspectiveBottom",
+        "legacyPerspectiveBottomRight",
+        "orthographicFront",
+        "isometricTopUp",
+        "isometricTopDown",
+        "isometricBottomUp",
+        "isometricBottomDown",
+        "isometricLeftUp",
+        "isometricLeftDown",
+        "isometricRightUp",
+        "isometricRightDown",
+        "isometricOffAxis1Left",
+        "isometricOffAxis1Right",
+        "isometricOffAxis1Top",
+        "isometricOffAxis2Left",
+        "isometricOffAxis2Right",
+        "isometricOffAxis2Top",
+        "isometricOffAxis3Left",
+        "isometricOffAxis3Right",
+        "isometricOffAxis3Bottom",
+        "isometricOffAxis4Left",
+        "isometricOffAxis4Right",
+        "isometricOffAxis4Bottom",
+        "obliqueTopLeft",
+        "obliqueTop",
+        "obliqueTopRight",
+        "obliqueLeft",
+        "obliqueRight",
+        "obliqueBottomLeft",
+        "obliqueBottom",
+        "obliqueBottomRight",
+        "perspectiveFront",
+        "perspectiveLeft",
+        "perspectiveRight",
+        "perspectiveAbove",
+        "perspectiveBelow",
+        "perspectiveAboveLeftFacing",
+        "perspectiveAboveRightFacing",
+        "perspectiveContrastingLeftFacing",
+        "perspectiveContrastingRightFacing",
+        "perspectiveHeroicLeftFacing",
+        "perspectiveHeroicRightFacing",
+        "perspectiveHeroicExtremeLeftFacing",
+        "perspectiveHeroicExtremeRightFacing",
+        "perspectiveRelaxed",
+        "perspectiveRelaxedModerately"
+      ]
+    },
+    {
+      "id": "three_d.camera.field_of_view",
+      "label": "视野",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.camera.zoom",
+      "label": "相机缩放",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.camera.rotation",
+      "label": "纬度、经度、旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.light_rig.preset",
+      "label": "灯光预设",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "legacyFlat1",
+        "legacyFlat2",
+        "legacyFlat3",
+        "legacyFlat4",
+        "legacyNormal1",
+        "legacyNormal2",
+        "legacyNormal3",
+        "legacyNormal4",
+        "legacyHarsh1",
+        "legacyHarsh2",
+        "legacyHarsh3",
+        "legacyHarsh4",
+        "threePt",
+        "balanced",
+        "soft",
+        "harsh",
+        "flood",
+        "contrasting",
+        "morning",
+        "sunrise",
+        "sunset",
+        "chilly",
+        "freezing",
+        "flat",
+        "twoPt",
+        "glow",
+        "brightRoom"
+      ]
+    },
+    {
+      "id": "three_d.light_rig.direction",
+      "label": "光照方向",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "tl",
+        "t",
+        "tr",
+        "l",
+        "r",
+        "bl",
+        "b",
+        "br"
+      ]
+    },
+    {
+      "id": "three_d.light_rig.rotation",
+      "label": "灯光旋转",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.backdrop",
+      "label": "背景锚点、法向与上方向",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.bevel.top",
+      "label": "顶端棱台类型与尺寸",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.bevel.bottom",
+      "label": "底端棱台",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.extrusion_depth",
+      "label": "挤出深度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.contour_width",
+      "label": "轮廓宽度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.z_position",
+      "label": "Z 轴位置",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.material",
+      "label": "材质预设",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "legacyMatte",
+        "legacyPlastic",
+        "legacyMetal",
+        "legacyWireframe",
+        "matte",
+        "plastic",
+        "metal",
+        "warmMatte",
+        "translucentPowder",
+        "powder",
+        "dkEdge",
+        "softEdge",
+        "clear",
+        "flat",
+        "softmetal"
+      ]
+    },
+    {
+      "id": "three_d.extrusion_color",
+      "label": "挤出颜色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "three_d.contour_color",
+      "label": "轮廓颜色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "model3d.asset_ref",
+      "label": "嵌入或链接 3D 模型",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "model3d.viewport",
+      "label": "3D 视口、缩放与相机",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "model3d.poster_ref",
+      "label": "3D 模型静态替代图",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "model3d.animation",
+      "label": "3D 模型动画",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.asset_ref",
+      "label": "图片资源",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.link_ref",
+      "label": "链接图片与更新关系",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.crop",
+      "label": "裁剪与扩展",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "{left, top, right, bottom} 四边比例；同时接受 l/t/r/b 缩写，重复键须一致。",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.geometry_mask",
+      "label": "图片形状裁剪",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.aspect_fit",
+      "label": "适配、填满与保持比例",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "contain",
+        "cover",
+        "stretch"
+      ]
+    },
+    {
+      "id": "picture.brightness",
+      "label": "亮度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.contrast",
+      "label": "对比度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.recolor",
+      "label": "颜色重着色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.transparent_color",
+      "label": "透明颜色",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.alpha",
+      "label": "图片透明度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.artistic_effect",
+      "label": "艺术效果及参数",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.background_removal",
+      "label": "背景移除标记",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.compression",
+      "label": "图像压缩与分辨率元数据",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.svg_asset",
+      "label": "SVG 原资源与替代图",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native SVG image relationship plus the picture.asset_ref bitmap fallback; older readers may display the fallback.",
+      "allowed_values": []
+    },
+    {
+      "id": "picture.local_dpi",
+      "label": "使用本地 DPI 标志",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "picture.crop_locked",
+      "label": "裁剪锁定与比例约束",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "ink.strokes",
+      "label": "墨迹轨迹与绘制属性",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "ink.shape_binding",
+      "label": "墨迹形状和图层绑定",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.grid_columns",
+      "label": "列宽",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.rows.height",
+      "label": "行高",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.content",
+      "label": "单元格富文本",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.merge",
+      "label": "合并、跨行跨列及延续标志",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.fill",
+      "label": "单元格填充",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.borders",
+      "label": "上下左右和对角线边框",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.insets",
+      "label": "单元格内边距",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.cells.vertical_anchor",
+      "label": "单元格垂直对齐",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "t",
+        "ctr",
+        "b"
+      ]
+    },
+    {
+      "id": "table.cells.text_direction",
+      "label": "单元格文字方向",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "horz",
+        "vert",
+        "vert270",
+        "wordArtVert",
+        "eaVert",
+        "mongolianVert",
+        "wordArtVertRtl"
+      ]
+    },
+    {
+      "id": "table.cells.anchor_center",
+      "label": "单元格居中锚定",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.cells.overflow",
+      "label": "单元格溢出策略",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "overflow",
+        "clip"
+      ]
+    },
+    {
+      "id": "table.style_ref",
+      "label": "表格样式及自定义样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "table.first_row",
+      "label": "首行样式开关",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.last_row",
+      "label": "末行样式开关",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.first_column",
+      "label": "首列样式开关",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.last_column",
+      "label": "末列样式开关",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.band_rows",
+      "label": "横向条带",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.band_columns",
+      "label": "纵向条带",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.rtl",
+      "label": "表格从右至左",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "table.cell_style_inheritance",
+      "label": "样式与直接格式优先级",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.type",
+      "label": "图表类型含现代 chartEx",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native creation: barChart, lineChart, areaChart, pieChart, doughnutChart, scatterChart, bubbleChart, radarChart. Other chart families require imported native parts.",
+      "allowed_values": [
+        "area3DChart",
+        "areaChart",
+        "bar3DChart",
+        "barChart",
+        "bubbleChart",
+        "doughnutChart",
+        "line3DChart",
+        "lineChart",
+        "ofPieChart",
+        "pie3DChart",
+        "pieChart",
+        "radarChart",
+        "scatterChart",
+        "stockChart",
+        "surface3DChart",
+        "surfaceChart",
+        "combo",
+        "histogram",
+        "pareto",
+        "boxWhisker",
+        "waterfall",
+        "funnel",
+        "treemap",
+        "sunburst",
+        "regionMap"
+      ]
+    },
+    {
+      "id": "chart.plots",
+      "label": "组合图、分组与次坐标轴分配",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.categories",
+      "label": "类别、多级类别与日期",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.series",
+      "label": "系列名称、数据、类别和顺序",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.data_source",
+      "label": "内嵌工作簿或外链",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.data_formulas",
+      "label": "公式、区域引用与数据来源",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.cached_data",
+      "label": "类别与数据缓存",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.external_data_update",
+      "label": "外部数据更新策略",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.blank_values",
+      "label": "空白值显示方式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "span",
+        "gap",
+        "zero"
+      ]
+    },
+    {
+      "id": "chart.visible_data_only",
+      "label": "只绘制可见数据",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "chart.style_ref",
+      "label": "图表样式、颜色和主题",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.title",
+      "label": "图表富文本标题与位置",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.legend",
+      "label": "图例位置、文本、条目与布局",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes",
+      "label": "主次类别/数值/日期/系列轴",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.scale",
+      "label": "范围、对数、反向与刻度",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.crossing",
+      "label": "交叉位置与标签位置",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.number_format",
+      "label": "数值格式及来源链接",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.gridlines",
+      "label": "主次网格线",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.title",
+      "label": "坐标轴标题",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.axes.ticks",
+      "label": "主次刻度线与间隔",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.data_labels",
+      "label": "值、名称、百分比、分隔符、位置和逐点覆盖",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.data_labels.leader_lines",
+      "label": "引导线",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.markers",
+      "label": "标记类型、大小和逐点样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.trendlines",
+      "label": "趋势线、方程与 R²",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.error_bars",
+      "label": "误差线类型、值和样式",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.series.style",
+      "label": "系列、逐点填充和描边",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.series.gap_overlap",
+      "label": "柱/条间距与重叠",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.series.smoothing",
+      "label": "线条平滑",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "chart.series.explosion",
+      "label": "扇形分离",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.series.doughnut_hole",
+      "label": "圆环内径",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.data_table",
+      "label": "图表内数据表",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.manual_layout",
+      "label": "图表元素手动布局",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.plot_area",
+      "label": "绘图区填充、边框和布局",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.chart_area",
+      "label": "图表区填充、边框和布局",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.three_d",
+      "label": "旋转、视角、深度、地板与墙面",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "chart.modern_options",
+      "label": "直方图、箱线图、瀑布、树图、旭日、地图等参数",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.data_model",
+      "label": "节点、连接、语义结构",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.node_text",
+      "label": "节点富文本",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.layout_ref",
+      "label": "布局定义和算法参数",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.colors_ref",
+      "label": "颜色定义",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.quick_style_ref",
+      "label": "快速样式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.rendered_drawing",
+      "label": "缓存的绘图部件",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.node_ids",
+      "label": "节点标识与对象绑定",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "smartart.direction",
+      "label": "布局方向",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "norm",
+        "rev"
+      ]
+    },
+    {
+      "id": "smartart.node_adjustments",
+      "label": "节点手动位置和大小调整",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "math.content",
+      "label": "Office Math 完整表达式树",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "math.source",
+      "label": "LaTeX 等源表示及溯源",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "math.display_mode",
+      "label": "行内或独立公式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "inline",
+        "display"
+      ]
+    },
+    {
+      "id": "math.style",
+      "label": "数学字体、字号、颜色与字形",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "math.alignment",
+      "label": "公式对齐",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "left",
+        "center",
+        "right",
+        "center_group"
+      ]
+    },
+    {
+      "id": "math.spacing",
+      "label": "公式与普通文本的间距",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "math.compatibility_choice",
+      "label": "兼容分支与替代表示",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.kind",
+      "label": "音频、视频或旁白",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "audio",
+        "video",
+        "narration"
+      ]
+    },
+    {
+      "id": "media.asset_ref",
+      "label": "嵌入媒体",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.external_ref",
+      "label": "外部媒体与在线媒体信息",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.poster_ref",
+      "label": "封面帧",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.trim_start",
+      "label": "裁剪起点",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.trim_end",
+      "label": "裁剪终点",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.volume",
+      "label": "音量",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.mute",
+      "label": "静音",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.loop",
+      "label": "循环播放",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.play_across_slides",
+      "label": "跨页播放",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.hide_when_stopped",
+      "label": "停止时隐藏",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.rewind_after_play",
+      "label": "播放后回到起点",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.fade_in",
+      "label": "淡入时长",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.fade_out",
+      "label": "淡出时长",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.bookmarks",
+      "label": "书签时间点",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.play_trigger",
+      "label": "播放触发绑定",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.controls",
+      "label": "控制与全屏播放",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.timeline",
+      "label": "并行、串行与时间节点树",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Accepts an exact p:timing XML tree or namespace-qualified tree data; timing graph authoring is explicit native data.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.target_ref",
+      "label": "对象、文字范围或图表目标",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.behavior",
+      "label": "出现、强调、退出、动作路径及属性行为",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "entrance",
+        "emphasis",
+        "exit",
+        "motion_path",
+        "property",
+        "command",
+        "media"
+      ]
+    },
+    {
+      "id": "animation.preset",
+      "label": "预设类、ID 与子类型",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.trigger",
+      "label": "点击、同前、后前、媒体书签、事件条件",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.delay",
+      "label": "延迟",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.duration",
+      "label": "时长及自动/不定长模式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.repeat",
+      "label": "次数或重复时间",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.autoreverse",
+      "label": "自动反转",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "animation.speed",
+      "label": "播放速度",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.acceleration",
+      "label": "加速比例",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.deceleration",
+      "label": "减速比例",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.fill_mode",
+      "label": "结束保留和重启规则",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "remove",
+        "freeze",
+        "hold",
+        "transition"
+      ]
+    },
+    {
+      "id": "animation.keyframes",
+      "label": "时间、值与插值",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.motion_path",
+      "label": "运动路径及原点",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.transform",
+      "label": "位置、缩放和旋转动画",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.color",
+      "label": "颜色动画与颜色空间",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.effect",
+      "label": "滤镜、进出场与效果参数",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.command",
+      "label": "媒体或对象播放命令",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.text_build",
+      "label": "逐字、逐词、逐段或层级构建",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.chart_build",
+      "label": "图表系列与类别构建",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.diagram_build",
+      "label": "SmartArt 构建",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.iteration",
+      "label": "迭代间隔和粒度",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "animation.runtime_state",
+      "label": "交互序列与时间节点绑定",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "transition.kind",
+      "label": "标准和 Office 扩展切换类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Standard PML transitions; Office extensions such as Morph require native package preservation.",
+      "allowed_values": [
+        "p14:conveyor",
+        "p14:doors",
+        "p14:ferris",
+        "p14:flash",
+        "p14:flip",
+        "p14:flythrough",
+        "p14:gallery",
+        "p14:glitter",
+        "p14:honeycomb",
+        "p14:pan",
+        "p14:prism",
+        "p14:reveal",
+        "p14:ripple",
+        "p14:shred",
+        "p14:switch",
+        "p14:vortex",
+        "p14:warp",
+        "p14:wheelReverse",
+        "p14:window",
+        "p15:prstTrans",
+        "p:blinds",
+        "p:checker",
+        "p:circle",
+        "p:comb",
+        "p:cover",
+        "p:cut",
+        "p:diamond",
+        "p:dissolve",
+        "p:fade",
+        "p:newsflash",
+        "p:plus",
+        "p:pull",
+        "p:push",
+        "p:random",
+        "p:randomBar",
+        "p:split",
+        "p:strips",
+        "p:wedge",
+        "p:wheel",
+        "p:wipe",
+        "p:zoom",
+        "p159:morph",
+        "none"
+      ]
+    },
+    {
+      "id": "transition.direction",
+      "label": "方向及子类型",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "l",
+        "u",
+        "r",
+        "d",
+        "lu",
+        "ru",
+        "ld",
+        "rd",
+        "out",
+        "in",
+        "horz",
+        "vert"
+      ]
+    },
+    {
+      "id": "transition.duration",
+      "label": "切换时长",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "transition.speed",
+      "label": "速度预设",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "slow",
+        "med",
+        "fast"
+      ]
+    },
+    {
+      "id": "transition.advance_on_click",
+      "label": "单击换页",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "transition.advance_after",
+      "label": "自动换页时间",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "transition.sound",
+      "label": "换页声音与循环",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "transition.morph",
+      "label": "Morph 模式与对象匹配标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "zoom.kind",
+      "label": "页面、节或摘要缩放",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "slide",
+        "section",
+        "summary"
+      ]
+    },
+    {
+      "id": "zoom.target_refs",
+      "label": "导航目标",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "zoom.return_behavior",
+      "label": "缩放返回与背景显示",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "zoom.thumbnail_ref",
+      "label": "缩放缩略图资源",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.event",
+      "label": "点击或鼠标悬停",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "click",
+        "hover"
+      ]
+    },
+    {
+      "id": "interaction.hyperlink",
+      "label": "URL、页、文档或自定义放映目标",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.tooltip",
+      "label": "提示文字",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.highlight_click",
+      "label": "点击高亮与访问状态",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "interaction.navigation_action",
+      "label": "下一页、上一页、首尾页与返回",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        "next_slide",
+        "previous_slide",
+        "first_slide",
+        "last_slide",
+        "last_viewed_slide",
+        "end_show",
+        "named_slide",
+        "custom_show"
+      ]
+    },
+    {
+      "id": "interaction.media_action",
+      "label": "媒体播放动作",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.object_action",
+      "label": "OLE、程序或宏动作描述",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.sound",
+      "label": "动作声音",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "interaction.history",
+      "label": "导航历史设置",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "notes.content",
+      "label": "备注页富文本与对象",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "notes.master_ref",
+      "label": "备注母版",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "handout.master",
+      "label": "讲义母版与对象",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slideshow.custom_shows",
+      "label": "自定义放映页面列表",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slideshow.range",
+      "label": "放映范围",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "slideshow.kind",
+      "label": "演讲者、窗口或展台模式",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "speaker",
+        "window",
+        "kiosk"
+      ]
+    },
+    {
+      "id": "slideshow.loop",
+      "label": "循环放映",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slideshow.use_timings",
+      "label": "使用计时",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slideshow.show_animation",
+      "label": "显示动画",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slideshow.show_narration",
+      "label": "播放旁白",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "slideshow.pen_color",
+      "label": "演示笔颜色",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "print.options",
+      "label": "打印范围、颜色模式与讲义选项",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "comments.legacy",
+      "label": "传统批注、作者、位置和时间",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "comments.threads",
+      "label": "现代批注、回复和解决状态",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "comments.people",
+      "label": "人员与身份引用",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "comments.anchors",
+      "label": "批注对象和文字锚定",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "accessibility.title",
+      "label": "替代标题",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "accessibility.description",
+      "label": "替代描述",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "accessibility.decorative",
+      "label": "装饰性对象标志",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "accessibility.reading_order",
+      "label": "辅助阅读顺序",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "metadata.tags",
+      "label": "对象标签",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "metadata.customer_data",
+      "label": "自定义部件与业务数据",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "metadata.hidden_data_policy",
+      "label": "个人信息与隐藏内容处理策略",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.kind",
+      "label": "OLE、工作簿、控件或其他嵌入包",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "ole",
+        "embedded_package",
+        "activex_control",
+        "web_extension"
+      ]
+    },
+    {
+      "id": "embedded.asset_ref",
+      "label": "二进制或子包资源",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "OLE creation uses an explicit ProgID and optional preview; activation is controlled by the host.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.prog_id",
+      "label": "对象程序标识",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.link_ref",
+      "label": "链接对象来源",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.preview_ref",
+      "label": "对象预览图",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.display_mode",
+      "label": "图标或内容显示",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        "content",
+        "icon"
+      ]
+    },
+    {
+      "id": "embedded.activation",
+      "label": "激活动作描述",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.control_properties",
+      "label": "控件和持久化数据",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "embedded.web_extensions",
+      "label": "Web 扩展、绑定和任务窗格部件",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.security.encryption",
+      "label": "加密容器与参数",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.security.permissions",
+      "label": "IRM 与授权策略引用",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.security.write_protection",
+      "label": "写保护与只读建议",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.security.signature",
+      "label": "数字签名及修改后的有效性",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.security.sensitivity",
+      "label": "敏感度标签与策略",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    },
+    {
+      "id": "package.macro_profile",
+      "label": "pptx/pptm 容器差异与宏部件",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.unknown_xml",
+      "label": "未建模 XML 与 QName",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.unknown_parts",
+      "label": "未建模资源部件和关系",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.alternate_content",
+      "label": "兼容分支及所需命名空间",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.extension_list",
+      "label": "扩展项及 URI",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.relationship_map",
+      "label": "稳定语义 ID 与本地 rId 映射",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "compatibility.producer_metadata",
+      "label": "生成器和编辑器元数据",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "metadata",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.color_map",
+      "label": "母版颜色映射",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.preserve",
+      "label": "保留未使用母版",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "master.timeline",
+      "label": "母版时间树",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "master.transition",
+      "label": "母版切换",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.color_map_override",
+      "label": "版式颜色映射覆盖",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.header_footer",
+      "label": "版式页眉页脚",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.show_master_shapes",
+      "label": "显示母版对象",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "layout.show_master_placeholder_animations",
+      "label": "显示母版占位符动画",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "layout.timeline",
+      "label": "版式时间树",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "layout.transition",
+      "label": "版式切换",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.coordinate_space",
+      "label": "独立路径坐标空间",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.path_viewport",
+      "label": "路径 w/h 视口",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.path_formula_refs",
+      "label": "数值和公式坐标引用",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "shape.geometry.extrusion_ok",
+      "label": "路径允许挤出",
+      "authoring": "native_authoring",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Native OOXML binding; renderer behavior must be checked separately.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.autorotate_numbers",
+      "label": "数字随竖排旋转",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "text.run.equalize_spacing",
+      "label": "文字等距离分布",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "media.caption_tracks",
+      "label": "字幕轨道集合",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.caption_track.id",
+      "label": "字幕轨道标识",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.caption_track.language",
+      "label": "字幕语言",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.caption_track.label",
+      "label": "字幕轨道标签",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "media.caption_track.resource",
+      "label": "嵌入或链接字幕资源",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "live_feed.properties",
+      "label": "Cameo 对象和 LiveFeed 属性",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "live_feed.placeholder",
+      "label": "实时摄像头占位符",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "live_feed.background_removal",
+      "label": "实时源背景处理",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "live_feed.poster_ref",
+      "label": "实时摄像头静态替代图",
+      "authoring": "native_preservation",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Imported native XML/relationships retained; a new typed authoring binding is required.",
+      "allowed_values": []
+    },
+    {
+      "id": "live_feed.host_binding",
+      "label": "设备、权限和运行环境绑定",
+      "authoring": "host_required",
+      "native_import_roundtrip": "package_envelope",
+      "svg": "static_office_projection",
+      "conditions": "Host application, policy or device required.",
+      "allowed_values": []
+    }
+  ],
+  "preservation_contract": "Unknown parts and OOXML survive template round trips. This does not imply typed creation/editing of every preserved feature.",
+  "verification": "Package validation and actual render tests are separate from authoring status."
+}
