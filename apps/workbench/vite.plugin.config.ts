@@ -10,7 +10,7 @@ export default defineConfig({
     cssCodeSplit: false,
     modulePreload: false,
     rolldownOptions: {
-      input: "studio.html",
+      input: "templates.html",
       output: { codeSplitting: false },
     },
   },

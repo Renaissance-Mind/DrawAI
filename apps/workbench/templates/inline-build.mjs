@@ -5,7 +5,7 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../dist-plugin",
 );
-let html = await readFile(path.join(root, "studio.html"), "utf8");
+let html = await readFile(path.join(root, "templates.html"), "utf8");
 const scripts = [
   ...html.matchAll(/<script\b[^>]*src="([^"]+)"[^>]*><\/script>/g),
 ];
@@ -23,5 +23,5 @@ for (const match of styles) {
   html = html.replace(match[0], () => `<style>${css}</style>`);
 }
 html = html.replace(/<link\b[^>]*rel="icon"[^>]*>/g, "");
-await writeFile(path.join(root, "workbench.html"), html);
-console.log(`MCP App resource built: ${path.join(root, "workbench.html")}`);
+await writeFile(path.join(root, "templates-inline.html"), html);
+console.log(`MCP App resource built: ${path.join(root, "templates-inline.html")}`);

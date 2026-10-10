@@ -9,16 +9,16 @@
   "scripts": {
     "dev": "vite",
     "test": "node --test tests/*.test.mjs",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node templates/copy-catalog.mjs dist",
     "preview": "vite preview",
-    "build:plugin": "tsc && vite build --config vite.plugin.config.ts && node studio/inline-build.mjs",
-    "studio:serve": "node studio/server.mjs --http=8896",
-    "studio:mcp": "node studio/server.mjs",
-    "test:studio": "node --test studio/tests/*.test.mjs"
+    "build:plugin": "tsc && vite build --config vite.plugin.config.ts && node templates/inline-build.mjs",
+    "build:templates": "tsc && vite build --config vite.templates.config.ts && node templates/copy-catalog.mjs dist-templates --index",
+    "preview:templates": "vite preview --config vite.templates.config.ts --host 127.0.0.1",
+    "templates:mcp": "node templates/server.mjs",
+    "test:templates": "node --test templates/tests/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "fflate": "^0.8.3",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "zod": "^3.25.76"

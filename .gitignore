@@ -8,9 +8,9 @@ node_modules/
 .streamlit/credentials.toml
 AGENTS.md
 data/
-!apps/workbench/studio/data/
-apps/workbench/studio/data/*
-!apps/workbench/studio/data/visual-reference-templates.json
+!apps/workbench/templates/data/
+apps/workbench/templates/data/*
+!apps/workbench/templates/data/visual-reference-templates.json
 !skills/drawai-ppt/assets/rebuildable-deck/data/
 skills/drawai-ppt/assets/rebuildable-deck/data/*
 !skills/drawai-ppt/assets/rebuildable-deck/data/metrics.csv
@@ -49,6 +49,7 @@ test_codex_*.py
 *.egg-info/
 dist/
 dist-plugin/
+dist-templates/
 build/
 
 # 编辑器配置

@@ -28,7 +28,7 @@ for (const card of payload.templates.filter((t) => t.format_family === 'ppt')) {
 }
 const templates = [...cards.values()].sort((a, b) => Number(b.assets.length > 0) - Number(a.assets.length > 0) || a.name.localeCompare(b.name));
 const result = { schema: 'drawai.visual-reference-library.v1', source: { repository: 'https://github.com/Renaissance-Mind/VisualizeAnything-Server', endpoint, fetched_at: new Date().toISOString(), sha256: createHash('sha256').update(source).digest('hex'), imported_cards: imported }, templates };
-const target = path.join(root, 'apps/workbench/studio/data/visual-reference-templates.json');
+const target = path.join(root, 'apps/workbench/templates/data/visual-reference-templates.json');
 await mkdir(path.dirname(target), { recursive: true });
 await writeFile(target, `${JSON.stringify(result, null, 2)}\n`);
 console.log(JSON.stringify({ templates: templates.length, with_images: templates.filter((t) => t.assets.length).length, target }));

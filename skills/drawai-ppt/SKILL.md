@@ -5,6 +5,8 @@ description: "Create and edit editable PowerPoint presentations with a self-cont
 
 # DrawAI PPT
 
+在 DrawAI 插件中使用时，先阅读同级 [DrawAI 使用指南](../drawai/SKILL.md)。需要推荐或展示模板参考时使用 [drawai-templates](../drawai-templates/SKILL.md)，选择后继续本技能的制作流程。独立复制本技能目录使用时，直接按下文准备环境与制作。
+
 这个 skill 用于把内容提纲、数据、PPTX 模板或参考图片制作成可继续编辑的 PowerPoint，也用于修改已有演示文稿。它包含完整的 Python 工具包，可以将整个文件夹复制到其他环境使用。
 
 Agent 负责理解内容、确定页面设计和制作素材；工具包负责读取已有 PPTX、组织页面对象、导出 PPTX 与逐页 SVG，并生成检查所需的预览。文字可以保留字体、段落和行内格式，图形可以使用形状、路径、连线、渐变和分组；表格与常用图表可以作为原生对象。照片、插画、图标和单独绘制的图表也可以作为素材放入页面。

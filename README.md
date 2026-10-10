@@ -29,21 +29,21 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 <a id="quick-start"></a>
 ## ⚡ 快速上手
 
-### 方式一：Codex 插件工作台
+### 方式一：Codex 插件
 
-DrawAI 插件工作台管理 PPT 项目、页面、视觉参考与制作任务。模板库支持将真实图像参考与用户上传的 PPT 格式模板组合使用。生成和转可编辑任务交给当前 Codex 会话，产物保存后回到工作台。
+DrawAI 插件包含三个 Skill：`drawai` 是总体入口与使用指南，`drawai-templates` 推荐和展示模板参考，`drawai-ppt` 制作和编辑可编辑 PowerPoint。模板界面可以内嵌在 Codex 对话中，选好版式与风格后在当前对话继续制作。
 
 ```bash
 cd apps/workbench
 npm ci
 npm run build:plugin
 cd ../..
-node scripts/install_studio_plugin.mjs
+node scripts/install_plugin.mjs
 ```
 
-加载插件后，在 Codex 会话中打开 DrawAI 工作台。安装器接入本地 MCP 项目服务，并打包 `drawai-studio`、`drawai-simple` 和 `drawai-ppt`。工作台采用现有的浅色设计，并适配会话旁的窄面板。
+安装后新建 Codex 聊天，使用 `$drawai` 先阅读指南。可以说“推荐适合科研汇报的模板”或“根据这份内容制作可编辑 PPT”。需要选模板时显示内嵌界面，制作直接使用 `drawai-ppt`。
 
-[插件安装、项目存储、制作流程与浏览器调试](docs/zh-CN/studio-plugin.md)。
+[插件安装、技能分工与独立模板网站](docs/zh-CN/plugin.md)。
 
 ### 方式二：🧑‍💻 浏览器工作台
 

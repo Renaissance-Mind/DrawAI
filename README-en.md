@@ -29,21 +29,21 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 <a id="quick-start"></a>
 ## ⚡ Quick Start
 
-### Option 1: Codex plugin workbench
+### Option 1: Codex plugin
 
-The DrawAI plugin workbench manages presentation projects, pages, visual references, and production tasks. Combine real reference images with uploaded PPT format templates, then let the current Codex conversation generate slide images and reconstruct editable PowerPoint outputs.
+The DrawAI plugin contains three skills: `drawai` is the entry guide, `drawai-templates` recommends and displays real visual references, and `drawai-ppt` creates and edits editable PowerPoint. Browse templates inline in Codex, choose layout and style references, then continue creating the deck in the current conversation.
 
 ```bash
 cd apps/workbench
 npm ci
 npm run build:plugin
 cd ../..
-node scripts/install_studio_plugin.mjs
+node scripts/install_plugin.mjs
 ```
 
-Load the plugin and open DrawAI from a Codex conversation. The installer connects the local MCP project service and packages `drawai-studio`, `drawai-simple`, and `drawai-ppt`. The workbench retains the existing light design and adapts to narrow conversation panels.
+Open a new Codex chat and start with `$drawai`. Ask for templates for a research talk or provide your content and request an editable presentation. Template selection uses an inline chooser; presentation creation uses `drawai-ppt` directly.
 
-See the [plugin setup and workflow guide](docs/zh-CN/studio-plugin.md) for persistence, task execution, and browser development.
+See the [plugin guide](docs/zh-CN/plugin.md) for installation, skill responsibilities, and the standalone template website.
 
 ### Option 2: 🧑‍💻 Browser workbench
 

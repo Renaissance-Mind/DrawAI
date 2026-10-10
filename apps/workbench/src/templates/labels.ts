@@ -1,25 +1,3 @@
-import type { ReferenceRole, TaskKind, TaskStatus } from "./types";
-export const roleLabels: Record<ReferenceRole, string> = {
-  content: "内容材料",
-  structure: "信息结构",
-  style: "视觉风格",
-  ppt_template: "PPT 格式模板",
-};
-export const taskLabels: Record<TaskKind, string> = {
-  generate: "生成图片",
-  edit_image: "修改图片",
-  convert: "转为可编辑 PPT",
-  prepare_reference: "解析参考模板",
-  export_deck: "导出整套 PPT",
-};
-export const statusLabels: Record<TaskStatus, string> = {
-  draft: "待发送",
-  submitted: "已提交",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-};
 export const categoryLabels: Record<string, string> = {
   academic_research: "学术研究",
   academic_teaching: "学术教学",
@@ -80,10 +58,3 @@ export const categoryLabels: Record<string, string> = {
 };
 export const categoryName = (value: string) =>
   categoryLabels[value] || value.replace(/_/g, " ");
-export const timeLabel = (value: string) =>
-  new Date(value).toLocaleString("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });

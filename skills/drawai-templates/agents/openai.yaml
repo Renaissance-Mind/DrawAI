@@ -1,0 +1,4 @@
+interface:
+  display_name: "DrawAI Templates"
+  short_description: "Browse real visual references and choose templates for your PPT"
+  default_prompt: "使用 $drawai-templates，推荐并展示适合当前 PPT 内容的模板参考。"
