@@ -116,6 +116,37 @@ def test_auto_torch_device_falls_back_to_cpu(monkeypatch):
     assert _resolve_sam3_torch_device("auto") == "cpu"
 
 
+def test_empty_torch_cache_skips_unavailable_mps_backend(monkeypatch):
+    calls = []
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            empty_cache=lambda: calls.append("cuda"),
+        ),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+        mps=SimpleNamespace(empty_cache=lambda: calls.append("mps")),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    local_runtime._empty_torch_cache()
+
+    assert calls == ["cuda"]
+
+
+def test_empty_torch_cache_clears_available_mps_backend(monkeypatch):
+    calls = []
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True)),
+        mps=SimpleNamespace(empty_cache=lambda: calls.append("mps")),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    local_runtime._empty_torch_cache()
+
+    assert calls == ["mps"]
+
+
 def test_sam3_torch_factory_patch_redirects_hardcoded_cuda_allocations():
     calls = []
 

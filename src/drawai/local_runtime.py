@@ -584,8 +584,9 @@ def _empty_torch_cache() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     mps = getattr(torch, "mps", None)
-    if mps is not None and hasattr(torch.mps, "empty_cache"):
-        torch.mps.empty_cache()
+    mps_empty_cache = getattr(mps, "empty_cache", None)
+    if _torch_mps_available(torch) and callable(mps_empty_cache):
+        mps_empty_cache()
 
 
 def _restore_env_var(name: str, value: str | None) -> None:
