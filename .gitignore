@@ -18,6 +18,43 @@ results/
 logs/
 docs/agent-memory.md
 docs/superpowers/
+# Keep development plans, drafts, comparisons, reports and evidence local.
+# Store new development records in .local/ or the ignored directories below.
+# Published user guides and evaluation definitions are explicitly tracked.
+/docs/**
+!/docs/en/
+!/docs/en/evaluation.md
+!/docs/en/evaluation-metrics.md
+!/docs/en/pptx-editing.md
+!/docs/zh-CN/
+!/docs/zh-CN/evaluation.md
+!/docs/zh-CN/evaluation-metrics.md
+!/docs/zh-CN/pptx-editing.md
+!/docs/zh-CN/plugin.md
+!/docs/zh-CN/runtime-options.md
+!/docs/zh-CN/windows-native-deployment.md
+!/docs/evaluation/
+!/docs/evaluation/metric_catalog.json
+plans/
+dev-docs/
+dev-notes/
+reports/
+comparisons/
+PLAN.md
+*-plan.md
+*_plan.md
+*-implementation-plan.*
+*_implementation_plan.*
+*-design.md
+*_design.md
+*-draft.md
+*_draft.md
+*-comparison.md
+*_comparison.md
+*-report.md
+*_report.md
+*-results.md
+*_results.md
 output/
 outputs/
 runs/

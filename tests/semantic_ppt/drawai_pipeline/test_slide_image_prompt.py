@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from drawai.slide_image_prompt import (
     build_legacy_workbench_image_generation_prompt,
     build_slide_image_generation_manifest,
@@ -292,15 +290,6 @@ def test_codex_imagegen_context_keeps_only_supported_prompt_fields() -> None:
     assert "template_spec" not in merged
     assert "ip_safety_mode" not in merged
     assert "api_key" not in merged
-
-
-def test_original_codex_imagegen_runner_snapshot_is_available() -> None:
-    snapshot = Path("docs/baselines/codex_python_sdk_imagegen.original.py")
-
-    assert snapshot.is_file()
-    text = snapshot.read_text(encoding="utf-8")
-    assert "def invoke_codex_python_sdk_imagegen" in text
-    assert "Internal DrawAI text-to-image runner." in text
 
 
 def test_slide_image_generation_manifest_is_structured() -> None:
