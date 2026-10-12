@@ -1,76 +1,47 @@
-# DrawAI 插件
+# DrawAI Session 集成
 
-DrawAI 的制作流程先确定页面视觉图像，再把图像转成可编辑 PPT。三个 Skill 分别负责入口与确认、视觉设计、实际转换与文件编辑。
-
-## 安装
-
-需要已安装并登录的 Codex CLI，以及 Node.js 20.19+ 或 22.12+。在仓库中执行：
+Session、Workbench 与 CLI 使用同一 DrawAI 安装。完整安装、依赖和配置见 [统一安装与使用](installation.md)。
 
 ```bash
-cd apps/workbench
-npm ci
-npm run build:plugin
-cd ../..
-node scripts/install_plugin.mjs
+uv tool install --python 3.12 .
+drawai setup --agent codex
+# Claude Code 使用：drawai setup --agent claude
 ```
 
-安装器创建 `.local/plugin-marketplace` 并安装 `drawai@drawai-local`。插件包含 `drawai-readme`、`drawai-design`、`drawai-image2ppt`，以及模板、规划和 Workbench 桥接工具。服务指向当前 checkout；重新安装更新技能、路径与 UI 构建标识。
+打开新会话，从 `$drawai-readme` 提供材料与目标。三个技能负责读取需求、设计页面和制作/检查 PPT。通用宿主用 `drawai session install --host generic --output-dir /path/to/adapter` 导出 Skills 与 MCP 配置。
 
-使用插件时从 `$drawai-readme` 开始，例如“根据项目中的模板做 10 页 16:9 的科研汇报，直接使用 Skill 转 PPT”。当前会话的图像工具和模型由 Agent 从真实会话信息检查；MCP 服务不推断隐藏的模型。
+## 当前会话与模型
 
-## 阶段与确认
+默认由当前 Agent 制作：Claude 会话使用当前 Claude 配置，Codex 会话使用当前 Codex 配置。宿主模型和推理设置沿用本轮实际值；未知版本不自动改用另一个 Agent。需要看图和真实代码执行能力，缺项直接报告。只有用户明确指定其他 Agent、模型或 Flow 时才改变相应执行方式。
 
-| 技能 | 负责的工作 |
-| --- | --- |
-| `drawai-readme` | 读取需求与材料、检查环境、自动推荐转换模式，补齐仍缺失的信息 |
-| `drawai-design` | 模板和参考选择、逐页视觉设计、图像生成或接收用户已确定的图像，交付有序清单 |
-| `drawai-image2ppt` | 当前会话重建或提交 DrawAI-Flow，原生 PPT 构建与编辑、导出、检查和交付 |
+图像来源独立选择：当前 Session 的图像工具、用户提供的 Images API、已有图片或可真实渲染的本地排版。外接图像 API 不改变最终执行 Agent。连接由工作台设置或 `drawai config connections` 共用管理。
 
-只询问尚未确定的三点：是否使用参考、页数与比例、图像转 PPT 的模式。已经给出的信息直接沿用，明确“不要询问”或已说明制作流程时直接执行。问题模板与规划请求在 [需求确认](../../skills/drawai-readme/references/intake.md)。
-
-默认模型策略为 GPT 5.6+、Claude 5+、DeepSeek Flash v4.1+ 使用当前会话 Skill，其他或版本未知使用 DrawAI-Flow。Skill 还需要看图与本地执行能力，Flow 使用工作台已有的配置。用户明确指定的模式优先。规则以 [模型策略](../../skills/drawai-readme/references/model-policy.json) 为准，不是模型质量评分。
-
-设计阶段保存 `drawai.visual-deck.v1`，记录每页真实图像、页序、比例、内容和 SHA-256。两个转换模式使用同一份清单，最后都检查实际 PPTX、可编辑对象与渲染预览。
-
-## MCP 与 Workbench
+## MCP 工具
 
 | 工具 | 用途 |
 | --- | --- |
-| `drawai_templates` | 搜索、读取参考详情和关键词相关度候选 |
-| `drawai_show_templates` | 在对话内展示模板选择界面 |
-| `drawai_prepare_template` | 为设计阶段准备原图与参考说明，校验哈希 |
-| `drawai_plan` | 根据当前真实环境与用户偏好，返回模式、缺失问题和阻塞项 |
-| `drawai_flow` | 接入现有 Workbench 的提交、启动、状态与导出 |
+| drawai_templates | 查找、读取、推荐真实模板 |
+| drawai_show_templates | 内嵌模板界面；无 MCP Apps 的宿主仍可通过数据工具读取模板 |
+| drawai_prepare_template | 下载并检查参考图片哈希 |
+| drawai_plan | 当前 Session 规划，分别确定图像来源与实施 Agent |
+| drawai_image | 使用共用 Images API 连接生成/编辑真实图像 |
+| drawai_flow | 用户明确委托的工作台提交、执行、状态和导出 |
 
-模板 UI 需要 MCP Apps 的 UI 资源与会话桥接，支持 Inline 和展开显示。Skill 的理解、设计与当前会话重建继续由 Agent 执行。MCP 对 Flow 的桥接直接使用现有 Workbench API，不增加 Studio 项目／任务工作台。
+安装后的 MCP 使用安装包的 Python，直接调用共同核心；用户不必构建 Node MCP 服务。前端在发行构建时准备。工具包代码位于安装包中的 `pptx_skill`，技能脚本保持兼容。
 
-`drawai_flow` 的 `submit` 校验图像清单并建立排队批次，`start` 执行该批次，`status` 查询真实阶段状态，`export` 下载完成的 PPTX 到新路径。`auto_start=false` 也可通过原有批次 API 建立待执行批次；原浏览器提交默认仍立即执行。
+## Flow 与独立模型配置
 
-服务默认 API 为 `http://127.0.0.1:8890`，界面为 `http://127.0.0.1:5174/`。可使用 `DRAWAI_WORKBENCH_API_URL`、`DRAWAI_WORKBENCH_UI_URL` 和 `DRAWAI_PYTHON` 配置安装环境。首次 Workbench 与模型准备见[运行文档](runtime-options.md)。Flow 的处理器和 Agent 配置是工作台配置，与当前会话的模型身份分开判断。
-
-## 模板网页
-
-模板页使用真实参考目录，点击卡片选择，选中显示边框。参考的示例内容不成为用户的事实或数据。可独立构建静态网站：
+Session 明确使用 Flow 时，把 `drawai_plan` 返回的 `implementation.flow_agent_settings` 传为提交的 `agent_settings`。本任务保留调用者 Agent 类型、已知模型与推理参数，工作台使用自己的认证；全局配置保持原值。用户明确选择工作台已有 Agent 时使用 configured。
 
 ```bash
-cd apps/workbench
-npm run build:templates
-npm run preview:templates -- --port 5198
+drawai setup --enable workbench
+drawai workbench
 ```
 
-打开 `http://127.0.0.1:5198/`。`dist-templates/` 可部署到静态服务；网页选择可复制到当前对话，继续设计。原位图重建工作台使用 `/`，模板开发页使用 `/templates.html`。
+默认 UI 和 API 共用 `http://127.0.0.1:8890/`。地址通过 `drawai config flow` 或既有 `DRAWAI_WORKBENCH_API_URL` / `DRAWAI_WORKBENCH_UI_URL` 设置；设置在三个入口间共享。
 
-## 验证与交付
+## 维护
 
-PPT 工具包位于 `skills/drawai-image2ppt`，需要 Python 3.12+ 和其依赖；渲染需要 LibreOffice 与 Poppler，公式转 Office Math 需要 Pandoc。两种模式都交付真实文件并检查，不把批次提交成功当作 PPT 完成。
+更新 DrawAI 安装后重新执行 `drawai setup --agent <宿主>`，并打开新会话。原 `node scripts/install_plugin.mjs` 兼容命令转交统一安装器。源码 UI 开发仍可执行 `npm run build:plugin`、`npm run build:templates`；普通安装使用已构建资源。
 
-```bash
-cd apps/workbench
-npm run build
-npm run build:plugin
-npm run build:templates
-npm test
-npm run test:templates
-```
-
-模型路由、提问规则、图像清单与 Workbench 桥接另有真实文件和 API 检查。完整模型推理与复杂页面重建的验收仍以本次实际产物为准。
+两种转换方法都检查实际 PPTX、可编辑对象、文字/数据和渲染预览，并交付制作源与报告。

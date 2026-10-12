@@ -13,7 +13,7 @@
 
 **DrawAI turns raster paper figures, technical diagrams, and slide screenshots into editable SVG and PPTX artifacts.**
 
-It decomposes input images into structure, text, and local assets, then generates vector results that are easier to keep editing. Use it as a CLI, or start the Workbench in the browser for batch uploads, progress tracking, and artifact management.
+Use the same DrawAI installation in an Agent Session, the browser Workbench or CLI to design presentations, edit native PowerPoint objects and reconstruct raster figures.
 
 <a id="demo"></a>
 ## 🎬 Demo
@@ -24,114 +24,64 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 ## 🔥 News
 
 - **2026.08** — Our paper, [*DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable*](https://arxiv.org/abs/2608.00548), is now available on arXiv.
-- **2026.08** — Added support for LLM APIs, with Claude Code SDK as the default inference backend.
+- **2026.08** — Added support for LLM APIs, with Agent SDK and API execution options.
 
 <a id="quick-start"></a>
 ## ⚡ Quick Start
 
-### Option 1: Codex plugin
+Install DrawAI once, then enable Session, Workbench or CLI capabilities. Images may use host tools or a user API; Session implementation defaults to the current Agent's model and configuration.
 
-The DrawAI plugin contains three skills: `drawai-readme` organizes the workflow, `drawai-design` determines page visuals, and `drawai-image2ppt` converts them into editable PowerPoint in the current session or through DrawAI-Flow. Browse templates inline in Codex, choose layout and style references, then continue creating the deck in the current conversation.
+### Install
 
-```bash
-cd apps/workbench
-npm ci
-npm run build:plugin
-cd ../..
-node scripts/install_plugin.mjs
-```
-
-Open a new Codex chat and start with `$drawai-readme`. Ask for templates for a research talk or provide your content and request an editable presentation. Template selection uses an inline chooser; image-to-PPT conversion uses `drawai-image2ppt`.
-
-See the [plugin guide](docs/zh-CN/plugin.md) for installation, skill responsibilities, and the standalone template website.
-
-### Option 2: 🧑‍💻 Browser workbench
-
-Use the browser workbench for raster reconstruction, batch uploads, and pipeline progress:
+From this checkout, with Node.js 20.19+ or 22.12+ available for the source frontend build:
 
 ```bash
-uv run drawai setup local
-uv run drawai workbench
+uv tool install --python 3.12 .
+drawai setup
+drawai doctor
 ```
 
-Open `http://127.0.0.1:5174/`. See the [runtime options](docs/zh-CN/runtime-options.md) for remote deployment, model services, and port configuration.
+Prebuilt wheels need neither Node.js nor the source checkout at runtime. See [unified installation](docs/en/installation.md) for updates, existing data and optional dependencies.
 
-### Option 3: 🖥️ CLI
-
-This is the simplest single-machine path and the best way to confirm that DrawAI runs correctly.
+### Agent Session
 
 ```bash
-uv run drawai setup local
-uv run drawai run examples/demo_figure.png --local
+drawai setup --agent codex
+# Claude Code: drawai setup --agent claude
 ```
 
-`setup local` automatically runs a doctor check after it finishes.
+Open a new chat with `$drawai-readme` and provide your materials and goal. Image generation can use host tools or a configured Images API. The current Claude, Codex or other capable Agent performs final authoring; an executor changes only when explicitly selected by the user.
 
-Run your own image:
+### Workbench
 
 ```bash
-uv run drawai run /path/to/your/image.png --local --run-name my_first_drawai_run
+drawai setup --enable workbench
+drawai workbench
 ```
 
-Use the same device profile during setup and runtime when you want NVIDIA GPU or Apple Silicon MPS support:
+Open `http://127.0.0.1:8890/`. The packaged UI shares core tools, templates and configuration with Session and CLI. Generate images, process batches, configure processors and inspect progress. Local models, SDKs and preview tools are enabled only when needed.
+
+### CLI
 
 ```bash
-uv run drawai setup local --device gpu
-uv run drawai run /path/to/your/image.png --local --device gpu
+drawai config connections --import connections.json
+drawai image generate --connection my-images --prompt "Actual page content" --output-dir visuals
+drawai presentation export deck.document.json --pptx output/deck.pptx
 ```
+
+Use actual connection IDs and task files. Native editing uses `drawai ppt create/edit`, visual manifests use `drawai visual`, and delegated conversion uses `drawai flow`. Existing `drawai run <image> --local` and stage commands remain compatible; optional local models can be prepared with `drawai setup --enable models`.
+
+### Shared configuration and capabilities
+
+`DRAWAI_HOME` defaults to `~/.drawai`. Workbench settings, `drawai config` and Session tools use the same connection files. Session implementation retains the host's real configuration; standalone execution uses the shared configured backend.
 
 ```bash
-uv run drawai setup local --device mps
-uv run drawai run /path/to/your/image.png --local --device mps
+drawai setup --enable preview --install-system
+drawai setup --enable llm
+drawai doctor --require preview
 ```
 
-## 🧰 Requirements
-
-- Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/)
-- Node.js 20.19+ or 22.12+ for the Workbench frontend
-- Working Codex/OpenAI authentication, or a configured Agent CLI/ACP Agent such as Kimi (`kimi`), Claude (`claude`), Codex (`codex exec`), OpenClaw (`openclaw agent`), Hermes (`hermes chat`), or OpenHands (`openhands acp`), for run0 asset analysis and SVG generation
-- >8 GB disk space for model weights and the installed runtime environment
-
-The default local runtime directory is:
-
-```text
-.local/drawai_runtime/
-```
-
-It is not tracked by git. Model downloads use ModelScope by default. See [runtime options](docs/zh-CN/runtime-options.md) for Hugging Face downloads, manual model paths, Torch backend selection, custom ports, and other advanced settings.
-
-### Choose Codex SDK, Agent CLI, Or ACP Agent
-
-The default config continues to use the Codex Python SDK. To use a direct CLI instead, switch the SVG backend and runtime provider to `agent_cli`, then choose `kimi`, `claude`, `codex`, `openclaw`, `hermes`, or a custom command under `model_runtime.cli`:
-
-```yaml
-svg:
-  generation_backend: agent_cli
-model_runtime:
-  provider: agent-cli
-  connection_id: kimi
-  cli:
-    agent: kimi
-    command:
-      - kimi
-```
-
-The Agent CLI path is used for both run0 asset analysis and SVG generation. No config change is needed when staying on the Codex SDK. For Claude, Codex, OpenClaw, or Hermes CLI, change `agent` and `command` to the corresponding command, for example `claude`, `codex exec`, `openclaw agent`, or `hermes chat`.
-
-OpenHands connects over the ACP JSON-RPC stdio protocol. After installing OpenHands and completing its own ChatGPT subscription authorization, select the built-in `openhands` preset; its default command is `openhands acp --always-approve`:
-
-```yaml
-svg:
-  generation_backend: acp_agent
-model_runtime:
-  provider: acp-agent
-  connection_id: openhands
-  acp:
-    agent: openhands
-```
-
-OpenHands keeps separate OAuth credentials under `~/.openhands`; do not copy `~/.codex/auth.json`. See the [runtime options](docs/zh-CN/runtime-options.md#openhands-acp-后端) for the currently verified install, authorization, and compatibility commands.
+The base package contains presentation tools, Session planning, templates and Images API support. Workbench, Agent SDKs, local models and OS preview tools are optional. The Dockerfile deploys the same distribution as a controlled single-workspace service; multi-user service requirements are documented in the installation guide.
 
 <a id="outputs"></a>
 ## 📦 Output Locations
@@ -163,7 +113,7 @@ outputs/case_001_*/
 Workbench tasks and uploaded files are stored by default under:
 
 ```text
-.local/workbench/
+~/.drawai/workbench/
 ```
 
 ## 💬 Contact Us

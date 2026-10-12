@@ -2,6 +2,13 @@
 
 All notable public updates are grouped by date. Each date lists user-facing feature changes and important capability updates.
 
+## 2026-10-13
+
+- Unified Session, Workbench and CLI installation, resource packaging, API connections and presentation tools in the 0.2.0 distribution.
+- Session implementation now retains the current Agent configuration by default, with independent host/API image generation and explicit executor overrides.
+- Added optional capability setup, shared configuration/doctor commands, packaged Workbench serving without Node at runtime, Python stdio MCP and a server Dockerfile.
+- Kept existing pipeline commands and skill/script entry points as compatibility adapters.
+
 ## 2026-06-18
 
 - Added the Agent CLI backend for asset analysis and SVG generation, with support for `codex cli`, `claude`, `kimi-code`, `OpenClaw`, `Hermes`, and custom agent commands.

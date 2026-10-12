@@ -1,54 +1,46 @@
 # 需求确认与规划请求
 
-## 确认模板
-
-先读已有需求，只保留未确定的项目。把尖括号替换为实际判断，不把模板原样发送给用户。
-
-```text
-当前环境：<图像生成工具可用／不可用／已有完整页面图像>；图像转 PPT 推荐 <Skill／DrawAI-Flow>。
-
-1. 参考：<使用项目模板／从模板库挑选参考／不使用参考图>？
-2. 页面：<建议 8 页、16:9；已确定的页数或比例直接写明，只询问缺失部分>。
-3. 转换：<推荐模式>，还是 <另一种模式>？
-   Skill：当前会话按图像重建对象、导出和检查 PPT。
-   DrawAI-Flow：提交 Workbench，用工作台已配置的流程与模型解析、重建和导出。
-```
-
-例如用户说“按项目模板做 10 页，16:9，直接用 Skill”，参考、细节和模式都已确定，直接开始。用户说“按这个流程做，别问我”时直接采用已有信息与合理默认值。已经提供完整页面图像时，不再询问是否重新选择视觉参考；页数按图像数量确定。
-
-用户只说“帮我做一套关于某主题的 PPT”时，先读可用材料与环境，再合并询问上述缺失偏好。明确回复前不把推荐项当作用户已经选择。对于无法继续的真实输入空缺，提出具体问题，不反复询问已确定偏好。
-
-## 规划器的输入
+默认保留当前 Session 的 Agent 配置。只询问尚缺的参考、页数、比例与实际输入；用户已指定图像来源或执行方法时沿用。图像生成可以采用宿主工具、用户 API、已有页面或本地真实排版。API 图像生成不改变最终制作 Agent。
 
 ```json
 {
   "environment": {
-    "model": "gpt-5.6",
+    "context": "session",
+    "agent": "claude",
+    "model": "用户本轮实际模型",
     "model_source": "session_metadata",
     "image_generation_available": true,
     "image_viewing_available": true,
     "local_execution_available": true,
-    "flow_available": null
+    "image_api_available": null,
+    "flow_available": null,
+    "agent_config": {}
   },
   "preferences": {
     "reference": "project",
     "page_count": 10,
     "aspect_ratio": "16:9",
-    "mode": "skill",
-    "skip_questions": false,
-    "workflow_specified": true
+    "mode": "auto",
+    "image_generation": "auto",
+    "implementation_agent": "current",
+    "skip_questions": false
   },
   "inputs": {
     "pptx_templates": ["/actual/project/template.pptx"],
     "reference_images": [],
-    "visual_page_count": 0,
-    "visual_aspect_ratio": null
+    "visual_page_count": 0
   }
 }
 ```
 
-这是接口结构示例，模型标识和路径必须换成当前真实值。`model_source` 可为 `session_metadata`、`host_display`、`user` 或 `unknown`。能力字段可为布尔值或 `null`，不能把未知当作可用。
+示例中的 Agent、模型与路径须替换成真实值。`context` 可为 session、workbench、cli、server，缺省为 session；Session 默认 Skill，独立运行默认 Flow。`model_source` 可为 session_metadata、host_display、user、unknown。未知能力为 null，不按模型名称猜测。
 
-`reference` 可为 `project`、`provided`、`library`、`none`，未确定时省略。`mode` 可为 `auto`、`skill`、`flow`。未确定的页数和比例省略。`visual_page_count` 只统计已经确定的完整页面图像，不统计普通参考素材。
+`mode` 可为 auto、skill、flow。`image_generation` 可为 auto、session、api、local；指定 `image_connection` 即选择该 API。统一工具从共同配置解析连接和凭据是否已提供，不声称连接已通过网络调用测试。pure Python `create_plan` 使用请求中给定事实。
 
-规划器返回 `decisions`、`questions`、`blockers` 与 `ready_to_start`。明确模式优先于模型策略，已有输入自动补齐相应事实。`skip_questions` 或 `workflow_specified` 为真时不返回偏好问题。只有问题为空、必要能力无阻塞时才能进入相应执行阶段。
+`implementation_agent` 缺省在 Session 为 current，在独立环境为 configured。用户明确指定其他 Agent 时填实际标识，并核实 `external_agent_available`。默认制作不启动子进程。用户指定另一个模型时，在相应宿主配置或显式执行命令中应用，不能把全局默认模型当作本轮会话模型。
+
+返回包括 `design`、`implementation`、`decisions`、`questions`、`blockers` 和 `ready_to_start`。`implementation.configuration_source="caller_session"` 表示沿用当前 Agent 的实际配置。所缺能力形成阻塞，不自动切换执行者。
+
+Session 用户明确选择 Flow 时，`agent` 或 `agent_config.selected_provider_id` 必须提供真实执行后端身份。Claude/Codex 身份映射为对应 CLI，已知模型与推理参数形成 `implementation.flow_agent_settings`，提交时原样作为本任务 `agent_settings`。用户要求工作台自行选择时使用 configured；该任务使用工作台配置。
+
+完整页面图片直接采用输入数量和比例。`skip_questions` 或 `workflow_specified` 为 true 时不返回偏好问题；必要输入或工具缺失仍要明确处理。

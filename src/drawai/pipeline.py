@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .resources import resource_root
+
 import json
 import re
 import shutil
@@ -1904,7 +1906,7 @@ class _DefaultSvgInvoker:
             runtime_config=self.runtime_config,
             trace_path=self.trace_path,
             isolated_cwd=self.paths.root,
-            additional_roots=(Path(__file__).resolve().parents[2],),
+            additional_roots=(resource_root(),),
         )
         return session.invoke(
             image_paths=[Path(kwargs["figure_path"]), Path(kwargs["reference_image_path"])],
@@ -1937,7 +1939,7 @@ class _DefaultSvgInvoker:
             task_name=f"box_ir_semantic_svg.{phase}.v1",
             runtime_config=runtime_config,
             workspace_dir=self.paths.root,
-            repo_root=Path(__file__).resolve().parents[2],
+            repo_root=resource_root(),
             trace_path=self.trace_path,
             max_output_tokens=int(runtime_config.get("max_output_tokens") or 32768),
             max_iterations=int(runtime_config.get("max_iterations") or DEFAULT_TOOL_AGENT_MAX_ITERATIONS),
@@ -3463,7 +3465,7 @@ def _native_backfill_validation_assets_for_export(paths: DrawAiArtifactPaths) ->
 
 
 def _run_codex_run0_asset_analysis(cfg: DrawAiPipelineConfig, paths: DrawAiArtifactPaths) -> None:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = resource_root()
     build_report_script = repo_root / "scripts" / "build_assemble_debug_report.py"
     element_analysis_script = repo_root / "scripts" / "run_codex_element_analysis.py"
     _run_repo_script(

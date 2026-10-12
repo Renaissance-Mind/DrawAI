@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .installed_wheel import runtime_install_arguments
+
 import os
 import shutil
 import subprocess
@@ -221,8 +223,7 @@ def bootstrap_local_runtime(
         _pip_install_command(
             runtime_python,
             [
-                "-e",
-                str(repo_root),
+                *runtime_install_arguments(repo_root),
                 "paddleocr==3.5.0",
                 "paddlex==3.5.2",
                 "transformers==4.57.6",
@@ -241,22 +242,18 @@ def bootstrap_local_runtime(
         env=setup_env,
         monitor_paths=[runtime_root],
     )
-    _run_setup_command(
-        _pip_install_command(runtime_python, ["openai-codex", "pydantic<2.14"], prerelease=True),
-        label="install Codex Python SDK",
-        cwd=repo_root,
-        env=setup_env,
-        monitor_paths=[runtime_root],
-    )
-
+    if setup_env.get("DRAWAI_VISION_ONLY") != "1":
+        _run_setup_command(
+            _pip_install_command(runtime_python, ["openai-codex", "pydantic<2.14"], prerelease=True),
+            label="install explicitly selected legacy Codex runtime",
+            cwd=repo_root, env=setup_env, monitor_paths=[runtime_root],
+        )
     _materialize_runtime_artifacts(runtime_root=runtime_root, env=setup_env)
-    _run_setup_command(
-        [str(runtime_python), "-c", "import openai_codex"],
-        label="verify Codex Python SDK import",
-        cwd=repo_root,
-        env=setup_env,
-        monitor_paths=[runtime_root],
-    )
+    if setup_env.get("DRAWAI_VISION_ONLY") != "1":
+        _run_setup_command(
+            [str(runtime_python), "-c", "import openai_codex"],
+            label="verify legacy Codex runtime", cwd=repo_root, env=setup_env, monitor_paths=[runtime_root],
+        )
     _verify_runtime_files(runtime_root)
     print("[drawai-setup] runtime bootstrap complete")
 

@@ -20,7 +20,8 @@ def test_openai_codex_dependency_is_project_and_runtime_dependency():
     bootstrap_text = (repo_root / "scripts" / "bootstrap_drawai_local_runtime.sh").read_text(encoding="utf-8")
     lock_text = (repo_root / "uv.lock").read_text(encoding="utf-8")
 
-    assert "openai-codex" in pyproject["project"]["dependencies"]
+    assert "openai-codex" not in pyproject["project"]["dependencies"]
+    assert "openai-codex" in pyproject["project"]["optional-dependencies"]["codex"]
     assert "pydantic<2.14" in pyproject["project"]["dependencies"]
     assert pyproject["tool"]["uv"]["prerelease"] == "allow"
     assert 'name = "openai-codex"' in lock_text
@@ -206,13 +207,21 @@ def test_doctor_checks_windows_packaged_codex_executable_in_runtime(tmp_path: Pa
     assert check.detail == str(codex)
 
 
-def test_doctor_reports_missing_codex_executable(tmp_path: Path, monkeypatch):
+def test_doctor_reports_packaged_codex_or_missing_after_path_is_cleared(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
     monkeypatch.delenv("DRAWAI_LOCAL_RUNTIME_ROOT", raising=False)
     monkeypatch.chdir(tmp_path)
 
     check = _check_codex_executable(tmp_path / "runtime")
 
+    import importlib.util
+    if importlib.util.find_spec("codex_cli_bin") is not None:
+        import codex_cli_bin
+        candidate = Path(codex_cli_bin.__file__).parent / "bin/codex"
+        if candidate.is_file():
+            assert check.status == "ok"
+            assert check.detail == str(candidate.resolve())
+            return
     assert check.status == "missing"
     assert "Codex CLI" == check.name
     assert check.fix == "Run: uv run drawai setup local --bootstrap-only"

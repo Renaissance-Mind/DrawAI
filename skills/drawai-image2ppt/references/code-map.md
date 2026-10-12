@@ -1,6 +1,6 @@
 # 代码指南
 
-所有代码与依赖都在 skill 目录内。公共 API 从 `pptx_skill` 导入，统一使用 `presentation.document.v1` 和 pt。
+公共核心位于安装包的 `pptx_skill`（源码 `src/pptx_skill`），Session、Workbench 与 CLI 共用。技能目录保存说明、例子与兼容启动脚本；依赖由统一 DrawAI 安装管理。API 从 `pptx_skill` 导入，使用 `presentation.document.v1` 和 pt。
 
 | scripts/ 下的位置 | 职责 |
 | --- | --- |

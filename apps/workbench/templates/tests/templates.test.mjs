@@ -79,7 +79,7 @@ test("the actual MCP server exposes template, plan and Flow tools with one inlin
   t.after(() => client.close());
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL("../server.mjs", import.meta.url))] }));
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name), ["drawai_templates", "drawai_show_templates", "drawai_prepare_template", "drawai_plan", "drawai_flow"]);
+  assert.deepEqual(tools.map((tool) => tool.name), ["drawai_image", "drawai_templates", "drawai_show_templates", "drawai_prepare_template", "drawai_plan", "drawai_flow"]);
   const data = tools.find((tool) => tool.name === "drawai_templates");
   assert.equal(data._meta?.ui?.resourceUri, undefined);
   const render = tools.find((tool) => tool.name === "drawai_show_templates");

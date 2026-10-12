@@ -13,7 +13,7 @@
 
 **DrawAI 把一张位图论文图、技术图或幻灯片截图，重建成可编辑的 SVG 和 PPTX。**
 
-它会把输入图片拆成结构、文字和局部素材，再生成更容易继续编辑的矢量结果。你可以把它当成一个 CLI，也可以启动 Workbench，在浏览器里批量上传、查看进度和管理结果。
+同一套 DrawAI 可在 Agent Session、浏览器 Workbench 和 CLI 中使用，支持页面设计、原生 PPT 编辑，以及将位图拆成可继续编辑的结构、文字和局部素材。
 
 <a id="demo"></a>
 ## 🎬 演示
@@ -24,114 +24,64 @@ https://github.com/user-attachments/assets/bca69174-10d6-44c4-a73e-7b95e8eefde9
 ## 🔥 News
 
 - **2026.08** — DrawAI 论文《[DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable](https://arxiv.org/abs/2608.00548)》已在 arXiv 上线，欢迎阅读。
-- **2026.08** — 新增 LLM API 支持，默认使用 Claude Code SDK 进行推理。
+- **2026.08** — 新增 LLM API 支持，支持 Agent SDK 与 API 执行。
 
 <a id="quick-start"></a>
 ## ⚡ 快速上手
 
-### 方式一：Codex 插件
+安装一次 DrawAI，再按需求启用 Session、Workbench 或 CLI。图像可使用当前会话能力或外接 API；Session 最终制作默认保留当前 Agent 的模型和配置。
 
-DrawAI 插件包含三个 Skill：`drawai-readme` 组织整体流程，`drawai-design` 确定页面视觉图像，`drawai-image2ppt` 通过当前会话或 DrawAI-Flow 转成可编辑 PowerPoint。模板界面可以内嵌在 Codex 对话中，选好版式与风格后在当前对话继续制作。
+### 安装
 
-```bash
-cd apps/workbench
-npm ci
-npm run build:plugin
-cd ../..
-node scripts/install_plugin.mjs
-```
-
-安装后新建 Codex 聊天，使用 `$drawai-readme` 先阅读指南。可以说“推荐适合科研汇报的模板”或“根据这份内容制作可编辑 PPT”。需要选模板时显示内嵌界面，页面图像确定后进入 `drawai-image2ppt`。
-
-[插件安装、技能分工与独立模板网站](docs/zh-CN/plugin.md)。
-
-### 方式二：🧑‍💻 浏览器工作台
-
-浏览器工作台支持位图重建、批量上传和阶段进度查看：
+在当前代码目录执行，源码安装需要 Node.js 20.19+ 或 22.12+，前端由安装过程构建：
 
 ```bash
-uv run drawai setup local
-uv run drawai workbench
+uv tool install --python 3.12 .
+drawai setup
+drawai doctor
 ```
 
-浏览器打开 `http://127.0.0.1:5174/`。远程部署、模型服务和端口设置见[运行参数文档](docs/zh-CN/runtime-options.md)。
+已有 wheel 可直接安装，用户运行时无需 Node.js 或源码目录。完整安装、更新、已有数据复用和依赖启用见[统一安装指南](docs/zh-CN/installation.md)。
 
-### 方式三：🖥️ CLI 命令行终端
-
-最简单的单机方式，适合先确认项目能不能跑通。
+### 在 Agent Session 使用
 
 ```bash
-uv run drawai setup local
-uv run drawai run examples/demo_figure.png --local
+drawai setup --agent codex
+# Claude Code 使用：drawai setup --agent claude
 ```
 
-`setup local` 完成后会自动执行一次 doctor 检查。
+打开新会话，使用 `$drawai-readme` 并提供材料与要求。图像生成可用宿主工具或用户配置的 Images API。默认由当前 Claude、Codex 或其他具备能力的 Agent 制作；用户明确选择其他执行方式时才切换。
 
-换成自己的图片：
+### 在 Workbench 使用
 
 ```bash
-uv run drawai run /path/to/your/image.png --local --run-name my_first_drawai_run
+drawai setup --enable workbench
+drawai workbench
 ```
 
-如果你想用 GPU 或 Apple Silicon MPS，可以在 setup 和 run 时使用同一个设备配置：
+打开 `http://127.0.0.1:8890/`。工作台使用安装包内预构建的前端，与 CLI/Session 共用配置、模板和工具。可生成图片、批量转换、配置处理器和查看阶段进度。本地模型、SDK、预览与公式依赖按需启用。
+
+### 在 CLI 使用
 
 ```bash
-uv run drawai setup local --device gpu
-uv run drawai run /path/to/your/image.png --local --device gpu
+drawai config connections --import connections.json
+drawai image generate --connection my-images --prompt "实际页面内容" --output-dir visuals
+drawai presentation export deck.document.json --pptx output/deck.pptx
 ```
+
+上面的连接 ID 和输入文件来自实际配置与任务。CLI 原生编辑使用 `drawai ppt create/edit`，图像清单使用 `drawai visual`，委托转换使用 `drawai flow`。原有 `drawai run <image> --local` 与分阶段命令保持兼容；本地视觉模型可以通过 `drawai setup --enable models` 准备。
+
+### 共同配置与依赖
+
+默认数据目录是 `~/.drawai`，可用 `DRAWAI_HOME` 覆盖。Workbench 设置、`drawai config` 和 Session 工具使用同一连接目录。当前会话的实施模型仍由宿主决定；独立运行从共同配置选择执行后端。
 
 ```bash
-uv run drawai setup local --device mps
-uv run drawai run /path/to/your/image.png --local --device mps
+drawai setup --enable preview --install-system
+drawai setup --enable llm
+drawai doctor --require preview
 ```
 
-## 🧰 经典 CLI 管线的运行环境
-
-- Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/)
-- Node.js 20.19+ 或 22.12+，仅 Workbench 前端需要
-- 可用的 Codex/OpenAI 认证，或已登录/配置的 Agent CLI/ACP Agent，例如 Kimi（`kimi`）、Claude（`claude`）、Codex（`codex exec`）、OpenClaw（`openclaw agent`）、Hermes（`hermes chat`）或 OpenHands（`openhands acp`），用于 run0 资产分析和 SVG 生成阶段
-- >8GB 磁盘空间以保存模型和安装环境
-
-模型和运行时默认放在：
-
-```text
-.local/drawai_runtime/
-```
-
-它不会被提交到 git。模型下载默认走 ModelScope；如果你希望用 Hugging Face、手动模型目录、不同 Torch 后端或自定义端口，请看[运行参数文档](docs/zh-CN/runtime-options.md)。
-
-### 选择 Codex SDK、Agent CLI 或 ACP Agent
-
-默认配置继续使用 Codex Python SDK。要改用直接 CLI，把配置中的 SVG backend 和 runtime provider 切到 `agent_cli`，再在 `model_runtime.cli` 里选择 `kimi`、`claude`、`codex`、`openclaw`、`hermes` 或自定义命令：
-
-```yaml
-svg:
-  generation_backend: agent_cli
-model_runtime:
-  provider: agent-cli
-  connection_id: kimi
-  cli:
-    agent: kimi
-    command:
-      - kimi
-```
-
-Agent CLI 路径会同时用于 run0 资产分析和 SVG 生成；继续使用 Codex SDK 时无需改动默认配置。Claude/Codex/OpenClaw/Hermes CLI 只需要把 `agent` 和 `command` 换成对应命令，例如 `claude`、`codex exec`、`openclaw agent` 或 `hermes chat`。
-
-OpenHands 通过 ACP 的 JSON-RPC stdio 协议接入。安装并完成 OpenHands 自己的 ChatGPT 订阅授权后，可使用内置 `openhands` preset；默认命令为 `openhands acp --always-approve`：
-
-```yaml
-svg:
-  generation_backend: acp_agent
-model_runtime:
-  provider: acp-agent
-  connection_id: openhands
-  acp:
-    agent: openhands
-```
-
-OpenHands 使用 `~/.openhands` 中的独立 OAuth 凭据，不应复制 `~/.codex/auth.json`。当前已验证的安装、授权与兼容版本命令见[运行参数文档](docs/zh-CN/runtime-options.md#openhands-acp-后端)。
+基础安装包括原生 PPT 工具、Session 规划、模板与 Images API。Workbench、LLM/Agent SDK、本地视觉模型和系统预览工具按需准备。模型权重与 GPU 环境只在所选处理器需要时安装。服务端可用仓库 Dockerfile 部署同一发行包；当前是受控单工作区服务，多用户服务能力另见安装指南。
 
 <a id="outputs"></a>
 ## 📦 输出结果在哪里
@@ -163,7 +113,7 @@ outputs/case_001_*/
 Workbench 的任务和上传文件默认写到：
 
 ```text
-.local/workbench/
+~/.drawai/workbench/
 ```
 
 ## 💬 联系我们

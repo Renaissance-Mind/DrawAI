@@ -7,7 +7,9 @@ from typing import Any, Mapping
 
 
 SLIDE_TEMPLATE_ASSET_SCHEMA = "drawai.slide_template_asset.v1"
-DEFAULT_TEMPLATE_ASSET_ROOT = Path(__file__).resolve().parents[2] / "templates" / "slide_image"
+from .resources import resource_path
+
+DEFAULT_TEMPLATE_ASSET_ROOT = resource_path("templates/slide_image")
 
 
 class SlideTemplateAssetError(ValueError):

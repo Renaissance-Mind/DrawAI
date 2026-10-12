@@ -7,7 +7,9 @@ import json
 import math
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CATALOG = Path(__file__).resolve().parents[3] / "references" / "property-catalog.json"
+from drawai.resources import resource_path
+
+CATALOG = resource_path("skills/drawai-image2ppt/references/property-catalog.json")
 PROPERTIES = {p["id"]: p for p in json.loads(CATALOG.read_text())["properties"]}
 
 

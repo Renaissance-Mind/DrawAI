@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "drawai"
-version = "0.1.0"
-description = "Standalone image-to-editable-SVG/PPTX reconstruction pipeline."
+version = "0.2.0"
+description = "Shared Session, Workbench and CLI tools for editable images and presentations."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
@@ -14,22 +14,20 @@ authors = [
 ]
 keywords = ["drawai", "layout-ir", "svg", "pptx", "ocr", "sam", "scientific-figures"]
 dependencies = [
-    "cairosvg>=2.9.0",
-    "claude-agent-sdk>=0.2.119",
-    "fastapi>=0.116.0",
-    "lxml>=6.1.0",
-    "numpy",
-    "openai",
-    "openai-codex",
+    "lxml>=6.1.0,<7",
     "pillow",
     "pydantic<2.14",
-    "python-multipart>=0.0.20",
     "python-pptx>=1.0.2",
     "pyyaml",
-    "uvicorn>=0.35.0",
 ]
 
 [project.optional-dependencies]
+workbench = ["fastapi>=0.116.0", "uvicorn>=0.35.0", "python-multipart>=0.0.20", "numpy", "cairosvg>=2.9.0"]
+images = []
+llm = ["openai"]
+codex = ["openai-codex"]
+claude = ["claude-agent-sdk>=0.2.119"]
+agents = ["openai", "openai-codex", "claude-agent-sdk>=0.2.119"]
 evaluation = [
     "huggingface-hub>=1.7,<2",
     "openai-codex==0.1.0b3",
@@ -43,6 +41,8 @@ local-runtime = [
     "transformers",
 ]
 dev = [
+    "fastapi>=0.116.0", "uvicorn>=0.35.0", "python-multipart>=0.0.20", "numpy", "cairosvg>=2.9.0",
+    "openai", "openai-codex", "claude-agent-sdk>=0.2.119",
     "httpx",
     "pytest",
 ]
@@ -62,4 +62,7 @@ drawai-scores = "drawai_evaluation.scores:main"
 prerelease = "allow"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/drawai", "src/drawai_evaluation"]
+packages = ["src/drawai", "src/drawai_evaluation", "src/pptx_skill"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"

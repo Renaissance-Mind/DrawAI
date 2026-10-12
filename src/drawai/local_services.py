@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .runtime_paths import runtime_path
+
 import argparse
 import asyncio
 import base64
@@ -187,7 +189,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--sam-port", type=int, default=18080)
     parser.add_argument("--ocr-port", type=int, default=18080)
-    parser.add_argument("--runtime-root", default=".local/drawai_runtime")
+    parser.add_argument("--runtime-root", default=str(runtime_path()))
     parser.add_argument(
         "--device",
         choices=LOCAL_DEVICE_CHOICES,

@@ -571,6 +571,7 @@ export interface SlideTemplateGalleryResponse {
 }
 
 export interface ImageGenerationRequest {
+  api_preset_id?: string;
   provider?: ImageGenerationProvider;
   model: string;
   prompt: string;

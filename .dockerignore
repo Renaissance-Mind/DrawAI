@@ -1,0 +1,16 @@
+.git
+.venv
+.local
+runs
+outputs
+results
+artifacts
+apps/workbench/node_modules
+apps/workbench/dist
+apps/workbench/dist-plugin
+apps/workbench/dist-templates
+__pycache__
+*.pyc
+.env
+.env.*
+auth.json

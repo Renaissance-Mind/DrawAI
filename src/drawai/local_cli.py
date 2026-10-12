@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .runtime_paths import runtime_path, base_config_path
+
 import argparse
 import json
 import os
@@ -23,8 +25,8 @@ from .device_profiles import (
 from .local_setup import bootstrap_local_runtime, download_local_models, runtime_venv_python
 
 
-DEFAULT_RUNTIME_ROOT = ".local/drawai_runtime"
-DEFAULT_BASE_CONFIG = "configs/drawai/config.yaml"
+DEFAULT_RUNTIME_ROOT = str(runtime_path())
+DEFAULT_BASE_CONFIG = str(base_config_path())
 DEFAULT_MODEL_SOURCE = "modelscope"
 DEFAULT_TORCH_SPEC = "torch>=2.4,<2.12"
 DEFAULT_TORCHVISION_SPEC = "torchvision>=0.19,<0.27"
@@ -58,7 +60,7 @@ def setup_cli(argv: Sequence[str]) -> int:
     subparsers = parser.add_subparsers(dest="target", required=True)
 
     local = subparsers.add_parser("local", description="Download models and bootstrap the local in-process runtime.")
-    local.add_argument("--runtime-root", default=DEFAULT_RUNTIME_ROOT, help="Local runtime root.")
+    local.add_argument("--runtime-root", default=str(runtime_path()), help="Local runtime root.")
     local.add_argument("--full", action="store_true", help="Set up the full local runtime. This is the default.")
     local.add_argument(
         "--source",
@@ -126,6 +128,7 @@ def setup_cli(argv: Sequence[str]) -> int:
     local.add_argument("--download-only", action="store_true", help="Only download model artifacts; skip bootstrap.")
     local.add_argument("--bootstrap-only", action="store_true", help="Only create/refresh the runtime venv; skip download.")
     local.add_argument("--skip-doctor", action="store_true", help="Skip the automatic doctor check after a full setup.")
+    local.add_argument("--vision-only", action="store_true", help="Prepare vision models without installing an Agent SDK; used by unified capability setup.")
     local.add_argument("--dry-run", action="store_true", help="Print planned commands without running them.")
 
     args = parser.parse_args(argv)
@@ -140,6 +143,8 @@ def setup_local(args: argparse.Namespace) -> int:
     model_source = _normalize_model_source(args.source)
     env = dict(os.environ)
     env["DRAWAI_LOCAL_RUNTIME_ROOT"] = str(runtime_root)
+    if args.vision_only:
+        env["DRAWAI_VISION_ONLY"] = "1"
     env["DRAWAI_MODEL_SOURCE"] = model_source
     local_device = normalize_local_device(args.device)
     env["DRAWAI_DEVICE"] = local_device
@@ -312,7 +317,7 @@ def doctor_cli(argv: Sequence[str]) -> int:
     subparsers = parser.add_subparsers(dest="target", required=True)
 
     local = subparsers.add_parser("local", description="Check local in-process runtime readiness.")
-    local.add_argument("--runtime-root", default=DEFAULT_RUNTIME_ROOT, help="Local runtime root.")
+    local.add_argument("--runtime-root", default=str(runtime_path()), help="Local runtime root.")
     local.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     args = parser.parse_args(argv)
@@ -445,10 +450,10 @@ def run_image_cli(argv: Sequence[str]) -> int:
         default="",
         help="Legacy local runtime profile. Prefer --device cpu|gpu|mps|auto.",
     )
-    parser.add_argument("--base-config", default=DEFAULT_BASE_CONFIG, help="Base DrawAI YAML config.")
+    parser.add_argument("--base-config", default=str(base_config_path()), help="Base DrawAI YAML config.")
     parser.add_argument("--run-name", default="local_single_svg_ppt", help="Run name used in the timestamped run slug.")
     parser.add_argument("--out", "--run-root", dest="run_root", default="runs", help="Root for timestamped run folders.")
-    parser.add_argument("--runtime-root", default=DEFAULT_RUNTIME_ROOT, help="Local runtime root.")
+    parser.add_argument("--runtime-root", default=str(runtime_path()), help="Local runtime root.")
     parser.add_argument("--sam3-device", default="", help="Override SAM3 device.")
     parser.add_argument("--rmbg-device", default="", help="Override RMBG device.")
     parser.add_argument("--paddle-device", default="", help="Override PaddleOCR device.")
@@ -912,7 +917,8 @@ def _runtime_root_path(value: str | Path, repo_root: Path) -> Path:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    from drawai.resources import resource_root
+    return resource_root()
 
 
 def _script(name: str) -> Path:

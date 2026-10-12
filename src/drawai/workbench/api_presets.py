@@ -81,6 +81,7 @@ def write_workbench_api_presets(workspace: str | Path, payload: Mapping[str, Any
         json.dumps(_api_presets_document(presets), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    path.chmod(0o600)
     return presets
 
 

@@ -76,6 +76,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     base_config_path = Path(args.base_config).expanduser().resolve(strict=True)
     base_config = _read_yaml_mapping(base_config_path)
+    from drawai.runtime_paths import workspace_path
+    from drawai.workbench.agent_settings import agent_settings_path, read_workbench_agent_settings, apply_workbench_agent_settings_to_config_payload
+    if agent_settings_path(workspace_path()).is_file():
+        apply_workbench_agent_settings_to_config_payload(base_config, read_workbench_agent_settings(workspace_path()))
     _validate_codex_python_sdk_auth_if_needed(base_config)
     _ensure_local_codex_gateway_if_needed(args, repo_root, base_config)
     cases = _prepare_cases(

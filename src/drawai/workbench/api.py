@@ -89,6 +89,9 @@ from .agent_settings import WORKBENCH_SELECTABLE_AGENT_PROVIDER_IDS
 from .models import BatchExecutionMode, CaseRecord, WorkbenchSettings
 from .runner import WorkbenchRunner, create_case_config, workflow_breakpoint_node_id, _workflow_template_with_agent_settings
 from .store import WorkbenchStore
+from ..runtime_paths import workspace_path, base_config_path
+from ..resources import resource_root
+from ..image_api_errors import ImageApiError
 from drawai.workflow.agents import (
     agent_preset_by_id,
     default_agent_provider_registry,
@@ -139,7 +142,7 @@ IMAGEGEN_ALLOWED_FIELDS = {
 }
 SLIDE_TEMPLATE_GALLERY_SCHEMA = "drawai.workbench.slide_template_gallery.v1"
 SLIDE_TEMPLATE_GALLERY_DEFAULT_DIR = (
-    Path(__file__).resolve().parents[3] / "outputs" / "ppt_template_gallery_category_sample"
+    resource_root() / "outputs" / "ppt_template_gallery_category_sample"
 )
 SLIDE_TEMPLATE_GALLERY_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".json", ".md", ".txt"}
 
@@ -158,6 +161,11 @@ def create_app(
     resolved_store = store or WorkbenchStore(resolved_settings.workspace)
     resolved_runner = runner or WorkbenchRunner(resolved_store, resolved_settings)
     app = FastAPI(title="DrawAI Workbench API", version="0.1.0")
+    @app.exception_handler(ImageApiError)
+    async def image_api_error(request: Request, exc: ImageApiError):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     app.state.settings = resolved_settings
     app.state.store = resolved_store
     app.state.runner = resolved_runner
@@ -360,7 +368,7 @@ def create_app(
                     "workflow_run_root": "<workflow_run_root>",
                     "node_workdir": f"<workflow_run_root>/nodes/{node_config.get('node_id') or '<agent_node_id>'}/runs/<attempt_id>",
                     "agent_cwd": "<workflow_run_root>",
-                    "repo_root": str(Path(__file__).resolve().parents[3]),
+                    "repo_root": str(resource_root()),
                     "attempt_id": "<attempt_id>",
                     "drawai_tool_command_prefix": "<drawai_tool_command_prefix>",
                 },
@@ -405,6 +413,11 @@ def create_app(
         payload = await request.json()
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="image generation payload must be an object")
+        if payload.get("api_preset_id"):
+            preset = api_preset_by_id(read_workbench_api_presets(resolved_store.workspace), str(payload["api_preset_id"]))
+            if preset is None or preset.type != "images_api":
+                raise HTTPException(status_code=400, detail="Unknown images_api preset")
+            payload = {**payload, "provider": "api", "api_base_url": preset.base_url, "api_key": _api_preset_key(preset), "model": payload.get("model") or preset.model}
         provider = _image_generation_provider(payload)
         if provider != "codex" and _image_generation_source_image_path(payload):
             raise HTTPException(status_code=400, detail="reference image generation currently requires provider=codex")
@@ -1089,8 +1102,8 @@ def _resolve_slide_template_gallery_file(root: Path, relative_path: str) -> Path
 
 
 def settings_from_env() -> WorkbenchSettings:
-    workspace = Path(os.environ.get("DRAWAI_WORKBENCH_WORKSPACE", ".local/workbench")).expanduser().resolve(strict=False)
-    default_config = Path(os.environ.get("DRAWAI_WORKBENCH_DEFAULT_CONFIG", "configs/drawai/config.yaml")).expanduser().resolve(strict=False)
+    workspace = workspace_path()
+    default_config = base_config_path()
     return WorkbenchSettings(
         workspace=workspace,
         default_config=default_config,
@@ -1112,14 +1125,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the DrawAI Workbench FastAPI server.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8890)
-    parser.add_argument("--workspace", default=os.environ.get("DRAWAI_WORKBENCH_WORKSPACE", ".local/workbench"))
-    parser.add_argument("--config", default=os.environ.get("DRAWAI_WORKBENCH_DEFAULT_CONFIG", "configs/drawai/config.yaml"))
+    parser.add_argument("--workspace", default=str(workspace_path()))
+    parser.add_argument("--config", default=str(base_config_path()))
     args = parser.parse_args(argv)
     os.environ["DRAWAI_WORKBENCH_WORKSPACE"] = args.workspace
     os.environ["DRAWAI_WORKBENCH_DEFAULT_CONFIG"] = args.config
     import uvicorn
 
-    uvicorn.run(create_app(settings_from_env()), host=args.host, port=args.port)
+    app = create_app(settings_from_env())
+    from ..packaged_workbench import mount_frontend
+    mount_frontend(app)
+    uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
 
@@ -1260,41 +1276,8 @@ def _processor_api_preset(
 
 
 def _images_api_generate_provider(preset: ApiPreset) -> Callable[..., Mapping[str, Any]]:
-    def generate(
-        *,
-        prompt: str,
-        output_dir: str | Path,
-        task_name: str,
-        output_stem: str,
-        runtime_config: Mapping[str, Any] | None = None,
-    ) -> Mapping[str, Any]:
-        output_path = Path(output_dir).expanduser().resolve(strict=False)
-        output_path.mkdir(parents=True, exist_ok=True)
-        request_payload = _images_api_generation_payload(preset, prompt, runtime_config=runtime_config)
-        response_payload = _call_image_generation_upstream(
-            request_payload,
-            api_url=_image_generation_api_url(preset.base_url),
-            api_key=_api_preset_key(preset),
-        )
-        image_payload = _materialize_first_images_api_image(
-            response_payload,
-            output_dir=output_path,
-            output_stem=output_stem,
-        )
-        return {
-            "schema": "drawai.workbench.images_api_provider_result.v1",
-            "runner": "images_api",
-            "task_name": task_name,
-            "operation": "generate",
-            "provider": preset.id,
-            "model": preset.model,
-            "prompt": prompt,
-            "output_dir": str(output_path),
-            "images": [image_payload],
-            "upstream": _images_api_response_metadata(response_payload),
-        }
-
-    return generate
+    from ..image_api import images_api_generate_provider
+    return images_api_generate_provider(preset)
 
 
 def _images_api_edit_provider(preset: ApiPreset) -> Callable[..., Mapping[str, Any]]:

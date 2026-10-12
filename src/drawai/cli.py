@@ -12,15 +12,43 @@ from .config import DrawAiPipelineConfig, load_drawai_config
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and str(getattr(stream, "encoding", "")).lower().replace("_", "-") != "utf-8":
+            stream.reconfigure(encoding="utf-8")
     args_list = list(argv) if argv is not None else sys.argv[1:]
     if args_list and args_list[0] == "setup":
-        from .local_cli import setup_cli
-
+        if len(args_list) > 1 and args_list[1] == "local":
+            from .local_cli import setup_cli
+        else:
+            from .capabilities import setup_cli
         return setup_cli(args_list[1:])
     if args_list and args_list[0] == "doctor":
-        from .local_cli import doctor_cli
-
+        if len(args_list) > 1 and args_list[1] == "local":
+            from .local_cli import doctor_cli
+        else:
+            from .capabilities import doctor_cli
         return doctor_cli(args_list[1:])
+    if args_list and args_list[0] == "session":
+        from .session_install import session_cli
+        return session_cli(args_list[1:])
+    if args_list and args_list[0] == "config":
+        from .settings_cli import settings_cli
+        return settings_cli(args_list[1:])
+    if args_list and args_list[0] == "flow":
+        from .shared_tools import flow_cli
+        return flow_cli(args_list[1:])
+    if args_list and args_list[0] == "image":
+        from .shared_tools import image_cli
+        return image_cli(args_list[1:])
+    if args_list and args_list[0] == "plan":
+        from .shared_tools import tool_cli
+        return tool_cli(["drawai_plan", *args_list[1:]])
+    if args_list and args_list[0] == "visual":
+        from .visual_deck import main as visual_main
+        return visual_main(args_list[1:])
+    if args_list and args_list[0] == "presentation":
+        from pptx_skill.cli import pptx_cli
+        return pptx_cli(args_list[1:])
     if args_list and args_list[0] == "run":
         return _run_cli(args_list[1:])
     if args_list and args_list[0] == "asset":
@@ -46,11 +74,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return drawai_tool_cli(args_list[1:])
     if args_list and args_list[0] == "ppt":
+        if len(args_list) > 1 and args_list[1] in {"export", "import", "capabilities"}:
+            from pptx_skill.cli import pptx_cli
+            return pptx_cli(args_list[1:])
         from .pptx_cli import pptx_cli
 
         return pptx_cli(args_list[1:])
 
-    parser = argparse.ArgumentParser(description="Run the DrawAI SVG pipeline.")
+    parser = argparse.ArgumentParser(description="DrawAI: shared Session, Workbench and CLI tools. Commands: setup, doctor, session, config, plan, image, flow, presentation, ppt, visual, workbench, run, workflow, server.")
     parser.add_argument("--config", required=True, help="Path to a DrawAI pipeline YAML config.")
     parser.add_argument(
         "--dry-run-config",

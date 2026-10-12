@@ -1,51 +1,46 @@
 ---
 name: drawai-readme
-description: DrawAI 插件的整体说明与 PPT 制作入口。用户通过 DrawAI 制作或编辑 PPT 时先读本技能，检查当前图像工具和模型，按需补齐参考、页面细节与转换模式，再进入视觉设计和图像转 PPT。
+description: DrawAI 的 Session 制作入口。图像可使用宿主能力或用户配置的 API；最终制作默认保留当前 Agent 的模型和配置，调用统一核心完成设计、转换与检查。
 ---
 
 # DrawAI
 
-使用 DrawAI 插件制作 PPT 时先阅读本指南。用户可以说“根据项目中的模板制作关于某主题的 PPT”或“针对某内容做一个 PPT”。先读取当前项目和需求，完成环境判断，再按下述流程执行。
+读取用户需求、材料和当前项目，明确输入是内容、参考图、完整页面图片还是已有 PPTX。DrawAI 安装一次，Session、Workbench 和 CLI 使用同一套核心、模板、配置与工具。
 
-## 整体流程与技能
+## 制作流程
 
 | 技能 | 职责 |
 | --- | --- |
-| [drawai-readme](../drawai-readme/SKILL.md) | 读取需求、检查环境、选择模式与补齐必要信息，组织整体流程 |
-| [drawai-design](../drawai-design/SKILL.md) | 根据内容、参考图与 PPTX 模板确定每页视觉图像，或接收用户已经确定的页面图像 |
-| [drawai-image2ppt](../drawai-image2ppt/SKILL.md) | 用 DrawAI-Flow 或当前会话 Skill 模式把页面图像制作成可编辑 PPT，检查并交付 |
+| drawai-readme | 读取材料，检查看图、执行和图像工具，补齐内容需求 |
+| drawai-design | 选择参考，确定页序与内容，生成或登记真实页面图片 |
+| drawai-image2ppt | 重建或编辑原生对象，导出 PPTX/SVG，检查并交付 |
 
-流程为：读取材料与环境 → 按需确认三点 → 确定有序页面图像 → 选择的 image2ppt 模式 → 实际文件检查与交付。构建、修改、导出和检查 PPT 的实现位于 `drawai-image2ppt`。
+从材料制作：读取内容 → 选择参考 → 确定页面图片 → 转换 → 检查。已有完整页面图片时直接核对和登记；已有 PPTX 的局部修改进入原生编辑；只选模板时进入模板库。
 
-仅浏览或选择模板时直接进入 `drawai-design` 的模板库流程。模板选择消息本身不代表用户要求新建一套演示文稿。已有 PPTX 的明确局部修改进入 `drawai-image2ppt` 原生编辑流程，按实际修改范围处理。
+## 当前 Agent 与图像来源
 
-## 自动检查环境
+最终制作默认由当前会话 Agent 执行，沿用其真实模型、推理配置、认证和工具权限。Claude 会话由当前 Claude 执行，Codex 会话由当前 Codex 执行，其他具备相应能力的宿主同样处理。模型名称或版本未知时继续保留当前 Agent；缺少看图或代码执行能力时说明缺项，不能自行启动另一个 Agent 或转交工作台。
 
-1. 检查当前会话实际可调用的图像生成／编辑工具、看图能力和本地代码执行能力。只下载参考图或创建待执行请求的工具不算图像生成工具。
-2. 读取当前会话的真实模型标识及来源。优先使用当前 turn 的模型信息、宿主显示的当前模型，或用户明确提供的当前模型。不能用全局配置默认模型、候选列表或自行猜测来替代当前模型；无法确认时记录 `unknown`。
-3. 判断图像转 PPT 的默认模式：GPT 5.6+、Claude 5+、DeepSeek Flash v4.1+ 使用当前会话 Skill；其他型号或无法识别版本时使用 DrawAI-Flow。数字版本按主、次版本比较，日期后缀不算新版本。规则的事实源是 [model-policy.json](references/model-policy.json)。
-4. Skill 模式还需要当前会话能够看图并执行本地代码。工具缺失时推荐 Flow；用户明确指定 Skill 时保留其选择，说明实际缺少的能力并解决，不能暗中换模式。Flow 使用 Workbench 已配置的处理器与模型，和当前会话模型分开判断。
+图像生成与最终制作分别选择。用户指定图像 API 或连接时使用该选择；否则优先使用会话本身的图像工具。宿主缺少图像能力时，可使用已配置的 Images API、已有图片或有实际渲染能力的本地排版。外接图像 API 不改变最终制作 Agent。
 
-可调用 `drawai_plan`，或运行 `python scripts/plan.py request.json`，把当前真实环境、用户偏好和输入事实交给确定性规划器。请求结构、模式说明和确认模板见 [需求确认](references/intake.md)。模型规则是默认路由策略；成品仍须按实际文件验收。
+Images API 连接与 Workbench/CLI 共用。用 `drawai config connections --import connections.json` 配置，或在 Workbench 设置中新增；用 `drawai config image --source api --connection <真实ID>` 设默认。执行实际图片生成/编辑时可调用 `drawai_image`，或 `drawai image generate/edit`；使用宿主图像工具时直接调用当前宿主提供的工具。
 
-## 根据需求提问
+只有用户明确选择另一个 Agent、模型或 DrawAI-Flow 时才改变对应执行选择。用户明确要求另一个 CLI Agent 时，使用 `drawai session execute --agent claude|codex --prompt-file <任务文件> --workdir <任务目录>`；只有明确指定模型才传 `--model`。其他宿主可使用 custom 命令适配。执行器沿用所选 Agent 的配置与权限。
 
-先从用户消息、当前上下文和项目材料中提取已有信息。请求“使用项目中的模板”已经表达需要参考，先查找并读取项目模板；用户给了页数、比例或模式时沿用，不重复确认。
+## 规划与提问
 
-只补齐仍未确定的三点：是否使用参考图、PPT 页数与画面比例、image2ppt 模式。一次合并提问，模式提供简短介绍与环境对应的推荐。使用宿主提问工具时只呈现缺失问题，并在等待时继续读取资料和整理内容；需要答案的阶段等用户回复后再执行。
+用 `drawai_plan` 或 `drawai plan request.json` 传入真实会话环境与已知偏好。`environment.agent` 来自宿主身份；`model` 与 `model_source` 来自本轮实际信息，未知时如实记录。规划器保留当前会话，图像来源可为 `auto/session/api/local`，用户明确选择优先。完整输入和返回契约见 [需求确认](references/intake.md)。执行策略见 [执行策略](references/model-policy.json)。
 
-用户明确说“不要询问”“直接开始”，或已经清楚说明制作流程时，直接执行，不再发起偏好确认。缺省优先沿用已提供模板／图像，页数取完整页面图像数量或 8 页，比例沿用已知图像比例或 16:9，模式采用环境路由结果；在执行记录中注明推断值。无法获得真实输入、缺少必要工具或服务未配置时，暴露具体问题，不把缺少的输入假装成已完成。
+只补齐尚缺的参考、页数、比例和实际输入。已经提供的要求直接沿用；默认当前 Agent 的实施方式无需再次询问。明确不要提问或已指定流程时，采用已知信息及合理默认值：页面图像数量或 8 页，已知比例或 16:9。具体缺少的文件、凭据或工具必须暴露。
 
-完整页面图像由用户提供时，设计阶段只检查、排序并登记；仅作风格或内容参考的图片仍需由 `drawai-design` 形成最终页面图像。
+## 明确选择 Flow
 
-## 设计与转换的交接
+用户选择 Flow 后，连接同一安装的 Workbench 或明确的远程地址。Session 提交时将规划结果 `implementation.flow_agent_settings` 作为 `drawai_flow.submit.agent_settings`，把真实当前 Agent 类型和已知模型参数保留为本任务配置，不覆盖工作台全局配置。执行主机使用自己的认证；不复制当前会话密钥。无法确认当前 Agent 类型时，需要用户提供身份或明确选择工作台已配置 Agent。
 
-`drawai-design` 输出 `drawai.visual-deck.v1` 清单，记录确定的每页图像、页序、比例、文字／数据、参考与原图 SHA-256。两个转换模式都先验证这份清单；图像变化后重新登记，避免使用过期图像结果。清单与命令见 `drawai-design`。
+用户明确选择工作台 Agent 时传 `preferences.implementation_agent="configured"`。独立 Workbench/CLI 默认读取共同配置中的执行后端。Flow 提交、执行、查询和导出后，仍须检查实际文件。
 
-页面图像已满足需求时进入 `drawai-image2ppt`。用户已经指定模式就直接采用；否则使用本轮确认的模式。Flow 可通过现有 Workbench 与 `drawai_flow` 完成提交、执行、进度与导出，Skill 在当前会话重建对象并调用附带工具包。
+## 核心与交付
 
-## 文件与交付
+工具使用统一安装的 `drawai`：`drawai visual save/verify` 管理图像清单，`drawai presentation` 制作、导出、检查与渲染文档，`drawai ppt create/edit` 保留现有原生操作计划。Python API 从 `pptx_skill` 导入；实现只有一份，旧技能脚本是兼容入口。
 
-事实、数据和结论来自用户材料或查证过的可靠来源。模板图的示例内容只用于呈现参考。最终交付实际 PPTX、检查过的预览、确定的页面图像和清单，以及本次需要的制作源、素材与转换报告。文字、图形、表格等应保留适合的可编辑对象；复杂图片作为局部素材。文件检查与已知差异由 `drawai-image2ppt` 记录。
-
-模板内嵌界面使用现有模板 MCP 工具，独立模板网页也可浏览和复制选择。纯会话 Skill 可使用本地脚本，不依赖重新建立项目管理服务。Workbench 的首次环境准备见仓库运行文档；模板 UI 与 Flow 桥接均不自行推断隐藏的会话模型。
+交付真实 PPTX、已检查的预览、页面图像与清单、制作源、素材和报告。事实与数据来自用户材料或查证来源。首次安装与依赖启用见仓库安装文档；可用 `drawai doctor` 检查同一环境。

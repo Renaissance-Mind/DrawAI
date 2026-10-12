@@ -1,6 +1,6 @@
 # 构建与编辑流程
 
-本文使用已经安装依赖的 Python，以及指向完整 skill 文件夹的 `SKILL_DIR`。在任务目录工作，源文件保留原件，每次输出使用独立版本目录，例如 `output/v1`、`output/v2`。
+本文使用已经安装统一 DrawAI 的 Python，核心 API 为 `pptx_skill`。`SKILL_DIR` 指向技能文件夹，旧脚本继续转交已安装核心。在任务目录工作，源文件保留原件，每次输出使用独立版本目录，例如 `output/v1`、`output/v2`。
 
 CLI 的输入输出路径相对于当前工作目录；文档 JSON 中的素材路径相对于该 JSON 文件；SVG 内的图片路径相对于 SVG 文件。Python API 传入内存模型时，用 `asset_root` 指定素材目录。
 

@@ -14,6 +14,7 @@ import urllib.request
 from .device_profiles import DEFAULT_LOCAL_DEVICE, LOCAL_DEVICE_CHOICES, resolve_local_model_devices
 from .http_utils import urlopen_direct_for_loopback
 from .local_setup import runtime_venv_bin, runtime_venv_python
+from .runtime_paths import workspace_path, runtime_path, base_config_path
 
 
 DEFAULT_MODEL_PORT = 18080
@@ -46,9 +47,13 @@ def server_cli(argv: Sequence[str]) -> int:
 
 def workbench_cli(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description="Run the DrawAI Workbench frontend or full local workbench stack.")
+    parser.add_argument("--dev", action="store_true", help="Use the source Vite development server instead of the packaged UI.")
+    parser.add_argument("--start-model", action="store_true", help="Start explicitly enabled local model services.")
     parser.add_argument("--api", "--workbench-api", dest="api_url", default="", help="Existing Workbench API URL.")
     parser.add_argument("--host", default=os.environ.get("DRAWAI_WORKBENCH_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("DRAWAI_WORKBENCH_FRONTEND_PORT", str(DEFAULT_FRONTEND_PORT))))
+    separate_frontend = "--dev" in argv or any(value in argv for value in ("--api", "--workbench-api"))
+    default_port = DEFAULT_FRONTEND_PORT if separate_frontend else DEFAULT_API_PORT
+    parser.add_argument("--port", type=int, default=int(os.environ.get("DRAWAI_WORKBENCH_FRONTEND_PORT", str(default_port))))
     parser.add_argument("--model-api", default="", help="Model runtime base URL used by the self-hosted stack.")
     parser.add_argument(
         "--device",
@@ -57,6 +62,9 @@ def workbench_cli(argv: Sequence[str]) -> int:
         help="Local model device profile when the self-hosted stack starts model services.",
     )
     args = parser.parse_args(list(argv))
+    if not args.dev:
+        from .packaged_workbench import run_workbench
+        return run_workbench(args)
     if args.api_url:
         return _run_frontend_only(api_url=args.api_url, host=args.host, port=args.port)
     if _is_windows():
@@ -75,8 +83,8 @@ def _server_api_cli(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Run the DrawAI Workbench API and pipeline backend.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_API_PORT)
-    parser.add_argument("--workspace", default=os.environ.get("DRAWAI_WORKBENCH_WORKSPACE", ".local/workbench"))
-    parser.add_argument("--config", default=os.environ.get("DRAWAI_WORKBENCH_DEFAULT_CONFIG", "configs/drawai/config.yaml"))
+    parser.add_argument("--workspace", default=str(workspace_path()))
+    parser.add_argument("--config", default=str(base_config_path()))
     parser.add_argument("--model-api", default=os.environ.get("DRAWAI_MODEL_API", ""), help="Base URL for SAM3, OCR, and RMBG.")
     parser.add_argument("--sam3-api", default=os.environ.get("DRAWAI_SAM3_BASE_URL", ""))
     parser.add_argument("--ocr-api", default=os.environ.get("DRAWAI_OCR_BASE_URL", ""))
@@ -90,7 +98,7 @@ def _server_api_cli(argv: list[str]) -> int:
     parser.add_argument("--no-start-model", action="store_true", help="Do not start a local model runtime subprocess.")
     parser.add_argument("--model-host", default=os.environ.get("DRAWAI_MODEL_HOST", "127.0.0.1"))
     parser.add_argument("--model-port", type=int, default=int(os.environ.get("DRAWAI_MODEL_PORT", str(DEFAULT_MODEL_PORT))))
-    parser.add_argument("--runtime-root", default=os.environ.get("DRAWAI_LOCAL_RUNTIME_ROOT", ".local/drawai_runtime"))
+    parser.add_argument("--runtime-root", default=str(runtime_path()))
     parser.add_argument(
         "--device",
         choices=LOCAL_DEVICE_CHOICES,
@@ -376,7 +384,8 @@ def _optional_float(raw: str | None) -> float | None:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    from drawai.resources import resource_root
+    return resource_root()
 
 
 def _script(name: str) -> Path:

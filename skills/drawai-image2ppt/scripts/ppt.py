@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the self-contained PPTX toolkit from any working directory."""
+"""Compatibility launcher for DrawAI's installed presentation core."""
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ import sys
 
 def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    source = Path(__file__).resolve().parents[3] / "src"
+    if (source / "drawai").is_dir():
+        sys.path.insert(0, str(source))
     from pptx_skill.cli import pptx_cli
 
     return pptx_cli(sys.argv[1:])

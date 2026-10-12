@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { searchTemplates, findTemplate } from "./catalog.mjs";
 import { prepareReference } from "./references.mjs";
-import { planWorkflow, flowAction } from "./workflow.mjs";
+import { coreTool } from "./workflow.mjs";
 
 const filters = {
   query: { type: "string" }, category: { type: "string" }, with_images: { type: "boolean" },
@@ -15,6 +15,12 @@ const filters = {
   offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 120 },
 };
 export const TOOLS = [
+  {
+    name: "drawai_image",
+    description: "Generate or edit images with a shared user Images API connection. This never changes the current Session implementation Agent.",
+    inputSchema: { type: "object", properties: { action: { enum: ["generate", "edit"] }, connection: { type: "string" }, prompt: { type: "string" }, source_image: { type: "string" }, output_directory: { type: "string" }, output_stem: { type: "string" }, options: { type: "object" } }, required: ["action", "prompt", "output_directory"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
   {
     name: "drawai_templates",
     description: "Read drawai-readme first. In drawai-design, search/get real visual references or retrieve keyword-ranked candidates. Use drawai_show_templates to present a shortlist to the user.",
@@ -36,33 +42,21 @@ export const TOOLS = [
   },
   {
     name: "drawai_plan",
-    description: "Resolve the DrawAI design method, model-based image2ppt default and missing intake questions. Supply actual current-session model/tool facts and preferences extracted from the user. The server does not detect hidden caller models. Explicit modes and no-question requests take priority.",
+    description: "Resolve the DrawAI design method, current-session implementation default and missing intake questions. Supply actual current-session model/tool facts and preferences extracted from the user. The server does not detect hidden caller models. Explicit modes and no-question requests take priority.",
     inputSchema: { type: "object", properties: { request: { type: "object", description: "environment, preferences and inputs; see drawai-readme intake contract" } }, required: ["request"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "drawai_flow",
     description: "Use the existing Workbench for DrawAI-Flow. status without batch_id checks connection. submit uploads verified visual-deck pages as a queued batch; start executes that batch; status reports actual progress; export downloads the completed PPTX to a new output_path for validation. Only act on this task's batch IDs. Flow uses Workbench's own configured workers/models.",
-    inputSchema: { type: "object", properties: { action: { enum: ["submit", "start", "status", "export"] }, visual_manifest: { type: "string" }, name: { type: "string" }, batch_id: { type: "string" }, output_path: { type: "string" } }, required: ["action"], additionalProperties: false },
+    inputSchema: { type: "object", properties: { action: { enum: ["submit", "start", "status", "export"] }, visual_manifest: { type: "string" }, name: { type: "string" }, batch_id: { type: "string" }, output_path: { type: "string" }, agent_settings: { type: "object" } }, required: ["action"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ui: { visibility: ["model"] } },
   },
 ];
 
 export async function dispatch(name, args = {}) {
-  if (name === "drawai_templates") {
-    if (args.action === "get") return { template: await findTemplate(args.template_id) };
-    if (!["search", "recommend"].includes(args.action)) throw new Error("Unknown template action");
-    return searchTemplates(args);
-  }
-  if (name === "drawai_show_templates") {
-    const view = { with_images: args.with_images ?? !args.template_ids, ...args, limit: args.limit ?? 6, offset: args.offset ?? 0 };
-    return { view, result: await searchTemplates(view) };
-  }
-  if (name === "drawai_prepare_template") return prepareReference(args);
-  if (name === "drawai_plan") return planWorkflow(args.request);
-  if (name === "drawai_flow") return flowAction(args);
-  throw new Error(`Unknown DrawAI tool: ${name}`);
+  return coreTool(name, args);
 }
 
 export function createMcpServer() {
@@ -75,7 +69,7 @@ export function createMcpServer() {
     }
     return resource;
   };
-  const server = new Server({ name: "drawai", version: "4.0.0" }, { capabilities: { tools: {}, resources: {} } });
+  const server = new Server({ name: "drawai", version: "0.2.0" }, { capabilities: { tools: {}, resources: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const { uri } = await getResource();
     return { tools: TOOLS.map((tool) => tool.name === "drawai_show_templates" ? { ...tool, _meta: { ui: { resourceUri: uri } } } : tool) };

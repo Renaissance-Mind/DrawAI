@@ -1,33 +1,10 @@
-"""Standalone presentation document authoring and PowerPoint I/O."""
+"""Compatibility import: the implementation is installed with DrawAI."""
+from pathlib import Path
+import sys
 
-from .io import inspect_pptx, render_pptx, validate_pptx_package
-from .document import (
-    Document,
-    Page,
-    Object,
-    load_document,
-    import_pptx,
-    import_svg,
-    export_pptx,
-    export_svg,
-    duplicate_page,
-    insert_svg,
-    make_connector,
-)
-
-__all__ = [
-    "Document",
-    "Page",
-    "Object",
-    "load_document",
-    "import_pptx",
-    "import_svg",
-    "export_pptx",
-    "export_svg",
-    "duplicate_page",
-    "insert_svg",
-    "make_connector",
-    "inspect_pptx",
-    "render_pptx",
-    "validate_pptx_package",
-]
+_source = Path(__file__).resolve().parents[4] / "src"
+if (_source / "drawai").is_dir():
+    sys.path.insert(0, str(_source))
+from drawai.resources import presentation_root
+__path__ = [str(presentation_root())]
+exec(compile((presentation_root() / "__init__.py").read_text(encoding="utf-8"), str(presentation_root() / "__init__.py"), "exec"))

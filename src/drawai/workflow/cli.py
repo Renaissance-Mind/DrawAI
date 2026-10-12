@@ -159,7 +159,8 @@ def _run_agent_command(args: argparse.Namespace) -> int:
     if not isinstance(inputs, list):
         raise ValueError("input manifest inputs must be an array")
     workdir.mkdir(parents=True, exist_ok=True)
-    repo_root = Path(__file__).resolve().parents[3]
+    from drawai.resources import resource_root
+    repo_root = resource_root()
     prompt = render_agent_prompt(
         agent_preset_by_id(args.preset_id),
         inputs=tuple(item for item in inputs if isinstance(item, dict)),

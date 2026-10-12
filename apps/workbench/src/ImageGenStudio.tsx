@@ -442,8 +442,12 @@ export default function ImageGenStudio({
     };
     const apiBaseUrl = connection.baseUrl.trim();
     const apiKey = connection.apiKey.trim();
-    if (apiBaseUrl) body.api_base_url = apiBaseUrl;
-    if (apiKey) body.api_key = apiKey;
+    if (provider === "api" && connection.apiPresetId) {
+      body.api_preset_id = connection.apiPresetId;
+    } else {
+      if (apiBaseUrl) body.api_base_url = apiBaseUrl;
+      if (apiKey) body.api_key = apiKey;
+    }
     if (templateId !== "auto") {
       body.template_id = templateId;
     }
@@ -475,6 +479,7 @@ export default function ImageGenStudio({
     templateCardId,
     referenceImagePathInput,
     connection.apiKey,
+    connection.apiPresetId,
     connection.baseUrl,
     connection.model
   ]);

@@ -1288,7 +1288,8 @@ def _run_root_relative_path(request: AgentExecutionRequest, path: Path) -> str:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    from drawai.resources import resource_root
+    return resource_root()
 
 
 def _drawai_tool_agent_runtime_config(request: AgentExecutionRequest) -> dict[str, Any]:

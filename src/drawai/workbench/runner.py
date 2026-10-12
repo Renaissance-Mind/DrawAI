@@ -1979,7 +1979,8 @@ def _node_output_port_is_deliverable(context: NodeRunContext, port_id: str) -> b
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    from drawai.resources import resource_root
+    return resource_root()
 
 
 def _workflow_output(

@@ -764,7 +764,8 @@ def test_asset_processor_providers_routes_images_api_generation_driver(
         encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
         return {"data": [{"id": "img_1", "b64_json": encoded, "revised_prompt": "Draw it clearly."}]}
 
-    monkeypatch.setattr(api_module, "_call_image_generation_upstream", fake_generation_upstream)
+    from drawai import image_api as shared_image_api
+    monkeypatch.setattr(shared_image_api, "call_image_generation_upstream", fake_generation_upstream)
     processor_setting = require_processor_configured(tmp_path / "workspace", "image_generate")
 
     providers = api_module._asset_processor_providers(
