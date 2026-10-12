@@ -10,7 +10,9 @@ import re
 import posixpath
 import shutil
 import tempfile
+import time
 import uuid
+import warnings
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -62,6 +64,10 @@ except ImportError:
     create_transition_xml = None
     create_sequence_timing_xml = None
     pick_animation_effect = None
+
+
+_PPTX_TEMP_ROOT_ENV = "DRAWAI_PPTX_TEMP_ROOT"
+_PPTX_TEMP_CLEANUP_DELAYS = (0.0, 0.1, 0.25, 0.5, 1.0)
 
 
 def _append_relationship(
@@ -125,9 +131,20 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _create_writable_work_dir(output_path: Path) -> Path:
+def _pptx_work_dir_parents(output_path: Path, platform_name: str | None = None) -> list[Path]:
+    configured = os.environ.get(_PPTX_TEMP_ROOT_ENV)
+    if configured:
+        return [Path(configured).expanduser(), output_path.parent, Path.cwd(), Path(tempfile.gettempdir())]
+    if (platform_name or os.name) == "nt" and os.environ.get("LOCALAPPDATA"):
+        short_root = Path(os.environ["LOCALAPPDATA"]) / "DrawAI" / "t"
+        return [short_root, Path(tempfile.gettempdir()), output_path.parent, Path.cwd()]
+    return [output_path.parent, Path.cwd(), Path(tempfile.gettempdir())]
+
+
+def _create_writable_work_dir(output_path: Path, platform_name: str | None = None) -> Path:
     """Create a real writable work directory for PPTX assembly."""
-    parents = [output_path.parent, Path.cwd(), Path(tempfile.gettempdir())]
+    resolved_platform = platform_name or os.name
+    parents = _pptx_work_dir_parents(output_path, resolved_platform)
     seen: set[str] = set()
     errors: list[str] = []
 
@@ -148,7 +165,12 @@ def _create_writable_work_dir(output_path: Path) -> Path:
             continue
 
         for _ in range(3):
-            work_dir = parent / f".pptx-build-{os.getpid()}-{uuid.uuid4().hex}"
+            name = (
+                f"p-{os.getpid():x}-{uuid.uuid4().hex[:8]}"
+                if resolved_platform == "nt"
+                else f".pptx-build-{os.getpid()}-{uuid.uuid4().hex}"
+            )
+            work_dir = parent / name
             try:
                 work_dir.mkdir(mode=0o700)
                 probe_path = work_dir / ".write-probe"
@@ -164,6 +186,25 @@ def _create_writable_work_dir(output_path: Path) -> Path:
         "Unable to create a writable PPTX work directory. "
         "Set the output path to a writable project directory or adjust sandbox permissions. "
         f"Tried:\n  - {details}"
+    )
+
+
+def _cleanup_work_dir(work_dir: Path) -> None:
+    last_error: OSError | None = None
+    for delay in _PPTX_TEMP_CLEANUP_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            shutil.rmtree(work_dir)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+    warnings.warn(
+        f"Could not remove DrawAI PPTX work directory {work_dir}: {last_error}",
+        RuntimeWarning,
+        stacklevel=2,
     )
 
 
@@ -586,6 +627,7 @@ def create_pptx_with_native_svg(
 
     animation_cli_overrides = animation_cli_overrides or {}
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     temp_dir = _create_writable_work_dir(output_path)
 
     try:
@@ -1033,4 +1075,4 @@ def create_pptx_with_native_svg(
         return success_count == len(svg_files)
 
     finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _cleanup_work_dir(temp_dir)

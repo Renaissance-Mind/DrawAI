@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -42,7 +43,9 @@ _IMPORT_RE = re.compile(r"@import\s+(?:url\(\s*)?(?:'([^']*)'|\"([^\"]*)\"|([^;\
 _AF_PLACEHOLDER_RE = re.compile(r"\bAF\d{2,}\b")
 _DIMENSION_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:px)?\s*$", re.IGNORECASE)
 _BROWSER_RENDERER_ENV = "DRAWAI_SVG_RENDERER_BROWSER"
+_BROWSER_PROFILE_TEMP_ROOT_ENV = "DRAWAI_BROWSER_PROFILE_TEMP_ROOT"
 _BROWSER_RENDER_TIMEOUT_SECONDS = 600
+_BROWSER_PROFILE_CLEANUP_DELAYS = (0.0, 0.1, 0.25, 0.5, 1.0)
 _BROWSER_RENDERER_PATHS = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -481,11 +484,12 @@ def _render_svg_with_browser(root: etree._Element, svg_dir: Path, rendered_path:
     width, height = canvas
     rendered_path.parent.mkdir(parents=True, exist_ok=True)
     rendered_path.unlink(missing_ok=True)
-    with tempfile.TemporaryDirectory(prefix="drawai-svg-browser-profile-") as temp_dir:
+    temp_dir = _create_browser_profile_temp_dir()
+    try:
         with tempfile.NamedTemporaryFile(prefix=".drawai-render-", suffix=".svg", dir=svg_dir, delete=False) as handle:
             svg_path = Path(handle.name)
             handle.write(etree.tostring(root, xml_declaration=True, encoding="utf-8"))
-        user_data_dir = Path(temp_dir) / "browser-profile"
+        user_data_dir = temp_dir / "profile"
         command = [
             str(browser_path),
             "--headless=new",
@@ -533,12 +537,49 @@ def _render_svg_with_browser(root: etree._Element, svg_dir: Path, rendered_path:
             return "browser renderer did not finish after process exit"
         finally:
             svg_path.unlink(missing_ok=True)
+    finally:
+        _cleanup_browser_profile_temp_dir(temp_dir)
 
     if not rendered_path.exists():
         if process is not None and process.returncode != 0:
             return (stderr or stdout or f"exit code {process.returncode}").strip()
         return "browser completed without writing screenshot"
     return None
+
+
+def _browser_profile_temp_root(platform_name: str | None = None) -> Path:
+    configured = os.environ.get(_BROWSER_PROFILE_TEMP_ROOT_ENV)
+    if configured:
+        return Path(configured).expanduser()
+    if (platform_name or os.name) == "nt" and os.environ.get("LOCALAPPDATA"):
+        return Path(os.environ["LOCALAPPDATA"]) / "DrawAI" / "t"
+    return Path(tempfile.gettempdir())
+
+
+def _create_browser_profile_temp_dir() -> Path:
+    root = _browser_profile_temp_root()
+    root.mkdir(parents=True, exist_ok=True)
+    prefix = "svg-" if os.name == "nt" else "drawai-svg-"
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=root))
+
+
+def _cleanup_browser_profile_temp_dir(temp_dir: Path) -> None:
+    last_error: OSError | None = None
+    for delay in _BROWSER_PROFILE_CLEANUP_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            shutil.rmtree(temp_dir)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+    warnings.warn(
+        f"Could not remove DrawAI browser profile directory {temp_dir}: {last_error}",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 def _browser_renderer_keychain_flags(platform: str | None = None) -> list[str]:

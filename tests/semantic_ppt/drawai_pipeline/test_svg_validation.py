@@ -69,6 +69,57 @@ def test_browser_renderer_keychain_flags_are_macos_only():
     assert svg_validation._browser_renderer_keychain_flags("linux") == []
 
 
+def test_browser_profile_temp_root_uses_user_local_directory(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("DRAWAI_BROWSER_PROFILE_TEMP_ROOT", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    assert svg_validation._browser_profile_temp_root("nt") == tmp_path / "DrawAI" / "t"
+
+
+def test_browser_profile_temp_root_allows_override(monkeypatch, tmp_path: Path):
+    configured = tmp_path / "short-browser-temp"
+    monkeypatch.setenv("DRAWAI_BROWSER_PROFILE_TEMP_ROOT", str(configured))
+
+    assert svg_validation._browser_profile_temp_root() == configured
+
+
+def test_browser_profile_cleanup_retries_locked_directory(monkeypatch, tmp_path: Path):
+    profile_dir = tmp_path / "svg-profile"
+    profile_dir.mkdir()
+    calls = []
+    real_rmtree = svg_validation.shutil.rmtree
+
+    def flaky_rmtree(path: Path):
+        calls.append(path)
+        if len(calls) < 3:
+            raise PermissionError("profile still locked")
+        real_rmtree(path)
+
+    monkeypatch.setattr(svg_validation.shutil, "rmtree", flaky_rmtree)
+    monkeypatch.setattr(svg_validation.time, "sleep", lambda _delay: None)
+
+    svg_validation._cleanup_browser_profile_temp_dir(profile_dir)
+
+    assert calls == [profile_dir, profile_dir, profile_dir]
+    assert not profile_dir.exists()
+
+
+def test_browser_profile_cleanup_warns_with_residual_path(monkeypatch, tmp_path: Path):
+    profile_dir = tmp_path / "locked-svg-profile"
+    profile_dir.mkdir()
+
+    def locked_rmtree(_path: Path):
+        raise PermissionError("profile still locked")
+
+    monkeypatch.setattr(svg_validation.shutil, "rmtree", locked_rmtree)
+    monkeypatch.setattr(svg_validation.time, "sleep", lambda _delay: None)
+
+    with pytest.warns(RuntimeWarning, match="locked-svg-profile"):
+        svg_validation._cleanup_browser_profile_temp_dir(profile_dir)
+
+    assert profile_dir.exists()
+
+
 def test_validate_svg_rejects_external_href(tmp_path: Path):
     svg = tmp_path / "bad.svg"
     svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><image href="https://example.com/a.png"/></svg>', encoding="utf-8")
