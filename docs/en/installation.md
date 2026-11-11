@@ -4,7 +4,16 @@ Session, Workbench and CLI use the same Python core, template resources, API con
 
 ## Install and enable capabilities
 
-From this checkout, installation builds and packages the frontend automatically. Source builds require Node.js 20.19+ or 22.12+. uv can provision Python 3.12:
+After a maintainer publishes a `v*` tag that matches `[project].version` in `pyproject.toml`, GitHub Actions publishes a wheel to PyPI. That wheel already contains the Workbench UI, so Node.js is not required:
+
+```bash
+pip install drawai
+uvx drawai --help
+drawai setup
+drawai doctor
+```
+
+`uvx drawai` runs the same console script as `pip install drawai`. Until that release exists on PyPI, install from this checkout. A source checkout or the PyPI sdist builds the frontend into the wheel and requires Node.js 20.19+ or 22.12+. uv can provision Python 3.12:
 
 ```bash
 uv tool install --python 3.12 .
@@ -18,7 +27,7 @@ A prebuilt wheel needs neither Node nor the source checkout:
 uv tool install --python 3.12 /path/to/drawai-0.2.0-py3-none-any.whl
 ```
 
-Build a wheel with `uv build --wheel`. This describes the current source distribution; it does not assert that 0.2.0 is published to a public registry. Update the installation with `uv tool install --reinstall --python 3.12 <source>`, then register your Session host again.
+Build a wheel with `uv build --wheel` (this compiles the UI unless `DRAWAI_PREBUILT_UI=1` and the UI output is already present). The commands above describe how to install this repository. They do not mean the current version is already on PyPI. Update an existing install with `uv tool install --reinstall --python 3.12 <source>` or `pip install --upgrade drawai` after a release, then register your Session host again.
 
 Enable only the required capabilities in the same environment:
 

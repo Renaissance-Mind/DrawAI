@@ -5,14 +5,26 @@ build-backend = "hatchling.build"
 [project]
 name = "drawai"
 version = "0.2.0"
-description = "Shared Session, Workbench and CLI tools for editable images and presentations."
+description = "Turn raster paper figures and AI-generated images into editable SVG and PPTX."
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [
     { name = "DrawAI Maintainers" },
 ]
-keywords = ["drawai", "layout-ir", "svg", "pptx", "ocr", "sam", "scientific-figures"]
+keywords = ["drawai", "svg", "pptx", "scientific-figures", "image-vectorization", "ocr", "sam"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
     "lxml>=6.1.0,<7",
     "pillow",
@@ -20,6 +32,13 @@ dependencies = [
     "python-pptx>=1.0.2",
     "pyyaml",
 ]
+
+[project.urls]
+Homepage = "https://drawai.renaissancemind.ai"
+Repository = "https://github.com/Renaissance-Mind/DrawAI"
+"Bug Tracker" = "https://github.com/Renaissance-Mind/DrawAI/issues"
+Paper = "https://arxiv.org/abs/2608.00548"
+Changelog = "https://github.com/Renaissance-Mind/DrawAI/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 workbench = ["fastapi>=0.116.0", "uvicorn>=0.35.0", "python-multipart>=0.0.20", "numpy", "cairosvg>=2.9.0"]

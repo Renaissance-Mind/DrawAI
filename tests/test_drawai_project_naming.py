@@ -33,6 +33,22 @@ def test_python_module_and_cli_help_use_drawai_project_name():
     assert legacy_help not in result.stdout
 
 
+def test_drawai_without_arguments_prints_help():
+    result = subprocess.run(
+        [sys.executable, "-m", "drawai.cli"],
+        cwd=REPO_ROOT,
+        env=_subprocess_env(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Run the DrawAI SVG pipeline." in result.stdout
+    assert "PPTX" in result.stdout
+    assert "usage: drawai" in result.stdout
+
+
 def test_explainer_help_uses_drawai_project_name():
     result = subprocess.run(
         [sys.executable, "-m", "drawai.explainer_app", "--help"],

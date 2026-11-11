@@ -11,6 +11,18 @@ from .artifacts import write_json
 from .config import DrawAiPipelineConfig, load_drawai_config
 
 
+def _pipeline_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="drawai",
+        description=(
+            "Run the DrawAI SVG pipeline. "
+            "Turn raster figures and screenshots into editable SVG and PPTX. "
+            "Subcommands: setup, doctor, session, config, plan, image, flow, "
+            "presentation, ppt, visual, workbench, run, workflow, server."
+        ),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure") and str(getattr(stream, "encoding", "")).lower().replace("_", "-") != "utf-8":
@@ -81,7 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return pptx_cli(args_list[1:])
 
-    parser = argparse.ArgumentParser(description="DrawAI: shared Session, Workbench and CLI tools. Commands: setup, doctor, session, config, plan, image, flow, presentation, ppt, visual, workbench, run, workflow, server.")
+    parser = _pipeline_parser()
     parser.add_argument("--config", required=True, help="Path to a DrawAI pipeline YAML config.")
     parser.add_argument(
         "--dry-run-config",
@@ -96,7 +108,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--to-stage",
         help="Optional last stage for --from-stage reruns. Defaults to svg_to_ppt_exported.",
     )
-    args = parser.parse_args(argv)
+    if not args_list:
+        parser.print_help()
+        return 0
+    args = parser.parse_args(args_list)
 
     try:
         if args.dry_run_config:

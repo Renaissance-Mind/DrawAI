@@ -1,6 +1,6 @@
 # DrawAI 评测
 
-**简体中文** | [English](../en/evaluation.md) | [DrawAI](../../README.md)
+**简体中文** | [English](../en/evaluation.md) | [DrawAI](../../README.zh-CN.md)
 
 对最终 SVG 的还原性与可编辑性进行评测，共 **39 项指标：9 项 Rule 规则指标和 30 项 Rubric 裁判指标**。
 评测代码已包含在 DrawAI 的 `main` 分支中，使用独立的 `drawai_evaluation` 包。

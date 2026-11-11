@@ -1,6 +1,6 @@
 # DrawAI Evaluation
 
-[简体中文](../zh-CN/evaluation.md) | **English** | [DrawAI](../../README-en.md)
+[简体中文](../zh-CN/evaluation.md) | **English** | [DrawAI](../../README.md)
 
 Reconstruction and editability evaluation for final SVG predictions, included in
 DrawAI's `main` branch as the independent `drawai_evaluation` package. No DrawAI

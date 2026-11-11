@@ -4,7 +4,16 @@ DrawAI 安装一次，Agent Session、Workbench 和 CLI 调用同一套核心、
 
 ## 安装
 
-从当前源码目录安装，安装过程自动构建并打包前端。源码构建需要 Node.js 20.19+ 或 22.12+；uv 可准备 Python 3.12：
+维护者发布与 `pyproject.toml` 里 `[project].version` 一致的 `v*` 标签后，GitHub Actions 会把已经包含 Workbench 界面的 wheel 发布到 PyPI。这种安装不需要 Node.js：
+
+```bash
+pip install drawai
+uvx drawai --help
+drawai setup
+drawai doctor
+```
+
+`uvx drawai` 与 `pip install drawai` 使用同一个控制台入口。在该版本出现在 PyPI 之前，从当前源码目录安装。源码目录和 PyPI 源码包在构建 wheel 时编译前端，需要 Node.js 20.19+ 或 22.12+；uv 可准备 Python 3.12：
 
 ```bash
 uv tool install --python 3.12 .
@@ -19,7 +28,7 @@ uv tool install --python 3.12 /path/to/drawai-0.2.0-py3-none-any.whl
 drawai setup
 ```
 
-本地构建 wheel 可用 `uv build --wheel`。wheel 包含共同 Python 核心、三个 Skills、PPT 工具包、模板目录、兼容脚本和预先构建的 Workbench。更新同一来源使用 `uv tool install --reinstall --python 3.12 <安装来源>`，再重新注册相应宿主。这里说明当前仓库的安装流程，不表示 0.2.0 已发布到公共包仓库。
+本地构建 wheel 可用 `uv build --wheel`（除非已经构建好界面并设置 `DRAWAI_PREBUILT_UI=1`，否则会编译前端）。wheel 包含共同 Python 核心、三个 Skills、PPT 工具包、模板目录、兼容脚本和预先构建的 Workbench。更新同一来源使用 `uv tool install --reinstall --python 3.12 <安装来源>`，PyPI 发布之后也可以 `pip install --upgrade drawai`，再重新注册相应宿主。这里说明当前仓库的安装流程，不表示当前版本已经出现在 PyPI。
 
 ## 按需要启用能力
 

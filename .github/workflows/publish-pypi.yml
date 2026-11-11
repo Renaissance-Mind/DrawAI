@@ -1,0 +1,90 @@
+name: Publish to PyPI
+
+# Runs when a release tag v<version> is pushed. Publishing a GitHub Release
+# that creates the tag also pushes it. The version after "v" must match
+# [project].version in pyproject.toml.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the tag to match the package version
+        run: |
+          set -eu
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${version}."
+            echo "Bump [project].version, or tag v${version}."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/workbench/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Build the wheel directly from the checkout. `python -m build` without
+      # --wheel rebuilds the wheel from the sdist, and the sdist omits the
+      # gitignored UI output. The hook compiles that UI with Node, then the
+      # wheel embeds it. The sdist stays a source snapshot and needs Node
+      # when someone installs it.
+      - name: Build the Workbench UI
+        working-directory: apps/workbench
+        run: |
+          npm ci
+          npm run build
+          npm run build:plugin
+
+      - name: Build the wheel and sdist
+        env:
+          DRAWAI_PREBUILT_UI: "1"
+        run: |
+          python -m pip install --upgrade build
+          python -m build --wheel
+          python -m build --sdist
+
+      - name: Smoke-test the wheel without Node
+        run: |
+          python -m venv /tmp/drawai-smoke
+          /tmp/drawai-smoke/bin/pip install dist/*.whl
+          /tmp/drawai-smoke/bin/drawai --help
+          /tmp/drawai-smoke/bin/drawai
+          /tmp/drawai-smoke/bin/python -c "import pathlib, drawai; root = pathlib.Path(drawai.__file__).parent; assert (root / '_resources/apps/workbench/dist/index.html').is_file()"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
