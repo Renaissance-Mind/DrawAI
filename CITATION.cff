@@ -1,0 +1,81 @@
+cff-version: 1.2.0
+message: >-
+  If you use DrawAI, please cite the preferred-citation paper
+  (arXiv:2608.00548).
+title: DrawAI
+abstract: >-
+  DrawAI turns raster images, including AI-generated figures and screenshots
+  of paper figures or slides, into editable SVG and PPTX. The accompanying
+  paper introduces DrawAI-Bench and the DrawAI-Flow reconstruction workflow.
+type: software
+authors:
+  - family-names: Cao
+    given-names: Pu
+    affiliation: Beijing University of Posts and Telecommunications
+  - family-names: Kong
+    given-names: Qingye
+    affiliation: Beijing University of Posts and Telecommunications
+  - family-names: Yin
+    given-names: Xuedan
+    affiliation: Tsinghua University
+  - family-names: Zhao
+    given-names: Xuekun
+    affiliation: Beijing University of Posts and Telecommunications
+  - family-names: Yan
+    given-names: Rupeng
+    affiliation: Beijing University of Posts and Telecommunications
+  - family-names: Song
+    given-names: Qing
+    affiliation: Beijing University of Posts and Telecommunications
+  - family-names: Zhang
+    given-names: Yao
+    affiliation: Beijing Institute of Technology
+  - family-names: Yang
+    given-names: Lu
+    affiliation: Beijing University of Posts and Telecommunications
+repository-code: https://github.com/Renaissance-Mind/DrawAI
+url: https://drawai.renaissancemind.ai
+license: Apache-2.0
+version: 0.2.0
+date-released: 2026-10-13
+keywords:
+  - svg
+  - pptx
+  - scientific-figures
+  - image-vectorization
+preferred-citation:
+  type: article
+  title: "DrawAI: Agentic Benchmark and Workflow for Making Raster Images Editable"
+  authors:
+    - family-names: Cao
+      given-names: Pu
+      affiliation: Beijing University of Posts and Telecommunications
+    - family-names: Kong
+      given-names: Qingye
+      affiliation: Beijing University of Posts and Telecommunications
+    - family-names: Yin
+      given-names: Xuedan
+      affiliation: Tsinghua University
+    - family-names: Zhao
+      given-names: Xuekun
+      affiliation: Beijing University of Posts and Telecommunications
+    - family-names: Yan
+      given-names: Rupeng
+      affiliation: Beijing University of Posts and Telecommunications
+    - family-names: Song
+      given-names: Qing
+      affiliation: Beijing University of Posts and Telecommunications
+    - family-names: Zhang
+      given-names: Yao
+      affiliation: Beijing Institute of Technology
+    - family-names: Yang
+      given-names: Lu
+      affiliation: Beijing University of Posts and Telecommunications
+  year: 2026
+  journal: "arXiv preprint arXiv:2608.00548"
+  doi: 10.48550/arXiv.2608.00548
+  url: https://arxiv.org/abs/2608.00548
+  identifiers:
+    - type: other
+      value: "arXiv:2608.00548"
+      description: arXiv identifier
